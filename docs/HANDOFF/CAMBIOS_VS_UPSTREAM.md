@@ -413,7 +413,21 @@ sobre código que en la versión nueva ya no existe o ya no hace falta; portar d
 decidir, cambio por cambio, si se rehace, si la versión nueva ya lo resuelve o si se descarta.
 
 Últimas versiones al 2026-10-15: **`18.7.0`** y **`19.7.0`** (13-oct-2026). Ruta desde prod (18.1):
-`18.1 → 18.7.0 → 19.7.0` (y así con cada versión mayor que salga después).
+
+**`18.1 → 18.7.0 → 19.1.8 → 19.7.0`**
+
+| Salto | Por qué esa parada |
+|---|---|
+| `18.7.0` | Última 18: cierra la versión mayor actual con todas sus migraciones y jobs |
+| `19.1.8` (10-jun-2026) | **Primera 19 estable = las migraciones de la 19.0.** Aquí está casi todo el salto: de 18.7.0 a 19.1.8 cambian 220 archivos de `Rock.Migrations` (~25 mil líneas). Los tags `19.0.x` son todos `-pre`/`-alpha`/`-beta`: **no usar una 19.0 beta** sobre datos de prod |
+| `19.7.0` | Última 19: sin migraciones de esquema nuevas respecto a 19.1.8, solo 3 jobs post-actualización (`PostV1711…`) |
+
+Regla para versiones futuras (20, 21…): **parar en la primera versión estable de cada versión mayor**
+(la que trae sus migraciones `.0`) y después en la última de esa mayor. Rock elimina jobs de arranque
+de versiones anteriores cuando una posterior los reemplaza (el propio commit base del fork,
+`f8e5bcf161`, *"Removed a v18.0 Rock Startup Job… as v18.1 has a similar Job"*), así que saltar
+directo a la última puede dejar migraciones de datos sin correr. Para ver qué tags son estables:
+`git tag -l "<mayor>.*" | grep -vE -- "-(pre|alpha|beta)" | sort -V`.
 
 ### 0. Antes de empezar
 
@@ -453,7 +467,7 @@ Apuntar `RockWeb/web.ConnectionStrings.config` a `RockUpgrade`.
 
 ### 3. Saltar de versión mayor en versión mayor (solo Rock)
 
-Para cada versión del camino (`18.7.0`, luego `19.7.0`, …):
+Para cada versión del camino (`18.7.0`, `19.1.8`, `19.7.0`, …):
 
 1. `git checkout <versión>` y compilar.
 2. Arrancar RockWeb contra `RockUpgrade`. Rock corre sus migraciones al iniciar; esperar a que

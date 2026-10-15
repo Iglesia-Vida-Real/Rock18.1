@@ -148,7 +148,8 @@ clics). Los selects de Obsidian son Ant Select (`.ant-select-selector` → `.ant
 
 **Actualizar Rock a otra versión:** no se hace sobre este repo. Procedimiento recomendado por
 Rodolfo: bajar una copia de la BD de prod, clonar Rock limpio en otra carpeta, subir la BD de
-versión mayor en versión mayor con Rock sin modificar (migraciones y jobs post-actualización en
+versión mayor en versión mayor (`18.7.0 → 19.1.8 → 19.7.0`, parando en la primera estable de
+cada mayor) con Rock sin modificar (migraciones y jobs post-actualización en
 cada salto) y solo al final meter el desarrollo propio, idealmente movido a plugins. Detalle en
 `docs/HANDOFF/CAMBIOS_VS_UPSTREAM.md` § «Cómo actualizar a una nueva versión de Rock».
 
