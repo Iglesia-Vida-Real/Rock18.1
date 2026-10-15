@@ -1,5 +1,7 @@
 # CHANGES.md — Rock.JavaScript.Obsidian/Framework/Controls
 
+> **Última actualización:** 2026-10-15 (revisado; sin cambios de código en `Framework/Controls` desde 2026-08-26. Se agrega el estado de la cascada en §6)
+
 ## Contexto
 
 Este directorio contiene los controles **CORE del framework Obsidian de Rock CMS** (SparkDevNetwork).
@@ -114,6 +116,8 @@ defined types y los archivos C# que lo acompanan).
 de eventos, negocios, detalle de ubicacion). Un error aqui rompe la captura de direcciones en todo
 el sistema. La degradacion esta pensada para ser suave: si `State` no corresponde a ningun
 departamento (dato sucio, p. ej. `State='GT'`), el municipio cae a campo de texto libre.
+
+**Estado (2026-10-15):** verificada en dev el 2026-08-12; en produccion (confirmado por Rodolfo, 2026-10-15). Revision de la lista de 340 municipios contra el INE: sin registro de que se haya hecho (verificar). La normalizacion de direcciones historicas sucias (en dev 2026-08-12: 52 de ~3 500 direcciones GT, p. ej. `State` vacio o `'GT'`) queda a cargo del equipo; no hay script para eso.
 
 **Marcadores en el codigo:** todos los bloques VidaReal de este archivo estan comentados con
 `[VidaReal]`. Tras un merge se localizan con `grep -n "\[VidaReal\]" addressControl.obs`.

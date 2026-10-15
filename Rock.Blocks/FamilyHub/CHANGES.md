@@ -1,5 +1,7 @@
 # FamilyHub — Contexto y cambios (VidaReal fork)
 
+> **Última actualización:** 2026-10-15 (revisión de traspaso: backend sin cambios desde 2026-06-06; se documentan los cambios de frontend del 2026-07-24 y 2026-08-12 en §8)
+
 ## 1. Qué es FamilyHub
 
 FamilyHub es un bloque Obsidian **completamente nuevo**, creado para VidaReal. No existe en el repositorio upstream de SparkDevNetwork/Rock. Permite al usuario autenticado ver y administrar, desde el portal web, los miembros de su familia principal y las personas relacionadas por Known Relationship.
@@ -113,8 +115,8 @@ La lógica de guardar foto aparecía dos veces (una en Path A, otra en Path B).
 ## 6. Archivos de contexto relacionados
 
 - `Rock.Blocks/FamilyHub/FamilyHub.md` — documentación extendida de arquitectura generada durante el desarrollo.
-- El archivo `FamilyHub_KnownRelationship_Fix_Context.md` mencionado en la instrucción no fue encontrado en el raíz del repositorio (puede haber sido eliminado o su ruta es diferente).
-- El archivo `Migration_Context_ReservationScanner_FamilyHub.md` tampoco fue encontrado en el raíz.
+- `FamilyHub_KnownRelationship_Fix_Context.md` (raíz del repo) — resumen del fix de Known Relationships (abril 2026). Corrección 2026-10-15: este documento antes decía que no existía; sí está en la raíz.
+- `Migration_Context_ReservationScanner_FamilyHub.md` (raíz del repo) — contexto de migración compartido con el escáner de QREVENT. Mismo comentario: sí existe.
 
 ---
 
@@ -125,3 +127,16 @@ La lógica de guardar foto aparecía dos veces (una en Path A, otra en Path B).
 | `2958358094` | Push inicial — FamilyHub base |
 | Commits intermedios | Evolución del UI y lógica KR |
 | `4f80ff56b0` | BUGS y WA — fix de los 3 bugs de KR + batching |
+| `bd912767f8` | (2026-07-24) Frontend: se elimina el header/topbar `vrTopBar` (marca "VidaReal.tv") y su CSS huérfano |
+| `0c44380057` | (2026-08-12) Frontend: la opción "Casado" se muestra como "Esposo(a)" |
+
+---
+
+## 8. Cambios de frontend posteriores (sin cambios en `FamilyHub.cs`)
+
+Archivo: `Rock.JavaScript.Obsidian.Blocks/src/FamilyHub/FamilyHub.obs` (template + script + estilos en un solo `.obs`, clases `vr*` / `fh*`, fuerza modo claro y oculta el panel-heading de Rock).
+
+- **2026-07-24 (`bd912767f8`)** — se eliminó por completo el header/topbar (`vrTopBar` con la marca "VidaReal.tv") y su línea divisoria, junto con el CSS huérfano (`.vrTopBar`, `.vrBrand`, `.vrTopActions`, `.vrIconBtn`). El contenido inicia directo en `vrContainer`. La sección "UI refresh summary" de `FamilyHub_KnownRelationship_Fix_Context.md` que menciona el "sticky top bar" quedó obsoleta en ese punto.
+- **2026-08-12 (`0c44380057`)** — cambio solo visual: en el selector de parentesco, el rol marital con texto "Casado" se muestra como "Esposo(a)". El `value` (y lo que se guarda) no cambia. Si alguien renombra el valor en Rock, el mapeo deja de aplicar en silencio (compara por texto).
+
+Despliegue: compilar `Rock.JavaScript.Obsidian.Blocks` (`npm run build`) y copiar el bundle de `RockWeb/Obsidian/Blocks/FamilyHub/`. Estado a 2026-10-15: no hay cambios de FamilyHub pendientes de commit.

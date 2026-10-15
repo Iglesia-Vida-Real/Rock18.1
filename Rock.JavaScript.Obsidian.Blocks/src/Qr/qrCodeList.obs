@@ -118,6 +118,11 @@
                                 <td class="qrlNum">
                                     <span v-if="row.qrType === QrType.Dinamico" class="qrlCount">{{ row.scanCount }}</span>
                                     <span v-else class="qrlMuted">—</span>
+                                    <!-- Acá es donde se encuentra un código entre cientos (buscar,
+                                         categoría, orden); el enlace lleva a Uso ya filtrado. -->
+                                    <a v-if="row.qrType === QrType.Dinamico && options.metricsPageUrl"
+                                       class="qrlMetricsLink" :href="metricsUrl(row)"
+                                       :aria-label="`Ver métricas de ${row.name}`">ver métricas</a>
                                 </td>
                                 <td>
                                     <span v-if="row.qrType === QrType.Estatico" class="qrlMuted">no deja métricas</span>
@@ -257,6 +262,8 @@
 .qrlRowOff { opacity: .55; }
 .qrlNum { text-align: right; }
 .qrlCount { font-family: var(--font-num); font-size: 15px; color: var(--vr-navy); }
+.qrlMetricsLink { display: block; font-size: 11px; font-weight: 600; color: var(--action); text-decoration: none; margin-top: 3px; white-space: nowrap; }
+.qrlMetricsLink:hover { text-decoration: underline; }
 
 .qrlLink { color: var(--action); font-weight: 600; text-decoration: none; }
 .qrlLink:hover { text-decoration: underline; }
@@ -472,6 +479,13 @@
 
     function detailUrl(row: RowBag): string {
         return (options.value.detailPageUrl ?? "").replace("((Key))", row.idKey ?? "");
+    }
+
+    /** Uso filtrado por este código: el bloque de métricas lee QrCodeId al abrir. */
+    function metricsUrl(row: RowBag): string {
+        const base = options.value.metricsPageUrl ?? "";
+        if (!base || !row.idKey) { return base; }
+        return `${base}${base.includes("?") ? "&" : "?"}QrCodeId=${encodeURIComponent(row.idKey)}`;
     }
 
     function onNew(): void {

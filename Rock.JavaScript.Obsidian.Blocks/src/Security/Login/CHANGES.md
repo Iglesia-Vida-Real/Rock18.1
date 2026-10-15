@@ -1,5 +1,7 @@
 # Cambios en el módulo Login — VidaReal fork (Rock 18.1)
 
+> **Última actualización:** 2026-10-15 (revisado; sin cambios de código en `src/Security/Login` desde 2026-08-12, commit `0c44380057`, que este documento ya cubre)
+
 ## Visión general
 
 El módulo Login contiene cuatro componentes Vue que juntos implementan el flujo completo de autenticación de Rock. VidaReal personalizó todos ellos, con cambios que van desde simples traducciones hasta rediseños completos de UI.

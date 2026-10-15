@@ -1,7 +1,9 @@
 # Módulo DAR — Frontend Obsidian — Historial de cambios y documentación
 
 > **Rama:** `hotfix-18.1`
-> **Última actualización:** 2026-06-04
+> **Última actualización:** 2026-10-15 (revisión de traspaso: §3.4 estado
+> "Pendiente", §5 marcada como desactualizada → ver backend §12, nueva §9
+> `notranslate`; sin cambios de código en `src/Dar` desde 2026-08-26)
 >
 > Este documento cubre los dos bloques Vue 3 (Obsidian) del módulo DAR,
 > el flujo de UI del formulario de donaciones, las validaciones del cliente,
@@ -255,7 +257,9 @@ La tab "Historial" (solo visible para usuarios logueados) muestra las últimas
 
 Cada fila muestra:
 - Fecha y hora formateada
-- Estado (badge: "Aprobada" en verde, "Rechazada" en rojo)
+- Estado (badge: "Aprobada" en verde, "Rechazada" en rojo; desde 2026-06-22
+  los estados `PENDING`/`PROCESSING` se muestran como "Pendiente" — corresponde
+  a la fila `Pending` durable que agregó el endurecimiento del backend)
 - Monto con símbolo de moneda (Q o $)
 - Nombre de la cuenta (fondo al que se donó)
 
@@ -370,11 +374,21 @@ este template como cuerpo de un paso `Send Email`. Se envía al correo
 | `{{ mode }}` | `Mode` | `live` o `test` (muestra badge "Test" si no es live) |
 | `{{ donorName }}` | `DonorName` | Nombre del donante (fiscal si hay NIT, de perfil si no) |
 | `{{ donorEmail }}` | `DonorEmail` | Correo electrónico del donante |
+| `{{ donationType }}` | `DonationType` | Tipo de donación (fila condicional; agregado 2026-08) |
+| `{{ note }}` | `Note` | Nota del donante, máx. 250, `NewlineToBr` (agregado 2026-08-26) |
 
 Todas las variables se procesan con filtros Lava de seguridad (`StripHtml`,
 `Truncate`, `Escape`) para evitar XSS en el email.
 
-### Estructura del email
+> **DESACTUALIZADO (aviso 2026-10-15):** el diagrama de abajo describe el
+> diseño original de junio 2026 (header negro, círculo verde, nota verde). La
+> plantilla se rediseñó el 2026-08-19 (header/footer navy `#0e364c`,
+> Montserrat) y se simplificó el 2026-09-03. La descripción vigente, con la
+> paleta claro/oscuro por clase, está en
+> [`Rock.Blocks/Dar/CHANGES.md` §12](../../../Rock.Blocks/Dar/CHANGES.md).
+> Se conserva el diagrama solo como referencia histórica.
+
+### Estructura del email (diseño original, junio 2026)
 
 ```
 ┌────────────────────────────────────┐
@@ -591,6 +605,25 @@ Con hasta 500 transacciones por búsqueda y posibles joins a múltiples tablas,
 ejecutar la consulta en cada cambio de filtro generaría demasiadas requests.
 El modelo "configura filtros y presiona Buscar" es más predecible y reduce
 la carga del servidor.
+
+---
+
+## 9. Exclusión del traductor IA (`notranslate`, 2026-08-26)
+
+Commit `4e7cf2264c`. El plugin VidaRealTranslator (botón "ES"/"EN" del sitio)
+reemplaza nodos de texto y manda el contenido a un proveedor de IA. Para que
+datos sensibles nunca salgan del servidor:
+
+- `CybersourceDonationEntry.obs`: el wrapper raíz es
+  `<div class="cyWrap notranslate" data-no-translate="1">` (tarjetas
+  enmascaradas, nombres y montos).
+- `DonationDashboard.obs`: el `<Panel>` lleva `class="notranslate"
+  data-no-translate="1"` (cae al div raíz por fallthrough de atributos).
+
+Ambos bloques ya están autorados en español, así que no pierden nada. **No
+quitar estas clases.** Regla general del repo: todo texto dinámico de Vue
+(botones con estado busy, contadores) debe ir dentro de `notranslate`, porque
+el traductor congela el nodo y Vue deja de actualizarlo.
 
 ---
 

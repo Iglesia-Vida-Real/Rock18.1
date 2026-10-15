@@ -1,5 +1,12 @@
 # Módulo Eventos/Boletería — Runbook de pruebas runtime (smoke tests)
 
+Última actualización: 2026-10-15
+
+**Estado al 2026-10-15:** §15 (migraciones 022–023) y §16 (migración 025) pasaron en **dev**
+(§16 con Selenium el 2026-10-05). `ab11c9d250` + `81d2622dbc` están **en producción** (confirmado
+por Rodolfo, 2026-10-15; ver `RESEARCH_Y_PLAN.md` §9.41). **PENDIENTE (2026-10-15):** dejar
+registrada la #2 (pago con tarjeta real en el checkout rediseñado) end-to-end.
+
 Pruebas en orden de prioridad tras un deploy. Estado al 2026-07-02: la #2 (pago con TARJETA real)
 **nunca ha pasado end-to-end** — es la crítica. Arquitectura: `Rock/Model/Eventos/ARCHITECTURE.md`.
 

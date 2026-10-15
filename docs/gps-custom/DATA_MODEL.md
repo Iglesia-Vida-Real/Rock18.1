@@ -1,5 +1,7 @@
 # Módulo GPS — Modelo de datos
 
+Última actualización: 2026-10-15 (revisado; diseño sin cambios desde `ae2f580256`, 2026-09-07 — **sin código escrito todavía**, no existe `Plugin.VidaRealGps`)
+
 > Complementa [SDD.md](SDD.md) §3. Decisiones de por qué tabla propia: SDD §1.2 y §1.3.
 
 ---

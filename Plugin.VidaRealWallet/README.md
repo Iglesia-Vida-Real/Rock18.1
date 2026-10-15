@@ -1,5 +1,12 @@
 # Plugin.VidaRealWallet — Migraciones del módulo Wallet
 
+Última actualización: 2026-10-15 (revisado; migraciones 001–016, sin migraciones nuevas desde 2026-08-12)
+
+> **En producción** (confirmado por Rodolfo, 2026-10-15), migraciones 001–016. La vista web del
+> pase en Mis Entradas (2026-10-05) subió con el paquete de Eventos, también en prod (ver
+> `Plugin.VidaRealEvents/README.md`). Estado general del módulo:
+> `docs/wallet-module/RESEARCH_Y_PLAN.md`.
+
 Assembly **`com.vidareal.Wallet`**: SOLO migraciones SQL del módulo Wallet (Apple/Google
 Wallet passes). El código vive en core (decisión del fork): entidades/servicios en
 `Rock/Model/Wallet/`, controller PassKit en `Rock.Rest/VidaReal/`, bloque en

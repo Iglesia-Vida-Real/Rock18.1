@@ -1,7 +1,34 @@
 # CONTEXT — VidaReal DOM Translator
 
 > Documento de contexto para que un dev/IA retome el plugin en una sesión futura.
-> Estado: **implementado, compilado y endurecido para producción** (auditoría C#+JS aplicada). Incluye switcher de idioma (pill tipo Weglot), grid de administración (ver/editar/excluir/borrar traducciones) e inyección automática del script en todos los sitios al activar. Pendiente antes de prod: configurar Azure + smoke test en staging de los 2 bloques WebForms (runtime-compiled, no verificables en build).
+> Estado: **implementado, compilado y endurecido para producción** (auditoría C#+JS aplicada). Incluye switcher de idioma (pill tipo Weglot), grid de administración (ver/editar/excluir/borrar traducciones) e inyección automática del script en todos los sitios al activar. **En producción** (confirmado por Rodolfo, 2026-10-15). (Nota histórica: el pendiente original de smoke test de los 2 bloques WebForms ya no aplica; ver corrección abajo.)
+
+Última actualización: 2026-10-15
+
+> **Corrección 2026-10-15.** Desde la 1.4.0 (migración 004) los bloques WebForms
+> `TranslatorSettings`/`TranslationList` están **retirados**: la config y el grid viven en el bloque
+> Obsidian **`TranslatorDashboard`** (decoradores en `Blocks/TranslatorDashboard.cs`, editados desde el
+> propio dashboard). Donde este documento (§7) dice `TranslatorSettings` o "⚙ Configuración del
+> bloque", léase `TranslatorDashboard`. El pendiente de "smoke test de los 2 bloques WebForms" ya no
+> aplica. La config son **block attributes**, no Global Attributes (la mención a "Global Attributes
+> de selectores" en §8 es un resto de una versión anterior).
+> El 2026-08-05 el Translator daba 404 en prod (todavía no desplegado). **Al 2026-10-15 está en
+> producción** (confirmado por Rodolfo): `com.vidareal.Translator.dll` y
+> `RockWeb/Plugins/com_vidareal/Translator/` desplegados. Anotar la versión exacta en el próximo deploy.
+
+> **PENDIENTE (abierto 2026-10-05, sin corregir al 2026-10-15) — dos defectos vistos en el
+> checkout de Eventos:**
+> 1. **Congela textos dinámicos de Vue.** El traductor reemplaza nodos de texto; en bloques
+>    Obsidian un `{{ busy ? "Procesando…" : "Pagar" }}` se queda con el valor viejo porque Vue
+>    actualiza un nodo que ya no está en la página ("Pagar" mostraba "Procesando…").
+>    Mitigación en los bloques: envolver todo texto dinámico de Vue (botones con estado busy,
+>    contadores, códigos) en `<span class="notranslate">`. El contador de reserva del checkout ya
+>    lo hace.
+> 2. **Traduce español a español.** Con UI ya en español la IA "corrige" textos: "Eventos •
+>    Reportería" sale como "Eventos • Reportes" y la columna "Inicia" como "Iniciar". Si aparece un
+>    texto en español distinto al del código fuente, sospechar primero del traductor.
+> Falta decidir el arreglo en el plugin (p. ej. no reemplazar nodos administrados por Vue, o no
+> mandar a la IA strings que ya están en el idioma destino).
 
 ## 1. Objetivo
 

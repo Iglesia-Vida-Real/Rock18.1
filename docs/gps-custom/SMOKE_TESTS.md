@@ -1,5 +1,7 @@
 # Módulo GPS — Runbook de pruebas
 
+Última actualización: 2026-10-15 (revisado; diseño sin cambios desde `ae2f580256`, 2026-09-07 — **sin código escrito todavía**, no existe `Plugin.VidaRealGps`)
+
 > Verificación en runtime, no pruebas unitarias. Se corre contra desarrollo con los datos
 > importados, y otra vez contra producción antes del corte.
 > Índice del proyecto: [README.md](README.md).

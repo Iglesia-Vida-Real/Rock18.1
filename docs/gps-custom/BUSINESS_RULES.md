@@ -1,5 +1,7 @@
 # Módulo GPS — Reglas de negocio
 
+Última actualización: 2026-10-15 (revisado; diseño sin cambios desde `ae2f580256`, 2026-09-07 — **sin código escrito todavía**, no existe `Plugin.VidaRealGps`)
+
 > Extraídas del código del plugin `gps` de WordPress y **verificadas contra el respaldo de
 > producción del 02-09-2026** (MariaDB 12.2, 4 461 interesados, 629 GPS, 36 reglas de ruteo).
 > Restricción de producto: el comportamiento queda tal cual. Ver [SDD.md](SDD.md) §1.1.

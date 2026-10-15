@@ -1,5 +1,7 @@
 # Cambios en Bloques Finance (Obsidian) — VidaReal fork (hotfix-18.1)
 
+> **Última actualización:** 2026-10-15 (revisado; sin cambios de código en `src/Finance` desde 2026-06-06)
+
 Base de comparacion: commit `ca2ca0ec94`
 Rama actual: `hotfix-18.1`
 Archivos modificados: 1 (3 inserciones, 1 eliminacion)

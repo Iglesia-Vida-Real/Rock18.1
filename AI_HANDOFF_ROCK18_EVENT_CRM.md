@@ -1,5 +1,10 @@
 # AI Handoff: Rock 18.1 Event + CRM UX/I18N
 
+> **Última actualización:** 2026-10-15 (revisión de traspaso). Estado verificado con `git log`: el último cambio de código en este alcance es `7fc618ef10` (2026-06-22: FEL/NIT + rediseño del wizard), que este documento ya cubre. `Crm/FamilyPreRegistration` sin cambios desde 2026-02-23 (`ebe7f8d459`) y los DatePicker de `Framework/Controls` desde 2026-02-21 (`ee2fa59514`). No hay trabajo sin commitear en estas áreas.
+> - Las fechas "2026-06-15" y "2026-06-18" de las secciones de FEL y rediseño son fechas de trabajo; ambas cosas se commitearon juntas el 2026-06-22.
+> - Ojo: este documento es del **bloque core `RegistrationEntry`** (registro de eventos de Rock). El módulo propio de venta de entradas **Eventos** (`Rock.Blocks/Eventos`, `src/Eventos`) es otro sistema: ver `Rock/Model/Eventos/ARCHITECTURE.md` y `docs/eventos-custom/`.
+> - Detalle de los cambios al bloque por commit: `Rock.Blocks/Event/CHANGES.md` (§7 = FEL/NIT y rediseño).
+
 ## Objetivo
 Este documento concentra el contexto funcional y tecnico para continuar trabajo en:
 - `Event/RegistrationEntry`

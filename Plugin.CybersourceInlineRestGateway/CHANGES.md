@@ -1,5 +1,16 @@
 # Cybersource Inline REST Gateway — Contexto para Claude Code
 
+Última actualización: 2026-10-15 (revisado; sin cambios de código C# desde 2026-06-06)
+
+> **Nota 2026-10-15.** El 2026-08-05 el `.obs`/`.obs.js` servido en
+> `RockWeb/Plugins/CybersourceInlineRestGateway/` se encontró corrupto (bytes nulos por un
+> apagón) y se restauró desde la copia sana de `Deploy/` (commit `1e1efd641f`). Si un asset
+> aparece "en blanco" con tamaño normal, verificar bytes nulos antes de usar cualquier copia.
+> El flujo de donaciones Dar (`Rock.Blocks/Dar/CybersourceDonationEntry.cs`) habla con la API
+> REST de Cybersource por su cuenta y tiene su propio endurecimiento (rate limit, reCAPTCHA,
+> HTTPS forzado): ver `Rock.Blocks/Dar/CHANGES.md`. La advertencia de abajo sobre falta de
+> rate limiting aplica solo a este plugin (`CreatePaymentToken`).
+
 ## Qué es Cybersource y por qué VidaReal lo usa
 
 Cybersource es una pasarela de pago global de Visa Inc., ampliamente usada en el mercado estadounidense e internacional. VidaReal lo usa para procesar donaciones en dólares desde su módulo DAR (Donaciones y Recaudación) integrado con Rock RMS. La pasarela acepta tarjetas Visa, Mastercard, Amex y Discover, y se autentica con un esquema HMAC-SHA256 firmado, sin redirigir al usuario a una pantalla externa.

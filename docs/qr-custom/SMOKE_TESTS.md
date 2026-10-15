@@ -4,6 +4,15 @@ Pruebas en orden de prioridad tras un deploy. Arquitectura: `Rock/Model/Qr/ARCHI
 Despliegue y configuración: `docs/qr-custom/DEPLOY.md` — **hacer §B de ese documento ANTES de
 empezar acá**.
 
+Última actualización: 2026-10-15
+
+**Estado al 2026-10-15:** el módulo está commiteado (`81d2622dbc`, 2026-10-06) salvo el filtro por
+código del panel de Uso (en producción, PENDIENTE DE COMMIT, ver `DEPLOY.md` §G y la prueba §6.8
+de abajo). Dominio corto: **`q.vidareal.tv`** (DNS + TLS + binding desde 2026-09-29). **El módulo
+está operativo en producción** (confirmado por Rodolfo, 2026-10-15): sitio del dominio corto
+funcionando y migraciones 001–007 aplicadas. Este documento queda como runbook para cualquier
+redeploy o upgrade.
+
 **Estado al 2026-09-28:** en dev hay 2 códigos, **ambos estáticos**. Hay **0 códigos dinámicos**
 y **0 escaneos** del módulo (los 577 escaneos de `Interaction` son short links del Wallet). O sea:
 **la prueba #2 —el ciclo completo de un QR dinámico— nunca ha corrido.** Es la crítica, igual que
@@ -297,6 +306,16 @@ por ruta directa: `/qr`, `/qr/codigo/{QrCodeId}`.
 7. Navegación entre las tres pantallas (Catálogo ↔ Uso ↔ Reportería) por los botones.
    **Esperado:** los seis enlaces funcionan. Los cablea la migración 006, porque el menú de Admin
    Tools no muestra las nietas.
+8. **Filtro por código en Uso (en producción, PENDIENTE DE COMMIT al 2026-10-15).**
+   - En el catálogo, clic en «ver métricas» de un código dinámico.
+     **Esperado:** abre Uso con `?QrCodeId=<IdKey>`, la barra «Viendo solo <nombre>» y todas las
+     cifras (KPIs, serie, dispositivo, procedencia) solo de ese código.
+   - Tabla «Todos los códigos»: buscar con y sin acentos, filtrar por categoría (incl. «Sin
+     categoría»), marcar «Incluir inactivos», paginar (20 por página), clic en una fila.
+     **Esperado:** el panel se filtra y la URL cambia sin agregar entradas al historial.
+   - «× Ver todos los códigos». **Esperado:** vuelve al catálogo completo y quita `QrCodeId`.
+   - Abrir Uso con un `QrCodeId` inventado. **Esperado:** abre con todo el catálogo, sin error.
+   - Cambiar el rango con un filtro puesto. **Esperado:** el filtro se conserva.
 
 ---
 
@@ -336,7 +355,7 @@ por ruta directa: `/qr`, `/qr/codigo/{QrCodeId}`.
 
 ---
 
-## Resumen de bloqueantes para el 22-oct
+## Resumen de bloqueantes (definidos para el 22-oct-2026; el módulo ya está en prod — usar tras cualquier redeploy)
 
 | # | Prueba | Por qué bloquea |
 |---|---|---|
@@ -351,6 +370,6 @@ por ruta directa: `/qr`, `/qr/codigo/{QrCodeId}`.
 | 7 | Grupo «Generador de QR» poblado | Con 0 miembros nadie puede usar el módulo |
 
 Todo lo demás (§3 estáticos, §4 descargas, §5 baja/reactivación, §6 reportería, §8 regresión) es
-**deseable antes del 22-oct pero no bloquea la primera impresión**, con una excepción: si el
+**deseable pero no bloquea una impresión**, con una excepción: si el
 material que se va a imprimir **lleva logo**, el paso **4.8** (escanear un código con logo impreso
 en papel) pasa a ser bloqueante para ese material.

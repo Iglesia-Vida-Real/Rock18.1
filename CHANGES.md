@@ -1,5 +1,7 @@
 # CHANGES.md — Fork VidaReal de Rock CMS (hotfix-18.1)
 
+Última actualización: 2026-10-15
+
 ## Descripcion del repositorio
 
 Este repositorio es un **fork de [SparkDevNetwork/Rock](https://github.com/SparkDevNetwork/Rock/tree/hotfix-18.1)** en su rama `hotfix-18.1`, adaptado para **VidaReal** — una iglesia latinoamericana que opera su plataforma digital en español (vidareal.tv).
@@ -7,9 +9,28 @@ Este repositorio es un **fork de [SparkDevNetwork/Rock](https://github.com/Spark
 - **Upstream original:** https://github.com/SparkDevNetwork/Rock/tree/hotfix-18.1
 - **Rama de trabajo:** `hotfix-18.1`
 - **Inicio de personalizaciones:** commit `ca2ca0ec94` — "Bloques nuevos" (10 de febrero de 2026)
-- **Ultimo commit de VidaReal:** `1b9b247e48` — "Up to date" (3 de septiembre de 2026)
-- **Sin commit en working tree (al 2026-09-07):** los cambios del módulo Eventos/Boletería del 2026-07-03/04 (multi-sesión, calendario público, visibilidad, workflow launcher, archivado, reenvío admin) y **todo el trabajo de QREVENT de septiembre** (hotfix de ventana de check-in, pestaña Métricas, migración a `PersonAliasId`, «Bienvenido» por RealTime), más `docs/gps-custom/` completo
+- **Ultimo commit de VidaReal:** `81d2622dbc` — "Eventos y Modulo de QRS" (6 de octubre de 2026)
+- **Sin commit en working tree (al 2026-10-15):** solo el filtro por código del panel de Uso del módulo QR (5 archivos: `Rock.Blocks/Qr/QrMetrics.cs`, `Rock.ViewModels/Blocks/Qr/QrMetrics/QrMetricsBags.cs`, `src/Qr/QrMetrics/types.partial.ts`, `src/Qr/qrMetrics.obs`, `src/Qr/qrCodeList.obs`) — ver `docs/qr-custom/DEPLOY.md` §G — **ya en producción, PENDIENTE DE COMMIT** — más esta actualización de documentación.
+- **Producción (confirmado por Rodolfo, 2026-10-15):** todo lo desarrollado está en producción, incluido el módulo QR Generator (operativo en `q.vidareal.tv`).
+- **Nota 2026-10-15:** todo lo que en este archivo aparece como *"(sin commit)"* / *"NUEVO (sin commit)"* con fecha anterior al 2026-10-06 **ya está commiteado** (ver la tabla de commits). Las marcas se dejaron como registro histórico.
 - **Desarrolladores:** Equipo IT VidaReal (rodobriones)
+
+---
+
+## Estado de traspaso y pendientes (al 2026-10-15)
+
+| Área | Pendiente | Doc de referencia |
+|---|---|---|
+| **QR Generator** | **En producción** (confirmado 2026-10-15): `q.vidareal.tv` funcionando, migraciones 001–007 aplicadas; reemplazó la plataforma externa antes de su vencimiento (22-oct-2026). Pendiente: commitear el filtro de Uso (5 archivos, en prod, PENDIENTE DE COMMIT); renovar el certificado de `q.vidareal.tv` el 2026-12-28 (Certify no actualiza el binding: re-vincular a mano). | `docs/qr-custom/DEPLOY.md` |
+| **Eventos** | §9.39–§9.40 (DLLs + migraciones hasta 025 + bundles + `.obs.js` de Epay) **en producción** (confirmado 2026-10-15). Queda: dejar registrado un cobro real de punta a punta con su FEL; decisiones abiertas (Amex en Epay, contador en pasos 3-4). | `docs/eventos-custom/RESEARCH_Y_PLAN.md` §9.41 |
+| **QREVENT** | Ventana «Bienvenido» de 30 min + bloqueo `-5`, fix de deadlock y fix iOS/WebView **en producción** (confirmado 2026-10-15). Queda: ver funcionar el aviso RealTime con un escaneo real; decidir correos duplicados y cancelación de reserva ya escaneada. | `Rock.Blocks/QREVENT/CHANGES.md` |
+| **Direcciones GT** | En producción (confirmado 2026-10-15). Sin registro de que la lista de 340 municipios se haya revisado contra el INE: **verificar**. Recordar que es parche al core: re-aplicar en cada upgrade. | fila «Direcciones Guatemala» abajo |
+| **Métricas de correo (SendGrid)** | Event Webhook en producción desde 2026-09-09 (solo configuración, sin código). Pendientes (de código/configuración, no de deploy): validar la firma ECDSA en `RockWeb/App_Code/TwilioSendGrid.ashx.cs` (endpoint abierto: un `bounce` falso desactiva correos reales; tocar App_Code exige reinicio completo), aislar dev con otra API key, fijar `RetentionDuration` del canal Communication. | — (sin doc propio) |
+| **GPS** | Diseño cerrado, **sin código**. Precondición (reservas a `PersonAliasId`) cumplida en prod 2026-09-06. | `docs/gps-custom/README.md` |
+| **Traductor** | Congela textos dinámicos de Vue (usar `notranslate`) y "traduce" español a español (Reportería→Reportes). | `Plugin.VidaRealTranslator/CHANGES.md` |
+| **Build** | El procedimiento documentado enumera 7 plugins; falta agregar `Plugin.VidaRealQr` (8.º; su DLL ya está en prod). | `docs/qr-custom/DEPLOY.md` §A.3 |
+| **WhatsApp** | Limpiar los Global Attributes `Twilio*WhatsApp*` huérfanos desde la migración del botón del Check-in Manager al transport (2026-08-03). | `Rock.WhatsApp/CHANGES.md` |
+| **Upgrades de Rock** | Parches al core que hay que re-verificar en cada merge upstream: `Sms.ProcessResponse` (+`SmsActionConversations`), `AddressControl`/`AddressCascade`, `RegistrationEntry` (NIT/FEL). | `Rock/CHANGES.md` |
 
 ---
 
@@ -25,11 +46,14 @@ Este repositorio es un **fork de [SparkDevNetwork/Rock](https://github.com/Spark
 | **Wallet (pases digitales)** | Módulo self-hosted de pases Apple/Google Wallet (esquema `_com_vidareal_Wallet_*`): plantillas con diseño JSON+Lava, pkpass firmado, updates push APNs, PassKit Web Service, filtro Lava `WalletPassUrl`, admin de plantillas y bloque "Pase Digital" (tarjeta web del pase con QR de check-in). Migraciones 001–016 en `Plugin.VidaRealWallet`. Ver `docs/wallet-module/RESEARCH_Y_PLAN.md` |
 | **WhatsApp Transport** | Transporte de comunicacion nuevo via WhatsApp Business Cloud API (Meta) |
 | **Plugins de pasarela** | `Plugin.CybersourceInlineRestGateway` — gateway Cybersource como plugin Rock independiente; `Plugin.EpayVisanetGateway` — gateway ePay Visanet Guatemala via SOAP |
-| **Eventos/Boletería custom** | Producto propio de boletería end-to-end (NO reusa `Registration*`): esquema `_com_vidareal_Events_*`, 7 bloques Obsidian (admin, checkout con pago/FEL, mis entradas, scanner, reportería, catálogo de preguntas, calendario público), permisos por-usuario, multi-sesión, visibilidad (público/privado/contraseña), workflow launcher por evento/boleto, archivado, migraciones 001–021 en `Plugin.VidaRealEvents`. Arquitectura hexagonal: lógica en `Rock/Model/Eventos/Services/`. Ver `Rock/Model/Eventos/ARCHITECTURE.md` |
+| **Eventos/Boletería custom** | Producto propio de boletería end-to-end (NO reusa `Registration*`): esquema `_com_vidareal_Events_*`, 7 bloques Obsidian (admin, checkout con pago/FEL, mis entradas, scanner, reportería, catálogo de preguntas, calendario público), permisos por-usuario, multi-sesión, visibilidad (público/privado/contraseña), workflow launcher por evento/boleto, archivado, migraciones 001–025 en `Plugin.VidaRealEvents` (al 2026-10-15). Arquitectura hexagonal: lógica en `Rock/Model/Eventos/Services/`. Ver `Rock/Model/Eventos/ARCHITECTURE.md` |
 | **Temas / UI** | Tema `VidAventuracheckin` para check-in infantil con animaciones (balloons.js, confetti, sonidos) |
 | **Internacionalización (i18n)** | Textos en español en bloques de Security, Event/RegistrationEntry, Crm/FamilyPreRegistration |
 | **CheckIn Core** | Modificaciones menores a bloques CheckIn de Rock (Admin.ascx, ActionSelect, MultiPersonSelect, etc.) |
 | **Direcciones Guatemala** | Cascada Departamento → Municipio en el control nativo de dirección (WebForms y Obsidian). Datos: seed idempotente `Scripts/VidaReal/direcciones-gt.sql` (config país GT, 22 departamentos en DT *Address State*, DT *Municipio* guid `85788452-69E0-45C5-B7A4-8134AFDC5975` con 340 municipios y atributo `Departamento`). La regla de cascada vive en **un solo lugar**: `Rock/Model/Core/Location/AddressCascade.cs` (archivo nuevo, `AddressCascade.Get(countryCode, stateCode)`), consumido por ambos stacks. Core parchado (re-aplicar en upgrades): `Rock/SystemGuid/DefinedType.cs` (+`LOCATION_ADDRESS_MUNICIPALITY`), `Rock/Web/UI/Controls/AddressControl.cs` (`_ddlCity`, `BindCities`, AutoPostBack en state **solo** si el país tiene cascada), `Rock.Rest/v2/ControlsController.cs` (cities en `AddressControlGetConfiguration`), `Rock.ViewModels/Rest/Controls/AddressControl*Bag.cs` (+`StateCode`, +`Cities`/`HasCityList`/`SupportsCityList`), `Rock.JavaScript.Obsidian/Framework/Controls/addressControl.obs` (+dropdown municipio con watch de state) y sus `.d.ts`. Valores legados en texto libre se preservan como opción extra; el select solo limpia el municipio cuando el usuario cambia de departamento. UX: en países con cascada el Departamento se renderiza **antes** del Municipio invirtiendo el orden real del DOM (el `.form-row` de Rock usa el grid flotado de Bootstrap 3, donde `order` de flexbox no aplica), y las opciones vacías llevan el nombre del campo, porque los `<select>` de HTML no muestran `placeholder`. Anchos del layout con cascada: departamento `col-sm-4` (los nombres largos no caben en el `col-sm-3` nativo) y municipio `col-sm-5`. Si el State guardado no corresponde a ningún departamento (dato sucio, p. ej. `State='GT'`), el municipio degrada a campo de texto libre |
+| **QR Generator** (2026-09/10) | Generador de QR institucionales que reemplazó una plataforma externa antes de su vencimiento (22-oct-2026); **en producción** desde oct-2026. Dominio y servicios en `Rock/Model/Qr/` (`QrCode`, tabla `_com_vidareal_Qr_Code`; `QrCatalogService`, `QrRenderService`, `QrMetricsService`), 4 bloques en `Rock.Blocks/Qr/` (detalle, catálogo, uso, reportería), bags en `Rock.ViewModels/Blocks/Qr/`, `.obs` en `src/Qr/`, migraciones 001–007 en `Plugin.VidaRealQr` (`com.vidareal.Qr.dll`), 116 tests MSTest en `Rock.Tests/Model/Qr/`. QR dinámico = `PageShortLink` nativo bajo el dominio corto `q.vidareal.tv`. Ver `Rock/Model/Qr/ARCHITECTURE.md` y `docs/qr-custom/` |
+| **GPS (diseño)** | Reemplazo del plugin WordPress `gps`. Solo documentación (`docs/gps-custom/`), sin código |
+| **Passwordless selectivo por página** | Shortcode Lava `requiereacceso` + página `/acceso` con el bloque Login Obsidian en modo passwordless (2026-08-05). **Solo configuración en el admin de Rock, sin código.** No denegar View a anónimos en las páginas protegidas (saltaría al login global) |
 | **Herramientas de desarrollo** | SQL de hardening para QREVENT y SundayService en `Dev Tools/Sql/` |
 
 ---
@@ -68,6 +92,22 @@ Todos los commits por debajo de `ca2ca0ec94` son del upstream SparkDevNetwork y 
 | 2026-09-01 → 09-07 | *(sin commit)* | **QREVENT servicio dominical: cuatro cambios, tres ya en producción** — (1) la ventana de check-in del escáner abre 15 min antes del servicio en vez de 10; (2) contador de ingresos por slot y **pestaña Métricas** en el bloque de Cupos: dashboard de barras por semana y por horario con reservas, asistencia y no-show (`GetWeeklyMetrics`, Chart.js); (3) **migración de identidad a `PersonAliasId`** en `SundayServiceReservation`/`Hold` — cierra el riesgo de reservas huérfanas tras fusionar personas, precondición de la dedup de GPS; Step1 + DLL + Step2 aplicados en prod el 06-sep y verificados el 07-sep; (4) **«Bienvenido» en el teléfono al escanear** por Rock RealTime (topic propio en `Rock.Blocks`, canal por reserva, socket solo el día del servicio), con la tarjeta acotada a 10 min. Docs: `Rock.Blocks/QREVENT/CHANGES.md`, `Rock.JavaScript.Obsidian.Blocks/src/QREVENT/CHANGES.md`, `Dev Tools/Deploy/SundayService_PersonAlias/README.md`. |
 | 2026-09-01 → 09-04 | *(sin commit)* | **Diseño del módulo GPS custom** — Producto propio de gestión de grupos pequeños en reemplazo del plugin WordPress `gps` (14 425 líneas de PHP + MariaDB). Diseño cerrado, **sin código todavía**: tablas propias `_com_vidareal_Gps_*` (sin `ConnectionRequest`), `Group`/`Person`/`PersonAlias` nativos, semáforo persistido, correos por workflow lanzado desde C#, importador en dos mitades (Python extrae, job de Rock escribe), 17 pantallas del sistema actual mapeadas a 11 bloques y 6 vistas, más kanban, portal móvil del líder y cableado para un agente de seguimiento. 7 documentos en `docs/gps-custom/`. |
 | 2026-08-04 | *(sin commit)* | **OTP passwordless por plantilla WhatsApp Authentication** — El código del login passwordless (system communication 40) ahora sale por la plantilla `auth_vidareal` de categoría Authentication de Meta (copy fijo + botón "Copiar código"), en cumplimiento de la política de Meta para OTPs. Ruteo nuevo en `WhatsAppTransport`: atributos `OTP Template Name/Language/System Communication Ids`; el payload incluye el código como parámetro de body y del botón copy-code (`sub_type: "url"`). Ver `Rock.WhatsApp/CHANGES.md` §"Códigos de un solo uso". |
+| 2026-07-02 | `0797e533bf` | **Eventos Translator, Epay, Odoo** — Commit del módulo Eventos/Boletería (entidades, servicios, migraciones), ajustes del traductor y del control Epay |
+| 2026-07-03 | `7602e9bbef` | **Update Eventos** — Multi-sesión, correo de envío en paso Pago, calendario público y visibilidad (migraciones 018–020) |
+| 2026-07-04 | `3de2f27f59` | **Eventos y Sunday Reservation** — Workflows/archivado de eventos (021), job de mantenimiento, hardening v2 del SQL de reservas dominicales |
+| 2026-07-06 | `33d05949b7` | **Produccion Live** — Salida a producción de Eventos; ajustes de Security/Login; `Dev Tools/EventsLoadTest` |
+| 2026-07-07 → 07-08 | `951208e04a`, `7d8adb2462`, `1fe6076da6` | **Módulo Wallet** — pases Apple/Google self-hosted, PassKit Web Service, filtro `WalletPassUrl`, correo de donación con pase |
+| 2026-07-14 | `4c41beb891` | **DupDetect** — `Plugin.VidaRealDupDetect` (detección de duplicados de personas) |
+| 2026-07-15 | `15117fa12b` | **Create Onboarding** — `ONBOARDING.md` |
+| 2026-07-24 | `bd912767f8` | **Up to date** — WhatsApp: acción «WhatsApp Send» con plantilla por workflow + fix error 132000; hook `commit-msg`. ⚠ Commiteó `RockWeb/Plugins` corrupto (bytes nulos), restaurado el 08-05 |
+| 2026-08-05 | `1e1efd641f`, `0c380daec6`, `42886af837` | **Restauración de `RockWeb/Plugins`** — Translator original desde respaldo + guard `inFlight`; plugins de terceros restaurados. Incidente cerrado (62/62 sanos) |
+| 2026-08-12 | `0c44380057` | **Up do tade** — Pase Digital (Wallet 014–016), login passwordless rediseñado, `vrSimpleRegistration`, OTP WhatsApp, atribución de entrantes WhatsApp (core `Sms.ProcessResponse`), fuentes Brújula VR |
+| 2026-08-26 | `4e7cf2264c` | **Up to date** — Cascada Departamento→Municipio (core parchado + `direcciones-gt.sql`), dashboard del traductor (migración 004), fix de deadlock del check-in |
+| 2026-08-27 | `c5e6c39707`, `b6444eb7fd` | **Reservation Escaner** — Rediseño de ReservationScanner y SundayServiceRegistration, fuente Montserrat |
+| 2026-09-03 | `1b9b247e48` | **Up to date** — Blindaje de red del escáner, hora del servidor, chunking del traductor, `WalletPassKitController` |
+| 2026-09-07 | `ae2f580256` | **Cambios** — QREVENT: ventana 15 min, pestaña Métricas, migración a `PersonAliasId` (Step1/Step2), «Bienvenido» RealTime; docs de `docs/gps-custom/` |
+| 2026-09-24 | `ab11c9d250` | **Mejoras en Eventos** — Rediseño 2026 de los 7 bloques de Eventos (migraciones 022–024); QREVENT: ventana «Bienvenido» de 30 min + bloqueo `-5` |
+| 2026-10-06 | `81d2622dbc` | **Eventos y Modulo de QRS** — Ajuste de Eventos a las capturas del diseñador (migración 025, textos del control Epay) + **módulo QR Generator completo** (migraciones QR 001–007, tests) |
 
 ---
 
@@ -116,7 +156,7 @@ Estos archivos fueron **creados desde cero** por VidaReal y no tienen contrapart
 - `Rock.Blocks/Eventos/` — 7 bloques adaptadores: `EventAdmin` (+`EventAdminBags`), `EventCheckout`, `MyTickets`, `TicketScanner`, `EventReport`, `QuestionCatalog`, `EventCalendar`
 - `Rock.ViewModels/Blocks/Eventos/` — bags del checkout
 - `Rock.JavaScript.Obsidian.Blocks/src/Eventos/` — 7 `.obs` + `EventCheckout/*.partial.*` (shell + estado compartido + 5 pasos; ver su `README.md`)
-- `Plugin.VidaRealEvents/` — proyecto de solo migraciones (`com.vidareal.Events`, 001–021; ver su `README.md`)
+- `Plugin.VidaRealEvents/` — proyecto de solo migraciones (`com.vidareal.Events`, 001–025 al 2026-10-15; ver su `README.md`)
 - `docs/eventos-custom/RESEARCH_Y_PLAN.md` — doc maestro (historial §9.x) · `docs/eventos-custom/SMOKE_TESTS.md` — runbook de pruebas runtime
 
 ### Modulo Wallet — pases de Apple/Google Wallet self-hosted (2026-07-06 → 08-10)
@@ -128,6 +168,16 @@ Estos archivos fueron **creados desde cero** por VidaReal y no tienen contrapart
 - `Rock.Blocks/Wallet/PaseDigital.cs` + `src/Wallet/paseDigital.obs` — tarjeta web del pase digital (diseño navy del pase, QR de check-in, campus; 2026-08-10)
 - `Plugin.VidaRealWallet/` — proyecto de solo migraciones (`com.vidareal.Wallet`, 001–016; ver su `README.md`)
 - `docs/wallet-module/RESEARCH_Y_PLAN.md` — doc maestro (arquitectura, runbook de deploy §8b, historial §9)
+
+### Modulo QR Generator (2026-09-24 → 10-06; commit `81d2622dbc`)
+- `Rock/Model/Qr/` — `QrCode`, `QrDesign`, `QrEnums`, `QrStaticPayloads` + `ARCHITECTURE.md`
+- `Rock/Model/Qr/Services/` — `QrCatalogService`, `QrRenderService`, `QrMetricsService`
+- `Rock.Blocks/Qr/` — `QrCodeDetail`, `QrCodeList`, `QrMetrics`, `QrDashboard`
+- `Rock.ViewModels/Blocks/Qr/` — bags (incl. `QrSectionMetaBag`)
+- `Rock.JavaScript.Obsidian.Blocks/src/Qr/` — 4 `.obs` + `types.partial.ts` a mano + `tsconfig.json` propio
+- `Plugin.VidaRealQr/` — proyecto de solo migraciones (`com.vidareal.Qr`, 001–007; la 002 es no-op y la 007 borra su índice)
+- `Rock.Tests/Model/Qr/` — 116 tests MSTest (primer módulo VidaReal con tests)
+- `docs/qr-custom/DEPLOY.md` (runbook + estado) · `docs/qr-custom/SMOKE_TESTS.md`
 
 ### Modulo WhatsApp
 - `Rock.WhatsApp/` — Proyecto C# completo: transport para WhatsApp Business Cloud API (Meta)
@@ -147,7 +197,7 @@ Estos archivos fueron **creados desde cero** por VidaReal y no tienen contrapart
 - `Dev Tools/Sql/QREVENT_SundayService_PersonAlias_Step1.sql` — **NUEVO (sin commit)**. Migracion de identidad a `PersonAliasId`, fase expandir: columnas, backfill, FK a `PersonAlias`, indices y los 4 SPs en doble escritura. Aplicado en prod 2026-09-06
 - `Dev Tools/Sql/QREVENT_SundayService_PersonAlias_Step2.sql` — **NUEVO (sin commit)**. Fase contraer: `NOT NULL`, indices unicos por alias, limpieza de los viejos. Aplicado en prod 2026-09-06 (v2)
 - `Dev Tools/Sql/QREVENT_SundayService_PersonAliasFix.sql` — **NUEVO (sin commit)**. Diagnostico y reparacion de reservas huerfanas por fusion de personas (bloques 1-2 solo lectura)
-- `Dev Tools/Deploy/SundayService_PersonAlias/README.md` — **NUEVO (sin commit)**. Registro del despliegue de la migracion (orden, incidente `Msg 5074`, verificacion) y binarios pendientes de subir. Los `.dll`/`.js` de ese folder estan en `.gitignore`
+- `Dev Tools/Deploy/SundayService_PersonAlias/README.md` — **NUEVO (sin commit)**. Registro del despliegue de la migracion (orden, incidente `Msg 5074`, verificacion). Kit OBSOLETO como artefacto (no reusar sus binarios; todo ya está en prod). Los `.dll`/`.js` de ese folder estan en `.gitignore`
 - `Dev Tools/Sql/CHANGES.md` — Documentacion del SQL de hardening y de la migracion a `PersonAliasId` (que hace, cuando ejecutar, idempotencia)
 - `Rock.Blocks/QREVENT/CHANGES.md` y `Rock.JavaScript.Obsidian.Blocks/src/QREVENT/CHANGES.md` — Bitacora del modulo QREVENT (backend y frontend): estado en produccion, cada cambio con su motivo, y los hallazgos abiertos
 - `docs/gps-custom/` — **NUEVO (sin commit)**. Diseño del modulo GPS: `SDD.md` (leer primero), `DATA_MODEL.md`, `BUSINESS_RULES.md`, `ETL.md`, `UI_REFERENCE.md`, `SMOKE_TESTS.md`, `README.md`
@@ -521,6 +571,7 @@ cd C:\repos\Rock15.5
 #    Plugin.VidaRealEvents, Plugin.VidaRealWallet, Plugin.VidaRealDupDetect,
 #    Plugin.VidaRealTranslator, Plugin.OdooEventSale, Plugin.EpayVisanetGateway,
 #    Plugin.CybersourceInlineRestGateway
+#    PENDIENTE (2026-10-15): documentar Plugin.VidaRealQr (com.vidareal.Qr.dll, ya en prod) como 8.º plugin
 #    Cada uno: dotnet restore, msbuild /p:Configuration=Release, y copiar su DLL a RockWeb\Bin\
 ```
 

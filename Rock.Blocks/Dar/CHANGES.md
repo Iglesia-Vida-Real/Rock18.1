@@ -1,7 +1,8 @@
 # Módulo DAR — Backend C# — Historial de cambios y documentación
 
 > **Rama:** `hotfix-18.1`
-> **Última actualización:** 2026-07-08
+> **Última actualización:** 2026-10-15 (revisión de traspaso: plantilla de correo
+> rediseñada 2026-09-03 y tabla de commits al día; sin cambios en los `.cs` desde 2026-08-26)
 >
 > Este documento cubre los dos bloques C# del módulo DAR, el flujo completo
 > de donación, la integración con Cybersource, las 4 features de anti-fraude,
@@ -671,20 +672,25 @@ workflow el que lo usa como cuerpo de un paso `Send Email`. El workflow de
 donación lo envía siempre; el workflow de recibo lo envía solo si el donante
 solicitó recibo y tiene NIT validado.
 
-**Diseño (rediseño 2026-08-19):** header navy `#0e364c` con logo VidaReal,
-título "¡Gracias Por Tu Generosidad!" y monto grande con moneda; card blanca
-con detalles de transacción (incluye la fila condicional "Tipo de donación");
-sección de facturación condicional (solo si hay NIT); caja "Notas" con la nota
-escrita por el donante; banda gris `#e3e3e3` con el mensaje de cierre; footer
-navy `#0e364c` con logo e íconos sociales (Instagram/Facebook/YouTube vía
-Global Attributes). Fuente Montserrat. Diseñado para clientes de email sin CSS
-moderno (usa tablas HTML con estilos inline).
+**Diseño (rediseño 2026-08-19, simplificado 2026-09-03 en commit `1b9b247e48`):**
+header navy `#0e364c` con logo VidaReal (Global Attribute `logoblancopq`) y
+badge "Test" si `mode` no es live; hero con título "¡Gracias Por Tu
+Generosidad!" y monto grande con moneda; card blanca con detalles de
+transacción (Donante, fila condicional "Tipo de donación", Correo, Monto)
+separados por barras `divider-bg` de 3 px; sección de facturación condicional
+(solo si hay `nitName`); párrafo "Notas" (solo si hay nota); cierre fijo
+"¡Agradecemos tu donación! Tu recibo llegará en breve. — Equipo de Vida Real";
+aviso legal ("Este correo fue enviado a {{ donorEmail }}" + "no responder");
+footer navy con `nombrevrblanco` e íconos sociales (Global Attributes
+`IconoFacebookBlanco`, `IconoInstagramBlanco`, `IconoYoutubeBlanco`). Fuente
+Montserrat. Diseñado para clientes de email sin CSS moderno (tablas HTML con
+estilos inline). El `<title>` pasó de "– DAR" a "— Vida Real".
 
-**Caja "Notas":** muestra `{{ note }}` (la nota que el donante escribió en el
-formulario, con saltos de línea convertidos a `<br>` por `NewlineToBr`). Si el
-donante no escribió nota y sí pidió recibo con NIT, cae al texto genérico
-"Agradecemos tu donación. Tu recibo llegará en breve."; si no hay nota ni NIT,
-la caja no se renderiza.
+**Notas:** muestra `{{ note }}` (la nota que el donante escribió en el
+formulario, con saltos de línea convertidos a `<br>` por `NewlineToBr`). Desde
+2026-09-03 ya NO hay caja con borde ni texto genérico de respaldo: si la nota
+viene vacía el bloque no se renderiza, y el texto "Tu recibo llegará en breve"
+quedó como cierre fijo para todos.
 
 **Modo claro / oscuro:** la plantilla define su paleta en estilos inline (modo
 claro, que es el fallback de Outlook de escritorio y de cualquier cliente que
@@ -693,18 +699,19 @@ ignore `<style>`) y la sobreescribe por clase en el bloque
 — y con los prefijos `[data-ogsc]` / `[data-ogsb]` de Outlook.com y Outlook
 móvil. Cada elemento con color lleva la clase que le corresponde:
 
+Paleta vigente desde 2026-09-03 (oscuro en grises neutros; se eliminaron
+`bg-row`, `bg-graybox`, `txt-soft`, `txt-footer`, `divider` y `divider-strong`):
+
 | Clase | Rol | Claro | Oscuro |
 |---|---|---|---|
-| `bg-page` | fondo de la página | `#ececec` | `#14181c` |
-| `bg-card` | fondo de las cards | `#ffffff` | `#1b2126` |
-| `bg-row` | fila destacada del monto | `#f9fafb` | `#242b31` |
-| `bg-graybox` | banda gris de cierre | `#e3e3e3` | `#3c4b54` |
-| `bg-navy` | header y footer | `#0e364c` | `#0b2c3e` |
-| `txt-navy` | texto principal | `#0e364c` | `#e6eef5` |
-| `txt-label` | etiquetas en mayúsculas | `#0e364c` | `#9dbdd4` |
-| `txt-white` / `txt-soft` | texto sobre navy | `#ffffff` / `#d9d9d9` | `#ffffff` / `#c2cfd9` |
-| `txt-footer` | texto del footer | `#b7b7b7` | `#9aa7b2` |
-| `divider` / `divider-strong` | bordes y separadores | `#f3f3f3` / `#d7d7d7` | `#2b3238` / `#39434b` |
+| `bg-page` | fondo de la página | `#ececec` | `#0a0a0a` |
+| `bg-card` | fondo de las cards | `#ffffff` | `#2f2f2f` |
+| `bg-navy` | header y footer | `#0e364c` | `#1c1c1c` (también como `background-image` para Gmail) |
+| `divider-bg` | barras separadoras de 3 px | `#e5e7eb` | `#414141` |
+| `txt-navy` | texto principal / monto | `#0e364c` | `#ffffff` |
+| `txt-body` | texto de Notas | (inline) | `#e0e0e0` |
+| `txt-label` | etiquetas en mayúsculas | `#8b98a3` | `#a0a0a0` |
+| `txt-white` | texto sobre navy | `#ffffff` | `#ffffff` |
 
 Gmail (app Android/iOS) no respeta `prefers-color-scheme`: invierte los colores
 por su cuenta. No hay forma de controlarlo desde la plantilla; el diseño se
@@ -737,7 +744,9 @@ mantiene legible porque todos los fondos son explícitos (nunca transparentes).
 | `9f55e261e3` | Cambios en sitio y estilos |
 | `7b119b9fc4` | Up to date DAR |
 | `4f80ff56b0` | BUGS y WA |
-| _(sin commit)_ | **Endurecimiento security review #2–#8**: fila `Pending` durable (idempotencia anónima + hueco "cobrado no guardado"), `sp_getapplock` cross-node, batch por moneda, `idemKey` obligatorio cap 32, HTTPS forzado en Cybersource, purga del rate limiter |
+| `7fc618ef10` | (2026-06-22) **Endurecimiento security review #2–#8**: fila `Pending` durable (idempotencia anónima + hueco "cobrado no guardado"), `sp_getapplock` cross-node, batch por moneda, `idemKey` obligatorio cap 32, HTTPS forzado en Cybersource, purga del rate limiter. Antes figuraba aquí como "sin commit"; verificado 2026-10-15 que entró en este commit |
+| `4e7cf2264c` | (2026-08-26) Atributo de workflow `Note` (nota del donante) + rediseño 2026-08-19 de la plantilla de correo |
+| `1b9b247e48` | (2026-09-03) Plantilla de correo simplificada: paleta oscura neutra, sin caja de Notas con borde, cierre fijo, aviso legal |
 
 ---
 

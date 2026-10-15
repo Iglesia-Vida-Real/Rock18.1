@@ -1,5 +1,19 @@
 # ePay Flow Summary (Rock 18.1)
 
+Última actualización: 2026-10-15
+
+> **Vigencia (revisado 2026-10-15).** El flujo descrito sigue vigente en código:
+> `RegistrationService.GetTotalPayments` resta `FeeCoverageAmount` (línea ~114) y
+> `Rock.Blocks/Event/RegistrationEntry.cs` lo persiste en los dos puntos de guardado.
+> Este documento cubre el flujo de **Event Registration nativo de Rock**. El módulo custom
+> de Eventos/Boletería (`Rock.Blocks/Eventos/EventCheckout.cs`) también cobra con ePay y
+> separa recargo de cobro con la misma convención (`FeeCoverageAmount`); su flujo está en
+> `Rock/Model/Eventos/ARCHITECTURE.md` y `docs/eventos-custom/RESEARCH_Y_PLAN.md`.
+> Cambios posteriores del control (seguridad 2026-06-22, rediseño 2026-07-04, select de
+> cuotas 2026-09-24, textos 2026-10-05) y su estado de despliegue están en
+> `Plugin.EpayVisanetGateway/CHANGES.md`. El `.obs.js` del control con esos cambios está
+> **en producción** (confirmado por Rodolfo, 2026-10-15).
+
 ## Objetivo
 Documentar el flujo de cobro ePay con cuotas y los cambios realizados para:
 - Cobrar `monto evento + recargo`.

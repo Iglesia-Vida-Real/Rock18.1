@@ -1,5 +1,7 @@
 # Cambios en Rock.JavaScript.Obsidian.Blocks — VidaReal fork de Rock 18.1
 
+> **Última actualización:** 2026-10-15 (revisión de traspaso: tsconfig real, módulos nuevos `Eventos`, `Qr`, `Translator`, `Crm/PersonDuplicate*`, `QREVENT/SundayServiceCapacityAdmin.obs`; ver sección "Estado al 2026-10-15" al final)
+
 Rama: `hotfix-18.1`  
 Base de comparacion: commit `ca2ca0ec94`
 
@@ -31,7 +33,7 @@ En el modulo `QREVENT` (ver `src/QREVENT/vendor/zxing.lib.ts`), que expone ZXing
 
 ## tsconfig.json — Nuevos modulos registrados
 
-Se agregaron tres nuevas rutas de modulos al proyecto raiz de TypeScript:
+Se agregaron rutas de modulos al proyecto raiz de TypeScript (originalmente tres; `./src/Qr` se sumo con el modulo QR Generator, commit `81d2622dbc`):
 
 ```json
 { "path": "./src/Dar" },
@@ -146,3 +148,32 @@ Ademas de los modulos nuevos, se modificaron bloques del core de Rock para adapt
 | `src/FamilyHub/tsconfig.json` | Nuevo (configura compilacion del modulo FamilyHub) |
 | `src/QREVENT/tsconfig.json` | Nuevo (configura compilacion del modulo QREVENT) |
 | `package-lock.json` | Actualizado automaticamente al agregar dependencias ZXing |
+| `tsconfig.json` (2026-10-06) | Agregada referencia a `./src/Qr` (unico archivo trackeado fuera de `src/Qr` que toco el modulo QR) |
+
+---
+
+## Estado al 2026-10-15 (revision de traspaso)
+
+### Como se compila realmente
+
+- `npm run build` = `build:types` + rollup (`../Rock.JavaScript.Obsidian/Build/rollup-mt.js rollup.config.cjs`). Rollup bundlea **todos** los `.obs` bajo `src/`, aunque la carpeta no tenga `tsconfig.json` ni este referenciada en el raiz: por eso existen bundles en `RockWeb/Obsidian/Blocks/` para `Eventos`, `Wallet`, `Translator` y `LayoutCustom`, que no aparecen en `tsconfig.json`. El `tsconfig` solo gobierna el chequeo de tipos de esa carpeta.
+- `tsconfig.json` raiz tiene la entrada `./src/Event` **duplicada** (inofensivo).
+- `npm run build` puede devolver exit 0 aunque falle un tsconfig: verificar siempre tamano/fecha del `.obs.js` generado. Los avisos "Can't resolve original location" de rollup vienen de `@zxing/browser`.
+- Verificacion post-build de bloques con estilo VidaReal: el bundle no debe contener `_ctx.` ni `resolveComponent` (convenciones de la skill `design-to-obs`).
+- Texto dinamico de Vue (botones busy, contadores) debe ir dentro de `<span class="notranslate">`: el plugin VidaRealTranslator reemplaza nodos de texto y congela el valor. Tambien "corrige" espanol a espanol (p. ej. "Reporteria" -> "Reportes").
+
+### Carpetas VidaReal no descritas arriba
+
+| Carpeta | Contenido | Documentacion |
+|---|---|---|
+| `src/Eventos/` | `eventAdmin`, `eventCalendar`, `eventCheckout` (+ partials en `EventCheckout/`), `eventReport`, `myTickets`, `miPaseDigital`, `questionCatalog`, `ticketScanner` | `src/Eventos/EventCheckout/README.md`, `Rock/Model/Eventos/ARCHITECTURE.md`, `docs/eventos-custom/` |
+| `src/Qr/` | `qrCodeDetail`, `qrCodeList`, `qrDashboard`, `qrMetrics` + `types.partial.ts` por bloque y `QrShared/` (sistema de diseno Brujula VR) | `Rock/Model/Qr/ARCHITECTURE.md`, `docs/qr-custom/` |
+| `src/Translator/` | `translatorDashboard.obs` | `Plugin.VidaRealTranslator/` |
+| `src/Crm/` | `personDuplicateReview.obs`, `personDuplicateDetail.obs` (+ `PersonDuplicateDetail/types.partial.ts`) — DupDetect, 2026-07-14 | `Plugin.VidaRealDupDetect/` |
+| `src/QREVENT/` | ademas de lo listado arriba: `SundayServiceCapacityAdmin.obs` (admin de cupos + pestana Metricas) | `src/QREVENT/CHANGES.md` |
+| `src/Security/` | ademas: `vrSimpleRegistration.obs` y el rediseno passwordless de julio 2026 | `src/Security/CHANGES.md`, `src/Security/Login/CHANGES.md` |
+
+### Trabajo sin commitear (en producción)
+
+- **En producción, PENDIENTE DE COMMIT (2026-10-15):** `src/Qr/qrMetrics.obs`, `src/Qr/qrCodeList.obs`, `src/Qr/QrMetrics/types.partial.ts` — tabla de codigos y filtro por QR en la pestana "Uso". Detalle y estado en `docs/qr-custom/`.
+- **En producción (confirmado por Rodolfo, 2026-10-15):** bundles de `src/Eventos/` (ajuste a capturas del diseñador, 2026-10-05), de `src/Qr/` y de QREVENT (`src/QREVENT/CHANGES.md`). Ya no hay bundles pendientes de subir.

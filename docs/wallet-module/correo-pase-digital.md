@@ -1,5 +1,7 @@
 # Correo del Pase Digital — notas de la plantilla
 
+Última actualización: 2026-10-15 (revisado; sin cambios en la plantilla desde 2026-09-24)
+
 Plantilla: [`correo-pase-digital.html`](correo-pase-digital.html). Se pega tal cual en el cuerpo
 de una comunicación de Rock.
 

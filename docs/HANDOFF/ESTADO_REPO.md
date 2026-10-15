@@ -1,0 +1,157 @@
+# Estado del repositorio al 2026-10-15
+
+> Foto tomada el día del traspaso. Se generó con comandos de solo lectura (`git status`,
+> `git log`, `git for-each-ref`) en `C:\repos\Rock15.5` del dev saliente. **No se ejecutó ninguna
+> limpieza**; las recomendaciones de §6 quedan para el dev entrante.
+
+---
+
+## 1. Remotos
+
+| Remoto | URL | Para qué |
+|---|---|---|
+| `origin` | `https://github.com/rodobriones/Rock15.5.git` | **El fork de Vida Real.** Privado. Aquí se hace push. Está en la cuenta personal del dev saliente → ver §6.1. |
+| `upstream` | `https://github.com/SparkDevNetwork/Rock.git` | Rock oficial. Solo lectura, para comparar y traer hotfixes. |
+
+---
+
+## 2. Ramas: cuáles son nuestras
+
+`origin` tiene ~314 ramas, pero **casi todas son copias heredadas de upstream** (se crearon al
+hacer el fork: `feature-*`, `bugfix-*`, `hotfix-18.2`, `hotfix-18.3`, `release-*`, `master`,
+`pre-alpha-release`, etc.). No tienen ningún commit de Vida Real.
+
+Solo **dos** ramas contienen trabajo propio (57 commits de `rodobriones` en total):
+
+| Rama | Base | Commits propios | Último commit | Estado |
+|---|---|---|---|---|
+| **`hotfix-18.1`** | Rock **18.1** oficial (`upstream/hotfix-18.1` @ `f8e5bcf161`, 2025-12-08) | 43 (2026-02-10 → 2026-10-06) | `81d2622dbc` «Eventos y Modulo de QRS» (2026-10-06) | **Rama viva. Es la que corre en producción. Trabajar aquí.** |
+| `hotfix-1.15.5` | Rock 15.5 | 14 (2026-01-19 → 2026-02-21) | `4e2b65b1e2` «Workflow y Donation entry» | Histórica. Lo que servía se portó a 18.1 (ver `*_Migration_Context.md` en la raíz). No se usa. |
+
+Otras referencias:
+
+- `develop` (local y `origin/develop`): espejo **viejo** del `develop` de upstream (2026-01-16).
+  No tiene nada nuestro. Aunque GitHub la muestre como rama por defecto, **no trabajar en
+  `develop`** ni abrir PRs contra ella.
+- `upstream/hotfix-18.1` no tiene commits nuevos desde la base (`f8e5bcf161`): no hay hotfixes de
+  Rock 18.1 pendientes de traer (al último fetch, 2026-10-15).
+
+---
+
+## 3. Commits sin push
+
+```text
+git log origin/hotfix-18.1..hotfix-18.1   -> (vacío)
+git log origin/develop..develop           -> (vacío)
+git stash list                            -> (vacío)
+```
+
+Todo lo commiteado está en `origin`. (Los 3 commits de la restauración de `RockWeb\Plugins` del
+2026-08-05 —`1e1efd641f`, `0c380daec6`, `42886af837`— ya están pusheados.)
+
+---
+
+## 4. Cambios sin commitear
+
+### 4.1 Código del módulo QR — en producción, PENDIENTE DE COMMIT — NO perder
+
+| Archivo | Cambio |
+|---|---|
+| `Rock.Blocks/Qr/QrMetrics.cs` | Filtro por código en «Uso» + tabla «Todos los códigos» |
+| `Rock.ViewModels/Blocks/Qr/QrMetrics/QrMetricsBags.cs` | Bags nuevos para lo anterior |
+| `Rock.JavaScript.Obsidian.Blocks/src/Qr/qrMetrics.obs` | UI del filtro y la tabla (+373 líneas) |
+| `Rock.JavaScript.Obsidian.Blocks/src/Qr/QrMetrics/types.partial.ts` | Tipos |
+| `Rock.JavaScript.Obsidian.Blocks/src/Qr/qrCodeList.obs` | Enlace «ver métricas» desde el catálogo |
+
+Total: 5 archivos, +480/−41. Compilado y copiado a `RockWeb` de dev el 2026-10-06. **Ya está en
+producción** (confirmado por Rodolfo, 2026-10-15: el módulo QR está operativo en prod con este
+filtro); es lo **único** que queda por versionar. Compila: el 2026-10-15 `msbuild Rock.Blocks` (Release) dio exit 0 y el DLL de
+`bin\Release` es posterior a los fuentes modificados (13:48 → 13:52 del 06-oct). Detalle y plan en
+`docs/qr-custom/DEPLOY.md` §G.
+
+**Acción del dev entrante:** commitearlo tal cual (es lo que corre en prod) antes de cualquier otra
+cosa, para que el repo refleje producción. Mientras esté sin commitear, **cualquier
+`Rock.Blocks.dll` que se compile lo incluye**, y un checkout limpio de `hotfix-18.1` **no**
+reproduce lo que corre en prod.
+
+### 4.2 Documentación (paquete de traspaso)
+
+El día del traspaso se actualizaron muchos `.md` (CHANGES.md de bloques, docs de módulos,
+contextos de migración, READMEs de plugins) y se agregaron `CLAUDE.md`, `docs/HANDOFF/` y
+`Dev Tools/Build/`. Esos cambios son solo documentación y scripts; deben commitearse juntos en un
+commit tipo «Docs: paquete de traspaso».
+
+### 4.3 Artefactos locales que no están en git (y está bien)
+
+`RockWeb\Bin\*.dll`, `RockWeb\Obsidian\`, `RockWeb\web.ConnectionStrings.config`,
+`node_modules`, `bin/obj`, `PrecompiledWeb\` (artefacto viejo; prod **no** es precompilado),
+`Dev Tools\Deploy\**\*.dll|*.js` (kits de deploy locales).
+
+---
+
+## 5. Qué rama usar para trabajar
+
+```powershell
+git switch hotfix-18.1
+git pull
+git switch -c feature/<tema>      # recomendado: ramas cortas y merge a hotfix-18.1
+```
+
+- Producción se compila desde `hotfix-18.1`.
+- No se hace merge hacia upstream (es un fork privado).
+- Para traer un hotfix oficial de Rock: `git fetch upstream` y `git merge upstream/hotfix-18.1`
+  (o el tag de la versión), resolviendo conflictos en los archivos core que tocamos (lista en
+  `CHANGES.md` raíz). Ojo con los parches core documentados: `AddressControl` /
+  `ControlsController` (direcciones GT), `Sms.ProcessResponse` + `SmsActionConversations`
+  (WhatsApp), `Login.cs`, etc.
+- Commits en español. Sin líneas de atribución de IA (`Co-Authored-By: Claude …`).
+
+---
+
+## 6. Recomendaciones de limpieza (NO ejecutadas)
+
+### 6.1 Propiedad del repositorio — prioridad alta
+
+- `origin` está en la **cuenta personal** `rodobriones`. Transferirlo a una organización de GitHub
+  de la iglesia (Settings → Transfer) o, como mínimo, agregar al dev entrante y a TI como admins
+  antes de que el dueño se vaya.
+- Cambiar la rama por defecto en GitHub de `develop` a `hotfix-18.1`.
+
+### 6.2 Secretos
+
+- **La historia de `hotfix-1.15.5` contiene una contraseña de SQL** en
+  `RockWeb/web.ConnectionStrings.config.example` (commit `fee32c3bb3`, 2026-01-22, usuario
+  `RockUser` de una BD local `Rock155`). No está en `hotfix-18.1`. Acción: confirmar con TI si esa
+  credencial existe en algún servidor y **rotarla**; si se decide limpiar la historia, hacerlo con
+  `git filter-repo` coordinado (reescribe hashes) o simplemente borrar la rama `hotfix-1.15.5` del
+  remoto si ya no se necesita.
+- **Resuelto 2026-10-15:** `.claude/settings.local.json` y `Rock.Blocks/.claude/settings.local.json`
+  dejaron de versionarse (`**/.claude/settings.local.json` en `.gitignore`) y se quitaron las
+  rutas personales de `.claude/settings.json`. Las versiones anteriores siguen en la historia de git
+  (solo rutas, sin credenciales).
+
+### 6.3 Ramas
+
+- Borrar del remoto las ~312 ramas heredadas de upstream (no aportan y confunden). Se pueden
+  recuperar de `upstream` en cualquier momento. Mantener: `hotfix-18.1`, y `hotfix-1.15.5` solo si
+  se quiere conservar como archivo (o crear un tag `archivo/rock-15.5` y borrar la rama).
+- Borrar la rama local `develop` o dejarla siguiendo `upstream/develop` en vez de `origin/develop`.
+
+### 6.4 Raíz del repo
+
+Hay varios `.md` de contexto de sesiones en la raíz (`AI_HANDOFF_ROCK18_EVENT_CRM.md`,
+`QREVENT_*_Migration_Context.md`, `Migration_Context_ReservationScanner_FamilyHub.md`,
+`FamilyHub_KnownRelationship_Fix_Context.md`, `EPAY_FLOW_SUMMARY.md`). Están indexados en
+`.claude/CONTEXT_INDEX.md`; moverlos a `docs/historico/` sería más ordenado, actualizando el índice
+en el mismo commit.
+
+### 6.5 Trampa: `BranchCleanup.bat`
+
+Es de upstream y **borra `RockWeb\Bin\*.dll`**, incluidas las DLLs de terceros del Rock Shop que
+ningún build regenera. No correrlo sin antes respaldar esas DLLs (lista en `ONBOARDING.md` §2).
+
+### 6.6 `.gitignore`
+
+Aplicado 2026-10-15: `**/.claude/settings.local.json`.
+Lo demás que es local (`RockWeb/web.ConnectionStrings.config`, `RockWeb/Obsidian/`, `RockWeb/Bin/*.dll`,
+`PrecompiledWeb/`, `TestResults/`, binarios de `Dev Tools/Deploy/`) ya está ignorado.

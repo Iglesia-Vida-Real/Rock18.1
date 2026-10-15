@@ -1,5 +1,8 @@
 ﻿# Cybersource Inline REST Gateway (Rock 18.1)
 
+Última actualización: 2026-10-15 (revisado; sin cambios de código desde 2026-06-06). Contexto completo,
+flujo y advertencias de seguridad en `CHANGES.md` de esta carpeta.
+
 ## Ubicacion
 - Solucion: `CybersourceInlineRestGateway.sln`
 - Proyecto: `CybersourceInlineRestGateway/CybersourceInlineRestGateway.csproj`

@@ -9,6 +9,28 @@ Documentación del módulo: **`Rock/Model/Eventos/ARCHITECTURE.md`** (mapa de ca
 `docs/eventos-custom/RESEARCH_Y_PLAN.md` (doc maestro, historial de sesiones en §9.x) ·
 `docs/eventos-custom/SMOKE_TESTS.md` (runbook de pruebas runtime).
 
+Última actualización: 2026-10-15
+
+> **Estado de despliegue (2026-10-15).** Todo está commiteado en `hotfix-18.1` hasta la migración
+> 025 (commit `81d2622dbc`, 2026-10-06). **En producción** (confirmado por Rodolfo, 2026-10-15) el
+> ajuste de Eventos a las capturas del diseñador (probado en dev el 2026-10-05), que llevó:
+> - `com.vidareal.Events.dll`: corre la **025** (Mis Entradas con layout Blank).
+> - `Rock.dll`, `Rock.ViewModels.dll` y `Rock.Blocks.dll` compilados del MISMO árbol (ver la regla
+>   de las cuatro DLLs abajo).
+> - Bundles de `RockWeb/Obsidian/Blocks/Eventos/`.
+> - El `.obs.js` de Epay en `RockWeb/Plugins/EpayVisanetGateway/Obsidian/`
+>   (ver `Plugin.EpayVisanetGateway/CHANGES.md`).
+>
+> Migraciones hasta la 025 aplicadas en prod. Para verificar el estado antes de un próximo deploy:
+> ```sql
+> SELECT MigrationNumber, MigrationName, CreatedDateTime FROM [PluginMigration]
+> WHERE PluginAssemblyName LIKE '%vidareal.Events%' ORDER BY MigrationNumber;
+> ```
+> Decisiones abiertas del usuario (2026-10-05): ¿Epay rechaza Amex como Dar?; ¿el contador de
+> reserva se oculta en los pasos 3 y 4?; corregir el traductor, que congela textos dinámicos de Vue
+> y cambia español a español (ver `Plugin.VidaRealTranslator/CHANGES.md`); probar un cobro real en
+> el ambiente de pruebas del comercio.
+
 ## Migración consolidada para producción (2026-07-02)
 
 El assembly expone **UNA sola migración**: `017_ProductionSetup.cs` (`[MigrationNumber(17, "18.1")]`),
@@ -112,7 +134,10 @@ revertir con gente comprando no es algo para improvisar.
 ### ⚠️ `Rock.Blocks.dll` arrastra lo que haya en el árbol
 
 `Rock.Blocks.csproj` es estilo SDK: compila **todo** `.cs` bajo `Rock.Blocks/`, commiteado o no.
-Al 2026-10-05 el árbol tiene el módulo QR sin commitear (`Rock.Blocks/Qr/`, cuyos modelos viven en
-`Rock/Model/Qr/` → `Rock.dll`). Un `Rock.Blocks.dll` compilado aquí y subido SOLO, contra un
+Al 2026-10-05 el árbol tenía el módulo QR sin commitear; desde el commit `81d2622dbc` (2026-10-06)
+el módulo QR está commiteado, salvo el filtro por código del panel «Uso» (5 archivos en producción
+pero PENDIENTES DE COMMIT al 2026-10-15: `Rock.Blocks/Qr/QrMetrics.cs`, `QrMetricsBags.cs` y tres del front; ver
+`docs/qr-custom/`). Los modelos del QR viven en `Rock/Model/Qr/` → `Rock.dll`, y sus migraciones en
+`Plugin.VidaRealQr` (assembly aparte). Un `Rock.Blocks.dll` compilado aquí y subido SOLO, contra un
 `Rock.dll` de producción que no trae esos modelos, deja tipos que no cargan. Compilar las cuatro
 DLLs del MISMO árbol y subirlas juntas — la regla de arriba — evita el problema.

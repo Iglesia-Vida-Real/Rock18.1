@@ -23,6 +23,8 @@ export type TopCode = {
 
     /** Lleva más del plazo configurado sin un escaneo. */
     isStale: boolean;
+
+    isActive: boolean;
 };
 
 /**
@@ -89,6 +91,15 @@ export type MetricsData = {
 
     /** Aviso sobre la calidad del dato, o null. */
     qualityNote?: string | null;
+
+    /**
+     * El código filtrado, o null con el catálogo entero. Con filtro, todas las cifras son solo
+     * de ese código, menos dynamicCodeCount, que sigue siendo del catálogo.
+     */
+    selectedCode?: TopCode | null;
+
+    /** Todos los códigos dinámicos con sus escaneos en el rango, haya filtro o no. */
+    allCodes: TopCode[];
 };
 
 export type MetricsOptions = {
@@ -98,4 +109,7 @@ export type MetricsOptions = {
     dashboardPageUrl: string | null;
 
     staleDays: number;
+
+    /** IdKey con el que abre el panel (parámetro QrCodeId), o null. */
+    initialCodeKey?: string | null;
 };

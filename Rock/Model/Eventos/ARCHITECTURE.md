@@ -1,5 +1,8 @@
 # Módulo Eventos/Boletería — Arquitectura (hexagonal pragmática)
 
+Última actualización: 2026-10-15 (revisado; sin cambios de código de Eventos desde `81d2622dbc`,
+2026-10-06). Estado de despliegue: `docs/eventos-custom/RESEARCH_Y_PLAN.md` §9.41.
+
 Refactor 2026-07-02: la lógica que vivía en un `EventCheckout.cs` de 2,300 líneas se separó en
 servicios de aplicación con una sola responsabilidad cada uno. El objetivo es el de Clean
 Architecture / puertos-y-adaptadores **dentro de las restricciones de Rock RMS**: las dependencias

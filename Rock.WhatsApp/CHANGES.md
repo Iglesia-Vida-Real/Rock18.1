@@ -1,5 +1,7 @@
 # Rock.WhatsApp — Integración de WhatsApp Business Cloud API
 
+> **Última actualización:** 2026-10-15 (revisado; sin cambios de código en `Rock.WhatsApp`, el webhook ni `Sms.cs` desde 2026-08-12. Se agrega la sección "Estado y pendientes" al final)
+
 ## Qué es este proyecto
 
 `Rock.WhatsApp` es un plugin de transporte de comunicaciones desarrollado por VidaReal para el framework Rock RMS. Permite enviar mensajes a través de WhatsApp Business Cloud API (Meta/Graph API) como canal nativo dentro del sistema de comunicaciones de Rock, de la misma forma en que Rock usa SMS vía Twilio. Es un proyecto completamente nuevo que no existe en el Rock estándar de SparkDevNetwork.
@@ -290,3 +292,14 @@ Via `RockSMSMessage` cualquier Workflow Action de envío de SMS puede rutear men
 - El sync-over-async (`RunSync`) usa una `TaskFactory` dedicada para evitar deadlocks de `SynchronizationContext` típicos de ASP.NET WebForms. Este helper es interno en Rock core, por eso se reimplementó en el plugin.
 - El Access Token y el App Secret se almacenan cifrados usando `Rock.Security.Encryption`.
 - El webhook siempre responde con HTTP 200 a Meta para evitar reintentos infinitos, incluso si ocurre un error interno (el error se registra en `ExceptionLogService`).
+
+---
+
+## Estado y pendientes (2026-10-15)
+
+- **Build:** `Rock.WhatsApp` compila dentro de `Rock.sln` con `CopyToRockWeb`; no es uno de los plugins externos que se compilan aparte.
+- **Despliegue del webhook:** el handler vive en `RockWeb/App_Code`. Copiar `.cs` a `App_Code` en caliente en prod deja el sitio caído (incidente 2026-07-29): poner `app_offline.htm`, copiar, **reiniciar el servidor completo** (no basta reciclar el app pool) y quitar `app_offline.htm`.
+- **Parche al core a re-verificar tras cada merge upstream:** overload `Sms.ProcessResponse(..., Person resolvedFromPerson, ...)` en `Rock/Communication/Medium/Sms.cs` y su uso en `SmsActionConversations.cs` (ver "Atribución del remitente").
+- **Limitación conocida:** el medium SMS de Rock admite UN solo transport activo (atributo `TransportContainer`); no hay ruteo por número de sistema.
+- **Limitación conocida:** el estado `read` de WhatsApp solo se escribe en `StatusNote`; no genera interacción de comunicación (no cuenta como "open" en los reportes de Email Analytics).
+- **PENDIENTE (2026-10-15):** limpiar los cuatro Global Attributes `Twilio*` huérfanos del Check-in Manager (ver "Notificaciones desde el Check-in Manager"); pueden seguir guardando credenciales de Twilio en la base sin que nada las use.

@@ -1,9 +1,18 @@
 # Módulo de Eventos/Boletería Custom — Research & Plan
 
+Última actualización: 2026-10-15
+
+> **Estado al 2026-10-15:** migraciones **001–025** en `Plugin.VidaRealEvents` (la 017 consolidada + 018–025
+> numeradas; 016 y el `017_PromoCode…` quedaron sin `[MigrationNumber]` y solo corren vía la 017). El rediseño
+> §9.39 quedó commiteado en `ab11c9d250` (2026-09-24) y el ajuste a capturas §9.40 en `81d2622dbc`
+> (2026-10-06). **§9.39–§9.40 y migraciones hasta la 025: en producción** (confirmado por Rodolfo,
+> 2026-10-15) — ver §9.41.
+
+
 > **Producto propio y completo** de boletería sobre Rock 18.1. Esquema de datos propio (tablas nuevas). NO reusa `Registration*`.
-> Estado (2026-07-04): **v1 en producción-candidato** — 7 entidades (`_com_vidareal_Events_*`, incl. `EventStaff` de permisos por-usuario),
+> Estado original (2026-07-04): **v1 en producción-candidato** — 7 entidades (`_com_vidareal_Events_*`, incl. `EventStaff` de permisos por-usuario),
 > **7 bloques** (Event Admin con vista Permisos, Event Checkout rediseño 2026, My Tickets hub, Ticket Scanner, Event Report, Question Catalog, Event Calendar público),
-> **migraciones 001–021** en `Plugin.VidaRealEvents`. Historial de sesiones en §9.x (última: §9.36).
+> **migraciones 001–021** en `Plugin.VidaRealEvents` (hoy 001–025, ver arriba). Historial de sesiones en §9.x (última: §9.41).
 > Reemplaza el flujo nativo de eventos de Rock end-to-end: admin, venta, QR, envío/reenvío, check-in, reportería, permisos.
 >
 > **Arquitectura (mapa de capas y convenciones): `Rock/Model/Eventos/ARCHITECTURE.md`** — leer primero.
@@ -1070,9 +1079,24 @@ plugin del traductor**, no en estos bloques.
 - Los tonos de los chips de tipo en la captura difieren un poco de los sembrados en la 024; son
   dato del catálogo, no código.
 
-**Pendiente al cerrar la sesión**: nada commiteado. Desplegar `Rock.Blocks.dll` +
+**Pendiente al cerrar la sesión** (histórico; al 2026-10-15 todo esto ya está commiteado y en producción): nada commiteado. Desplegar `Rock.Blocks.dll` +
 `com.vidareal.Events.dll` (corre la 025) + los bundles de `RockWeb/Obsidian/Blocks/Eventos/` + el
 `.obs.js` de Epay en `RockWeb/Plugins/EpayVisanetGateway/Obsidian/`. Ojo con `Rock.Blocks.dll`:
-arrastra el módulo QR sin commitear (ver `Plugin.VidaRealEvents/README.md`). En dev quedó el
+arrastraba el módulo QR, entonces sin commitear (ver `Plugin.VidaRealEvents/README.md`). En dev quedó el
 evento de prueba "Conferencia Vida Real 2026" (Id 2) con la orden gratuita #45. Falta probar un
 cobro real con la pasarela en sandbox.
+
+### §9.41 — Estado de cierre / traspaso (2026-10-15)
+
+Revisión de estado para el traspaso del proyecto. No hubo cambios de código de Eventos después de
+`81d2622dbc` (2026-10-06).
+
+| Tema | Estado |
+|---|---|
+| §9.39 (rediseño 2026, migraciones 022–024) | Commiteado en `ab11c9d250` (2026-09-24). |
+| §9.40 (capturas, migración 025, textos del control Epay) | Commiteado en `81d2622dbc` (2026-10-06). Probado en dev con Selenium. |
+| **Despliegue a prod: hecho** (confirmado por Rodolfo, 2026-10-15) | `Rock.dll` + `Rock.Blocks.dll` + `Rock.ViewModels.dll` + `com.vidareal.Events.dll` (migraciones hasta 025) + bundles de `RockWeb/Obsidian/Blocks/Eventos/` + `.obs.js` de Epay en `RockWeb/Plugins/EpayVisanetGateway/Obsidian/`: **en producción**. |
+| **Ojo con `Rock.Blocks.dll`** | Se compila del mismo árbol que el módulo QR (commiteado) **y** que el filtro de Uso de QR (en prod, PENDIENTE DE COMMIT, `docs/qr-custom/DEPLOY.md` §G) y que QREVENT (`Rock.Blocks/QREVENT/CHANGES.md`). Un redeploy de este DLL los arrastra a todos: commitear el filtro de QR antes del próximo build. |
+| **PENDIENTE (2026-10-15): cobro real documentado** | El checkout rediseñado está en prod, pero no hay registro en el repo de un cobro con tarjeta real/sandbox end-to-end con su FEL (§9.40 solo probó la validación Luhn en el navegador en dev). Dejarlo registrado. |
+| Decisiones abiertas del usuario (2026-10-05) | ¿Epay debe rechazar Amex como Dar? · ¿El contador de reserva se oculta en los pasos 3 y 4? (hoy visible a propósito) · Corregir el traductor que cambia español→español (pendiente en `Plugin.VidaRealTranslator`). |
+| Datos de prueba en dev | Evento Id 2 «Conferencia Vida Real 2026» y orden gratuita #45. Borrar o conservar a criterio del nuevo responsable. |

@@ -1,5 +1,13 @@
 # Plugin.OdooEventSale — Venta de eventos Rock → Odoo (factura FEL)
 
+Última actualización: 2026-10-15 (revisado; sin cambios de código desde 2026-07-02)
+
+> **Nota 2026-10-15.** Esta action cubre el Event Registration **nativo** de Rock. El módulo
+> custom de Eventos/Boletería factura por otro camino (`Rock/Model/Eventos/Services/FelService.cs`,
+> barrido `EventsMaintenance`) con sus propios Global Attributes `OdooEventSaleBaseUrl`
+> (**Text plano**, no Encrypted) y `OdooEventSaleApiKey` (Encrypted Text). Diagnóstico y
+> diferencias en `CONTEXT.md` §9.
+
 Workflow action **"Odoo: Registrar Venta de Evento"** (categoría *Vida Real*): por cada
 inscripción nueva pagada del módulo de eventos, hace `POST /api/event/sell` al addon
 `custom_event_sale_api` de Odoo, que crea cliente + orden + **factura FEL certificada en SAT** + pago.

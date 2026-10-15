@@ -1,5 +1,7 @@
 # Módulo GPS Custom — Documento de Diseño
 
+Última actualización: 2026-10-15 (revisado; diseño sin cambios desde `ae2f580256`, 2026-09-07 — **sin código escrito todavía**, no existe `Plugin.VidaRealGps`)
+
 > Rock 18.1 · rama `hotfix-18.1` · 2026-09-03
 > Reemplaza el plugin de WordPress `gps`. Índice del proyecto: [README.md](README.md).
 

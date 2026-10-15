@@ -64,3 +64,6 @@ PrecompiledWeb/
 Dev Tools/Deploy/**/*.dll
 Dev Tools/Deploy/**/*.pdb
 Dev Tools/Deploy/**/*.js
+
+# Configuración local de Claude Code (rutas personales)
+**/.claude/settings.local.json

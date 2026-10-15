@@ -1,5 +1,7 @@
 # CONTEXT_INDEX.md — Indice Maestro de Contexto (Rock 15.5 VidaReal)
 
+Última actualización: 2026-10-15
+
 > **LEER ESTE ARCHIVO PRIMERO en cualquier sesion nueva de Claude Code.**
 > Contiene el mapa completo de toda la documentacion de contexto del repositorio,
 > ordenada por modulo y con instrucciones de cuando leer cada archivo.
@@ -31,12 +33,32 @@
 | Archivo | Proposito | Cuando leerlo |
 |---|---|---|
 | `C:\repos\Rock15.5\docs\eventos-custom\RESEARCH_Y_PLAN.md` | **Documento maestro del módulo de boletería propio**: modelo de datos `_com_vidareal_Events_*` (7 entidades incl. `EventStaff`), arquitectura, decisiones locked, y el historial completo de sesiones en §9.x (checkout 2026, hold/timer, mutex Charging, FEL multilínea, NIT/SAT, entrega QR+PDF, reportería, permisos por-usuario, scanner continuo con contadores, preguntas al asistente con catálogo/plantillas, invitados como personas reales + known relationships, multi-sesión, calendario público + visibilidad, workflow launcher por evento/boleto, archivado, reenvío/corrección de correo desde reportería) | Al retomar CUALQUIER trabajo del módulo de eventos/boletería. Leer primero §9 (estado) y la sesión §9.x más reciente. |
-| `C:\repos\Rock15.5\Plugin.VidaRealEvents\README.md` | **Migración consolidada `017_ProductionSetup`** (única del assembly; ejecuta los 17 pasos históricos — producción la corre de un golpe, dev la salta), tabla de pasos (001–021), modelo de permisos, deploy. ⚠️ Próxima migración = nº 22+ | Al agregar una migración nueva o desplegar el plugin (leer ANTES de numerar). |
+| `C:\repos\Rock15.5\Plugin.VidaRealEvents\README.md` | **Migración consolidada `017_ProductionSetup`** (única del assembly; ejecuta los 17 pasos históricos — producción la corre de un golpe, dev la salta), tabla de pasos (hoy 001–025), modelo de permisos, deploy, paquete pendiente de prod. ⚠️ Próxima migración = nº 26+ | Al agregar una migración nueva o desplegar el plugin (leer ANTES de numerar). |
 | `C:\repos\Rock15.5\Rock\Model\Eventos\ARCHITECTURE.md` | **Mapa de capas de la arquitectura hexagonal** (adaptadores de entrada/núcleo/adaptadores de salida/dominio), convenciones (servicios estáticos sin interfaces, resultados de dominio, fronteras de concurrencia compartidas) y estructura del front en partials | Antes de tocar código del módulo — di dónde va cada cosa nueva. |
 | `C:\repos\Rock15.5\docs\eventos-custom\SMOKE_TESTS.md` | Runbook de pruebas runtime: pago con tarjeta end-to-end, holds, gratis/promo, invitados/preguntas, permisos, job de mantenimiento — con qué verificar en BD/logs en cada una | Al probar en runtime después de un deploy o cambio del módulo. |
 
 **Código:** entidades+servicios en `Rock/Model/Eventos/` (incl. `AttendeeQuestionService`), bloques en `Rock.Blocks/Eventos/` + `src/Eventos/*.obs` (EventAdmin, EventCheckout, MyTickets, TicketScanner, EventReport, QuestionCatalog, EventCalendar), bags en `Rock.ViewModels/Blocks/Eventos/`. NO reusa `Registration*`; supera a QREVENT para eventos con boleto. Preguntas al asistente = Person Attributes (categoría "Preguntas de Eventos"); plantillas en System Setting `com_vidareal_EventQuestionTemplates`.
 **Arquitectura (2026-07-02, hexagonal):** bloques = adaptadores delgados; lógica en servicios de `Rock/Model/Eventos/Services/` (`CheckoutService` cobro/finalize, `HoldService` reservas/cupo, `PricingService`, `CheckoutAttendeeService`, `NitLookupService`, `EventAccessService` visibilidad, `EventSessionService` sesiones, `EventWorkflowService` workflow launcher, `EventsRuntime` colas/reciclos, + adaptadores FelService/PaymentService/TicketEmail/TicketPdf/Qr). **Leer primero `Rock/Model/Eventos/ARCHITECTURE.md`.**
+
+---
+
+### Modulo QR Generator (producto propio, 2026-09-24 →) — EN PRODUCCION (confirmado 2026-10-15)
+
+| Archivo | Proposito | Cuando leerlo |
+|---|---|---|
+| `C:\repos\Rock15.5\docs\qr-custom\DEPLOY.md` | **Estado al dia + runbook de despliegue**: artefactos y orden, configuracion del sitio del dominio corto `q.vidareal.tv` (la trampa del `Order` de `SiteDomain`), verificacion por SQL/SVG/curl, seguridad, rollback, y §G el filtro por codigo en Uso (en prod, PENDIENTE DE COMMIT) | Antes de redesplegar o tocar el modulo. Leer primero. |
+| `C:\repos\Rock15.5\Rock\Model\Qr\ARCHITECTURE.md` | Capas, decision fundacional (el destino vive en el `PageShortLink`), trampas del core de short links, checklist de upgrade | Antes de tocar codigo del modulo. |
+| `C:\repos\Rock15.5\docs\qr-custom\SMOKE_TESTS.md` | Pruebas runtime (los «bloqueantes del 22-oct» son historicos: el modulo ya opera en prod) | Tras cualquier redeploy. |
+
+**Codigo:** `Rock/Model/Qr/` (+`Services/`), `Rock.Blocks/Qr/`, `Rock.ViewModels/Blocks/Qr/`, `src/Qr/`, migraciones en `Plugin.VidaRealQr` (001–007), tests en `Rock.Tests/Model/Qr/`. Commiteado en `81d2622dbc` salvo el filtro de Uso. **Estado (2026-10-15): operativo en produccion** (confirmado por Rodolfo): sitio/dominio `q.vidareal.tv` funcionando, migraciones Qr 001–007 aplicadas; se reemplazo la plataforma externa antes de su vencimiento (22-oct-2026, dato historico). Unico pendiente de versionado: los 5 archivos del filtro de Uso (**en prod, PENDIENTE DE COMMIT**). Riesgo vigente: renovacion del certificado de `q.vidareal.tv` el 2026-12-28 (Certify no actualiza el binding). El SDD v1.1 vive fuera del repo (Desktop del dev anterior).
+
+---
+
+### Modulo GPS (grupos pequeños — solo diseño, 2026-09 →)
+
+| Archivo | Proposito | Cuando leerlo |
+|---|---|---|
+| `C:\repos\Rock15.5\docs\gps-custom\README.md` | Indice del diseño (SDD, DATA_MODEL, BUSINESS_RULES, ETL, UI_REFERENCE, SMOKE_TESTS), decisiones cerradas y abiertas | Antes de empezar a implementar el modulo. **Sin codigo escrito al 2026-10-15.** |
 
 ---
 
@@ -75,7 +97,7 @@
 | `C:\repos\Rock15.5\Migration_Context_ReservationScanner_FamilyHub.md` | Migracion de `ReservationScanner` y `FamilyHub` de Rock 15.5.1 a Rock 18.1 en un mismo documento | Al trabajar en `ReservationScanner.obs` o al auditar las migraciones de estos dos bloques. |
 | `C:\repos\Rock15.5\Rock.JavaScript.Obsidian.Blocks\src\QREVENT\vendor\CHANGES.md` | Que es ZXing, por que es vendor (no npm directo), version, y como se usa en los bloques QREVENT | Al entender el pipeline de build de ZXing, reportar warnings de sourcemap, o al agregar nuevos bloques que necesiten QR. |
 | `C:\repos\Rock15.5\Dev Tools\Sql\CHANGES.md` | Que hace `QREVENT_SundayService_Hardening.sql` y la migracion a `PersonAliasId` (Step1/Step2): tablas, constraints, SPs vigentes, idempotencia, incidente `Msg 5074` | Antes de deployar QREVENT por primera vez, al tocar los SPs de reservas, o al diagnosticar errores de integridad en tablas `SundayService*`. |
-| `C:\repos\Rock15.5\Dev Tools\Deploy\SundayService_PersonAlias\README.md` | Registro del despliegue de la migracion a `PersonAliasId` (aplicada en prod 2026-09-06): orden SQL→DLL, por que ese orden, el incidente de Step2, verificacion, y que binarios siguen pendientes de subir | Antes de subir cualquier DLL o bundle de QREVENT a produccion. |
+| `C:\repos\Rock15.5\Dev Tools\Deploy\SundayService_PersonAlias\README.md` | Registro historico del despliegue de la migracion a `PersonAliasId` (aplicada en prod 2026-09-06): orden SQL→DLL, por que ese orden, el incidente de Step2, verificacion. Kit OBSOLETO como artefacto (no reusar sus binarios) | Para entender el orden SQL→DLL de QREVENT. |
 | `C:\repos\Rock15.5\Rock.Blocks\QREVENT\CHANGES.md` | **Documentacion descriptiva del backend por bloque** (no changelog): que hace cada uno, atributos de bloque, BlockActions, estados y codigos de resultado, SPs que usa, ventana de check-in del escaner | Antes de tocar CUALQUIER `.cs` de QREVENT. |
 | `C:\repos\Rock15.5\Rock.JavaScript.Obsidian.Blocks\src\QREVENT\CHANGES.md` | **Documentacion descriptiva del frontend por bloque**: estados reactivos, flujo de camara y permisos, patrones comunes (banner, cooldown de escaneo), design system Brujula VR y sus desviaciones | Antes de tocar CUALQUIER `.obs` de QREVENT. |
 
@@ -88,9 +110,11 @@
 - `Rock.Blocks/QREVENT/RealTime/SundayServiceTopic.cs` — Topic SignalR del «Bienvenido», un canal por reserva. Vive en `Rock.Blocks`, no en `Rock.dll`
 - `Rock.JavaScript.Obsidian.Blocks/src/QREVENT/vendor/zxing.lib.ts` — Entry point del vendor bundle ZXing
 
-**Estado en produccion (2026-09-07):** hotfix de ventana de check-in, pestaña Metricas y la
-migracion a `PersonAliasId` (Step1+Step2) estan en prod; el «Bienvenido» acotado a 10 min esta
-compilado y pendiente de subir. Nada commiteado. Detalle y binarios: `Dev Tools/Deploy/SundayService_PersonAlias/README.md`.
+**Estado (2026-10-15):** todo commiteado (`ae2f580256`, `ab11c9d250`). En prod desde sep-2026:
+ventana de check-in 15 min, pestaña Metricas, `PersonAliasId` (Step1+Step2) y RealTime.
+La ventana «Bienvenido» de 30 min con bloqueo de reservas nuevas (`resultCode -5`, 2026-09-10), el fix
+de deadlock del check-in y el fix de guardado de QR en iOS/WebView estan **en producción (confirmado por Rodolfo, 2026-10-15)**. El kit `Dev Tools/Deploy/SundayService_PersonAlias/` tiene binarios
+obsoletos (no reusar). Detalle: `Rock.Blocks/QREVENT/CHANGES.md` «Estado al 2026-10-15».
 
 ---
 
@@ -166,8 +190,8 @@ No hay archivos de contexto separados para Security. Usar `PROJECT_CONTEXT.md` q
 - `Rock/Security/Authentication/PasswordlessAuthentication.cs` — DELICADO: proveedor passwordless
 - `Rock.Blocks/Security/Login.cs` — Mapeo de personas, modificado con `Category = p.PhotoUrl`
 - `Rock.JavaScript.Obsidian.Blocks/src/Security/` — Todos los bloques de autenticacion traducidos al espanol
-- `Rock.Blocks/Security/VRSimpleRegistration.cs` — NUEVO (sin commit): registro simplificado post-passwordless
-- `Rock.JavaScript.Obsidian.Blocks/src/Security/vrSimpleRegistration.obs` — NUEVO (sin commit)
+- `Rock.Blocks/Security/VRSimpleRegistration.cs` — NUEVO (commiteado desde `c205d270a3`, 2026-06-06): registro simplificado post-passwordless
+- `Rock.JavaScript.Obsidian.Blocks/src/Security/vrSimpleRegistration.obs` — NUEVO (commiteado)
 
 ---
 
@@ -203,10 +227,13 @@ No hay archivos de contexto separados para Security. Usar `PROJECT_CONTEXT.md` q
 
 ---
 
-## Estado del repositorio (2026-07-07)
+## Estado del repositorio (2026-10-15)
 
 - **Branch activo:** `hotfix-18.1`
-- **Ultimo commit:** `951208e04a` — "Update Modulo de Wallet Pass" (2026-07-07; el módulo Wallet base quedó commiteado ahí)
-- **Archivos sin commit (trabajo 2026-07-07 tarde / 08):** filtro Lava `WalletPassUrl` (`Rock/Lava/Filters/LavaFilters.VidaRealWallet.cs`), endpoint download en `WalletPassKitController`, migraciones Wallet 009–013, plantilla VidaAventura, fondo/thumbnail (entidad+admin), Wallet en checkout (`EventCheckout.cs` + bags + partials), nombre corto + caché PNGs, expiración. ⚠️ Commitear ANTES del próximo deploy.
-- **Último trabajo (2026-07-08):** **Wallet fase 2** — envío por Lava (`WalletPassUrl` + endpoint anónimo con token), plantilla **VidaAventura** réplica exacta del pase MinistryPass (eventTicket + fondo BACK2 + thumbnail; QR = Alternate Id; sin expiración), expiración de Eventos = fin del evento, botón Wallet del checkout (bundle .pkpasses multi-entrada + JWT Google multi-objeto), fondo/thumbnail con uploader (push al cambiarlos), nombre corto (primer nombre+apellido), caché de PNGs y **carga probada: 1000 descargas concurrentes 0 fallos (~183/seg)**. Migraciones 001–013 corridas en dev. **Pendiente: deploy a prod (runbook RESEARCH_Y_PLAN §8b: 6 DLLs + 3 bundles + Global Attributes), smoke de updates push EN prod, smoke del filtro Lava en workflow real, Google Wallet espera cuenta emisor, chequeo GetFile.ashx QR anónimo.**
-- **Archivos con cambios sin commitear (modified):** Ver `git status` para lista actual.
+- **Ultimo commit:** `81d2622dbc` — "Eventos y Modulo de QRS" (2026-10-06)
+- **Sin commitear:** el filtro por codigo del panel de Uso del modulo QR (5 archivos; `docs/qr-custom/DEPLOY.md` §G) — **ya en produccion, PENDIENTE DE COMMIT** — y la actualizacion de documentacion del 2026-10-15.
+- **Produccion (confirmado por Rodolfo, 2026-10-15):** todo lo desarrollado esta en prod (QR Generator, Eventos hasta migracion 025, QREVENT, cascada GT, PersonAliasId, Epay, Wallet, Translator, passwordless, webhook SendGrid).
+- **Pendientes por modulo:** tabla «Estado de traspaso y pendientes» al inicio de `CHANGES.md` (raiz). Lo mas urgente ahora: transferir repo/accesos, rotar secretos y commitear el filtro de Uso de QR.
+- **Ojo al compilar `Rock.Blocks.dll`:** un solo assembly lleva Eventos §9.40, QR (incl. lo sin commitear) y QREVENT; cualquier deploy de ese DLL arrastra los tres.
+- El estado historico del 2026-07-07 (Wallet fase 2) quedo superado: todo eso esta commiteado (`7d8adb2462`, `1fe6076da6`, `0c44380057`) y el modulo Wallet sirve trafico de prod.
+

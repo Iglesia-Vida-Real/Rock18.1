@@ -1,184 +1,127 @@
-# ONBOARDING — Cómo levantar este repo desde cero
+# ONBOARDING — Puerta de entrada
 
-> Guía para pasarle el proyecto a otra persona (o a otra máquina): qué NO viene en el
-> clon, en qué orden se compila, y cómo se arranca.
+> Fork de **Rock RMS 18.1** de Iglesia Vida Real con módulos propios: Eventos/Boletería, Wallet
+> (Apple/Google), QR Generator, QREVENT (reservas dominicales y check-in QR), DAR (donaciones),
+> FamilyHub, DupDetect, Odoo FEL, Translator, gateways Epay/Cybersource y WhatsApp.
 >
-> **Mantener actualizado:** si agregás un plugin, una dependencia manual o un paso de
-> setup nuevo, actualizá este archivo en el mismo commit.
-
-Fork de Rock RMS v18.1 de Iglesia Vida Real, con módulos propios (Eventos/Boletería,
-Wallet, DupDetect, Odoo FEL, Translator, gateways Epay/Cybersource, WhatsApp).
-El mapa de toda la documentación está en **`.claude/CONTEXT_INDEX.md`** — leerlo primero.
+> Última revisión: **2026-10-15** (traspaso del proyecto a un nuevo dev).
+> **Mantener actualizado:** si agregás un plugin, una dependencia manual o un paso de setup,
+> actualizá este archivo y el doc de `docs/HANDOFF/` que corresponda en el mismo commit.
 
 ---
 
-## 1. Requisitos
+## 1. Ruta de lectura (en este orden)
 
-- Windows 10 / Server 2016+ (obligatorio: `System.Net.Http.WinHttpHandler` para APNs del módulo Wallet).
-- Visual Studio 2022 con carga de trabajo ASP.NET (.NET Framework 4.7.2) — o `msbuild`/`dotnet build` por consola.
-- SQL Server (local o remoto) con una BD de Rock (copia de dev o restore de prod).
-- Node.js LTS + npm (para los bundles Obsidian).
-
-## 2. Qué NO viene en el clon (gitignore)
-
-| Ignorado | Qué es | Cómo se repone |
+| # | Documento | Para qué |
 |---|---|---|
-| `RockWeb/Bin/*.dll` (todos) | Binarios del sitio | Compilar (sección 3) |
-| `RockWeb/Obsidian/` | Bundles JS compilados de los bloques | Build de Obsidian (sección 4) |
-| `RockWeb/web.ConnectionStrings.config` | Cadena de conexión | Crear a mano (sección 5) |
-| `RockWeb/Plugins/*/*` (todo lo interno) | Plugins webforms/DLLs instalados | **Copiar la carpeta completa del ambiente origen** (ver 2.1) |
-| `RockWeb/Content/` | Archivos/media subidos | Copiar del ambiente origen si se necesita |
-| `node_modules`, `obj/`, `bin/Debug|Release` | Artefactos | Se regeneran solos |
+| 1 | Este archivo | Qué es, qué no viene en el clon, dónde está todo. |
+| 2 | [`docs/HANDOFF/SETUP_DESARROLLO.md`](docs/HANDOFF/SETUP_DESARROLLO.md) | Prerequisitos con versiones, clonar, BD de dev, compilar, correr, problemas típicos. |
+| 3 | [`docs/HANDOFF/ESTADO_REPO.md`](docs/HANDOFF/ESTADO_REPO.md) | Ramas (cuál es nuestra), commits y cambios pendientes, limpieza recomendada. |
+| 4 | [`docs/HANDOFF/DEPLOY_PRODUCCION.md`](docs/HANDOFF/DEPLOY_PRODUCCION.md) | Cómo se despliega, rollback, verificación, y **el último despliegue conocido** (todo en prod al 2026-10-15). |
+| 5 | [`CLAUDE.md`](CLAUDE.md) | Arquitectura en una pantalla, comandos, convenciones y **trampas conocidas**. Lo lee Claude Code automáticamente. |
+| 6 | [`.claude/CONTEXT_INDEX.md`](.claude/CONTEXT_INDEX.md) | Índice de toda la documentación por módulo. |
 
-### 2.1 `RockWeb\Plugins` — copiar a mano SIEMPRE
+Accesos y secretos (GitHub, RDP a prod, SQL, Global Attributes sensibles, certificados) **no están
+en el repo**: pedir a TI (serviciosit@vidareal.tv) o ver `ACCESOS_Y_SECRETOS.md` del paquete zip de
+handoff.
 
-Tiene su propio `.gitignore` (`*/*`): git solo trackea el readme. Todo lo demás hay que
-copiarlo del ambiente origen. Contenido actual:
+---
 
-**Custom VidaReal (irreemplazable, no se compila desde el repo):**
-- `com_vidareal\Translator\` — bloques webforms + JS del traductor
-- `Qrgenerador\bin\` — DLL del workflow action GenerateQrRegistrant
-- `TwilioOverrideWhatsApp\bin\TwilioOverride.dll` — override Twilio para WhatsApp
-- `EpayVisanetGateway\` y `CybersourceInlineRestGateway\` — bundle Obsidian (`.obs.js`)
-  + fuente del control de pago de cada gateway
+## 2. Arranque rápido
 
-**Third-party del Rock Shop** (reinstalables, pero más fácil copiarlos): MailChimp (BEMA),
-AcmeCertificate + DataToolkit (Blue Box Moon), LavaTester (centralaz), MinePass
-(Mine Cart Studio), MinistryPass (Triumph Tech).
+```powershell
+git clone https://github.com/rodobriones/Rock15.5.git C:\repos\Rock15.5
+cd C:\repos\Rock15.5
+git checkout hotfix-18.1                                              # rama viva (NO develop)
+powershell -ExecutionPolicy Bypass -File ".\Dev Tools\Build\check-prereqs.ps1"   # solo lectura
+Copy-Item RockWeb\web.ConnectionStrings.config.example RockWeb\web.ConnectionStrings.config   # y llenarlo
+# restaurar la BD de dev (copia de prod, pedirla a TI) y AISLARLA (SETUP §4)
+.\"Dev Tools\Build\build-all.ps1"                                     # Rock.sln + 8 plugins, Release
+# copiar a RockWeb\Bin las DLLs de terceros del Rock Shop (§3.1)
+# abrir Rock.sln en VS, proyecto de inicio RockWeb, F5 -> http://localhost:6229
+```
 
-⚠️ Estos plugins del Shop también tienen **DLLs en `RockWeb\Bin` que compilar Rock.sln
-NO regenera** — copiarlas del ambiente origen junto con la carpeta Plugins:
+---
+
+## 3. Qué NO viene en el clon
+
+| No versionado | Qué es | Cómo se repone |
+|---|---|---|
+| `RockWeb/Bin/*.dll` | Binarios del sitio | `build-all.ps1` (core + plugins propios). Las de terceros: §3.1. |
+| `RockWeb/Obsidian/` | Bundles JS de los bloques | Los genera el build (`build-fast`) o `npm run build`. |
+| `RockWeb/web.ConnectionStrings.config` | Cadena de conexión | Desde el `.example`; credenciales de TI. |
+| `RockWeb/Content/` | Media subida | Opcional, copiar del ambiente origen. |
+| Respaldo de BD | `Rock18` | TI. Confidencial. |
+| `node_modules`, `bin/`, `obj/` | Artefactos | Se regeneran. |
+
+`RockWeb/Plugins/` **sí está versionado** desde 2026-07-15 (a diferencia de Rock upstream): trae el
+front del Translator, `Qrgenerador`, `TwilioOverrideWhatsApp`, el front de los gateways y los
+plugins de terceros. No restaurar la regla `*/*` en `RockWeb/Plugins/.gitignore`.
+
+### 3.1 DLLs de terceros que ningún build regenera
+
+Plugins del Rock Shop con DLL en `RockWeb\Bin`. Copiarlas del ambiente origen (prod o la máquina
+anterior):
+
 `com.bemaservices.MailChimp.dll`, `com.bemaservices.WorkflowExtensions.dll`,
 `com.blueboxmoon.AcmeCertificate.dll`, `com.blueboxmoon.DataToolkit.dll`,
 `com.minecartstudio.MinePass.Client.dll`, `com.minecartstudio.MinePassCommon.dll`,
 `MailChimp.Net.dll`, `MailChimp.Net.V3.dll`,
 `tech.triumph.MinistryPass.Client.dll`, `tech.triumph.MinistryPass.Common.dll`.
-(`Twilio.dll` no: esa la restaura NuGet con Rock.sln.)
 
-## 3. Compilar — EN ESTE ORDEN
+`check-prereqs.ps1` avisa si falta alguna. (`Twilio.dll` y `System.Net.Http.WinHttpHandler.dll`
+sí las restaura NuGet.) Cuidado: `BranchCleanup.bat` borra todo `RockWeb\Bin\*.dll`.
 
-### 3.1 Core (`Rock.sln`)
+---
 
-```powershell
-# desde la raíz del repo
-dotnet build Rock.sln
-# o msbuild Rock.sln /p:Configuration=Debug
-```
+## 4. Mapa de módulos
 
-Esto llena `RockWeb\Bin` con todo el core, que incluye el grueso del trabajo custom:
+| Módulo | Código | Doc principal |
+|---|---|---|
+| Eventos / Boletería | `Rock/Model/Eventos/`, `Rock.Blocks/Eventos/`, `src/Eventos/`, `Plugin.VidaRealEvents` | `docs/eventos-custom/RESEARCH_Y_PLAN.md`, `Rock/Model/Eventos/ARCHITECTURE.md` |
+| Wallet | `Rock/Model/Wallet/`, `Rock.Blocks/Wallet/`, `Rock.Rest/VidaReal/`, `Plugin.VidaRealWallet` | `docs/wallet-module/RESEARCH_Y_PLAN.md` |
+| QR Generator | `Rock/Model/Qr/`, `Rock.Blocks/Qr/`, `src/Qr/`, `Plugin.VidaRealQr` | `docs/qr-custom/DEPLOY.md`, `Rock/Model/Qr/ARCHITECTURE.md` |
+| QREVENT (reservas dominicales, check-in QR) | `Rock.Blocks/QREVENT/`, `src/QREVENT/`, `Dev Tools/Sql/` | `Rock.Blocks/QREVENT/CHANGES.md`, `Dev Tools/Sql/CHANGES.md` |
+| GPS (diseño, sin código) | — | `docs/gps-custom/` |
+| DAR (donaciones) | `Rock.Blocks/Dar/`, `src/Dar/` | `Rock.Blocks/Dar/CHANGES.md` |
+| FamilyHub | `Rock.Blocks/FamilyHub/`, `src/FamilyHub/` | `Rock.Blocks/FamilyHub/CHANGES.md` |
+| Odoo FEL | `Plugin.OdooEventSale` + repo `custom_event_sale_api` (addon Odoo 17) | `Plugin.OdooEventSale/CONTEXT.md` |
+| Gateways | `Plugin.EpayVisanetGateway`, `Plugin.CybersourceInlineRestGateway` | sus `README.md`/`CHANGES.md` |
+| WhatsApp | `Rock.WhatsApp/` | `Rock.WhatsApp/CHANGES.md` |
+| Translator | `Plugin.VidaRealTranslator`, `RockWeb/Plugins/com_vidareal/Translator/` | `Plugin.VidaRealTranslator/README.md` |
+| DupDetect | `Plugin.VidaRealDupDetect` | `.claude/CONTEXT_INDEX.md` |
 
-- `Rock.dll` — módulos Eventos (`Rock/Model/Eventos`), Wallet (`Rock/Model/Wallet`), etc.
-- `Rock.Blocks.dll`, `Rock.ViewModels.dll`, `Rock.Rest.dll` — bloques, bags y controllers custom.
-- `Rock.WhatsApp.dll` (sí está en el .sln).
-- `System.Net.Http.WinHttpHandler.dll` — la restaura NuGet (PackageReference en `Rock/Rock.csproj`).
-  ⚠️ En deploys a prod por copia de archivos hay que copiarla a mano (es "nueva" vs Rock vanilla).
+---
 
-### 3.2 Plugins custom (NO están en Rock.sln)
+## 5. Configuración que vive fuera del repo
 
-Referencian `RockWeb\Bin\Rock.dll`, por eso van **después** del core. Compilar cada uno y
-copiar **solo su DLL propio** (el resto de DLLs de su `bin\` son copias de las de Rock):
+Viene "gratis" con la copia de la BD, pero hay que saber que existe (valores: TI / paquete de
+handoff):
 
-| Proyecto | DLL → `RockWeb\Bin` |
-|---|---|
-| `Plugin.VidaRealEvents` | `com.vidareal.Events.dll` |
-| `Plugin.VidaRealWallet` | `com.vidareal.Wallet.dll` |
-| `Plugin.VidaRealDupDetect` | `com.vidareal.DupDetect.dll` |
-| `Plugin.VidaRealTranslator` | `com.vidareal.Translator.dll` |
-| `Plugin.OdooEventSale` | `OdooEventSale.dll` |
-| `Plugin.EpayVisanetGateway` | `EpayVisanetGateway.dll` |
-| `Plugin.CybersourceInlineRestGateway` | `CybersourceInlineRestGateway.dll` |
+- **Wallet / Apple:** Global Attributes `AppleWalletPassP12` + `AppleWalletPassP12Password`
+  (Pass Type ID `pass.tv.vidareal.eventos`, **vence 2027-08-05**). Google:
+  `GoogleWalletIssuerId` / `GoogleWalletServiceAccountJson` (cuenta emisor pendiente).
+- **Odoo FEL:** credenciales y Global Attributes de NIT (`Plugin.OdooEventSale/README.md`).
+- **Gateways Epay/Cybersource:** *Admin → Finance → Financial Gateways*.
+- **WhatsApp:** tokens en el transporte; webhook `RockWeb/Webhooks/WhatsAppSms.ashx` registrado en
+  Meta for Developers con el dominio del ambiente.
+- **SendGrid:** Event Webhook → `https://personas.vidareal.tv/Webhooks/TwilioSendGrid.ashx`
+  (habilitado 2026-09-09). Usar otra API key en dev.
+- **Dominio corto QR `q.vidareal.tv`:** certificado Let's Encrypt emitido con *Certify The Web* en
+  el web server, **vence 2026-12-28**; el binding de IIS se creó a mano — revisar que la renovación
+  lo actualice.
+- **PDF de boletos:** primera generación descarga Chromium (~150 MB) a `App_Data/ChromeEngine`
+  (alternativa: System Setting `PDF_EXTERNAL_RENDER_ENDPOINT`).
 
-```powershell
-# desde la raíz del repo, tras compilar Rock.sln
-$plugins = @(
-  'Plugin.VidaRealEvents\VidaRealEvents',
-  'Plugin.VidaRealWallet\VidaRealWallet',
-  'Plugin.VidaRealDupDetect\VidaRealDupDetect',
-  'Plugin.VidaRealTranslator\VidaRealTranslator',
-  'Plugin.OdooEventSale\OdooEventSale',
-  'Plugin.EpayVisanetGateway\EpayVisanetGateway',
-  'Plugin.CybersourceInlineRestGateway\CybersourceInlineRestGateway'
-)
-foreach ($p in $plugins) {
-  dotnet build $p /p:Configuration=Debug
-  Copy-Item "$p\bin\Debug\net472\com.vidareal.*.dll",
-            "$p\bin\Debug\net472\OdooEventSale.dll",
-            "$p\bin\Debug\net472\*Gateway.dll" RockWeb\Bin -ErrorAction SilentlyContinue
-}
-```
+---
 
-## 4. Frontend Obsidian (bundles JS)
+## 6. Fechas y pendientes que el dev entrante hereda
 
-`RockWeb/Obsidian/` está gitignored; sin este paso los bloques custom (checkout de
-eventos, Mis Entradas, scanner, wallet admin, VRSimpleRegistration, etc.) no cargan.
-
-```powershell
-cd Rock.JavaScript.Obsidian;        npm ci; npm run build
-cd ..\Rock.JavaScript.Obsidian.Blocks; npm ci; npm run build
-```
-
-⚠️ Tras tocar partials de Eventos: verificar que el bundle servido es el nuevo
-(grep `_ctx.` en el .js; historial de este bug en `docs/eventos-custom/RESEARCH_Y_PLAN.md`).
-
-## 5. Connection string
-
-Crear `RockWeb\web.ConnectionStrings.config` (hay un `.example` como plantilla):
-
-```xml
-<connectionStrings>
-  <add name="RockContext"
-       connectionString="Data Source=SERVIDOR;Initial Catalog=BD;User Id=USUARIO;password=PASSWORD;MultipleActiveResultSets=true"
-       providerName="System.Data.SqlClient" />
-</connectionStrings>
-```
-
-## 6. Base de datos
-
-- Usar una **copia de la BD existente** (dev o prod). No arrancar contra BD vacía: los
-  módulos custom asumen datos/config (Global Attributes, páginas, esquemas `_com_vidareal_*`).
-- Las **migraciones de plugins** (`[PluginMigration]` de `com.vidareal.Events` 001–021,
-  `com.vidareal.Wallet` 001–013, DupDetect, etc.) corren solas al arrancar el sitio.
-  ⚠️ La numeración de cada assembly es propia — leer el `README.md` del plugin ANTES de
-  agregar una migración nueva.
-
-## 7. Arrancar
-
-1. Apuntar un sitio de IIS (o IIS Express desde VS, proyecto `RockWeb`) a `RockWeb\`.
-2. Primer arranque es lento: `Rock.WebStartup` corre migraciones core + de plugins.
-3. Verificar en el log (`RockWeb/App_Data/Logs`) que las plugin migrations corrieron.
-4. Copiar cualquier DLL a `RockWeb\Bin` recicla el app pool solo — no hace falta iisreset.
-5. **La PRIMERA generación de PDF de boletos descarga Chromium (~150 MB)** a
-   `App_Data/ChromeEngine` y puede tardar minutos; las siguientes son rápidas. El servidor
-   necesita salida a internet para eso (alternativa sin descarga: System Setting
-   `PDF_EXTERNAL_RENDER_ENDPOINT`).
-
-## 8. Config/secretos que viven FUERA del repo
-
-Todo esto está en la BD (Global Attributes) o en archivos locales — viene "gratis" si se
-copia la BD, pero hay que saber que existe:
-
-- **Wallet/Apple**: Global Attributes `AppleWalletPassP12` + password (cert Pass Type ID
-  `pass.tv.vidareal.eventos`, vence 2027-08-05; assets fuente en `Documents\AppleWalletCert`
-  de la máquina original). Google Wallet: `GoogleWalletIssuerId` / `GoogleWalletServiceAccountJson`.
-- **Odoo FEL**: credenciales y Global Attributes de NIT (ver `Plugin.OdooEventSale/README.md`).
-- **Gateways Epay/Cybersource**: configuración en Admin → Financial Gateways.
-- **WhatsApp**: tokens en la config del transporte. Además, la URL del webhook
-  `RockWeb/Webhooks/WhatsAppSms.ashx` debe estar registrada en el panel de
-  **Meta for Developers** apuntando al dominio del ambiente (ver `CHANGES.md`).
-
-## 8b. Repos relacionados (el proyecto no es solo este repo)
-
-- `C:\Repos\Iglesia1\custom_event_sale_api` — **addon de Odoo 17** que recibe la venta de
-  eventos y emite la factura FEL (contrato en su `docs/API.md`). Sin él no hay facturación.
-  Deploy del addon: reiniciar Odoo con `-u custom_event_sale_api`.
-
-## 9. Dónde está la documentación
-
-| Qué | Dónde |
-|---|---|
-| Índice maestro de docs | `.claude/CONTEXT_INDEX.md` |
-| Contexto técnico transversal | `.claude/PROJECT_CONTEXT.md` |
-| Historial de cambios vs upstream | `CHANGES.md` |
-| Eventos/Boletería (doc maestro) | `docs/eventos-custom/RESEARCH_Y_PLAN.md` + `Rock/Model/Eventos/ARCHITECTURE.md` |
-| Wallet (doc maestro + runbook deploy) | `docs/wallet-module/RESEARCH_Y_PLAN.md` |
-| Smoke tests runtime | `docs/eventos-custom/SMOKE_TESTS.md` |
+- **Todo lo desarrollado está en producción** (confirmado por Rodolfo, 2026-10-15), incluido el
+  módulo QR Generator, operativo en `q.vidareal.tv` (reemplazó la plataforma externa antes de su
+  vencimiento del 22-oct-2026). Ver `docs/qr-custom/DEPLOY.md`.
+- Cambios sin commitear del módulo QR (5 archivos, **ya en producción, PENDIENTE DE COMMIT**): ver
+  `docs/HANDOFF/ESTADO_REPO.md` §4. Es lo único que queda por versionar.
+- Último despliegue conocido: `docs/HANDOFF/DEPLOY_PRODUCCION.md` §8.
+- **2026-12-28** vence el certificado de `q.vidareal.tv`; **2027-08-05** el de Apple Wallet.
+- El repo de GitHub está en una cuenta personal: transferirlo (ESTADO_REPO §6.1).

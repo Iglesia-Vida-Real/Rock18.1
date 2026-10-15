@@ -1,5 +1,10 @@
 # CHANGES.md — Dev Tools / Sql (Rock18.1 VidaReal)
 
+Última actualización: 2026-10-15 (revisado; sin cambios en los scripts SQL desde `ae2f580256`,
+2026-09-07). Script relacionado fuera de esta carpeta: `Scripts/VidaReal/direcciones-gt.sql`
+(seed de Departamento→Municipio, en producción desde 2026-08-27; ver `CHANGES.md` raíz — sin
+registro de revisión de los 340 municipios contra el INE, **verificar**).
+
 Este directorio contiene scripts SQL para configuracion, hardening e inicializacion de la base de datos de Rock.
 Los scripts con prefijo `QREVENT_` o `SundayService_` son especificos de VidaReal y no existen en el upstream de SparkDevNetwork.
 

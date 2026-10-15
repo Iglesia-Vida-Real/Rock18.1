@@ -1,5 +1,7 @@
 # Módulo GPS — Referencia de la interfaz actual
 
+Última actualización: 2026-10-15 (revisado; diseño sin cambios desde `ae2f580256`, 2026-09-07 — **sin código escrito todavía**, no existe `Plugin.VidaRealGps`)
+
 > Extraído de las 17 capturas del sistema en producción (2026-09-04).
 > **No es una guía para replicar pixel por pixel.** Es para no perder terminología, funciones
 > escondidas y jerarquías que el código no dejaba ver.

@@ -1,5 +1,7 @@
 # Cambios en el módulo AccountEntry — VidaReal fork (Rock 18.1)
 
+> **Última actualización:** 2026-10-15 (revisado; sin cambios de código en `src/Security/AccountEntry` ni `accountEntry.obs` desde 2026-06-06)
+
 ## Visión general
 
 El módulo AccountEntry implementa el flujo de creación de cuenta en Rock. Consiste en un bloque raíz (`accountEntry.obs`) que orquesta múltiples pasos mostrados secuencialmente. VidaReal personalizó todos los archivos del módulo.

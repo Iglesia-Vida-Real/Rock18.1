@@ -1,5 +1,8 @@
 # FamilyHub Known Relationships Fix (Rock18)
 
+> **Última actualización:** 2026-10-15 (revisión de traspaso). Estado: fix commiteado en abril 2026 (commit `2958358094`; ajustes de KR + batching en `4f80ff56b0`, 2026-05-13). El backend `FamilyHub.cs` no cambia desde 2026-06-06.
+> **Nota:** la sección "UI refresh summary" está parcialmente obsoleta: el sticky top bar (`vrTopBar`) se eliminó el 2026-07-24. El historial vigente del bloque está en `Rock.Blocks/FamilyHub/CHANGES.md` (§7 y §8).
+
 ## Files changed
 - `Rock.Blocks/FamilyHub/FamilyHub.cs` (renamed from `FamilyHub..cs`)
 - `Rock.JavaScript.Obsidian.Blocks/src/FamilyHub/FamilyHub.obs`

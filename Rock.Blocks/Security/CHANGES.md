@@ -1,5 +1,7 @@
 # Rock.Blocks/Security — Cambios y personalizaciones VidaReal
 
+> **Última actualización:** 2026-10-15 (revisión de traspaso: se corrige "Archivo frontend pendiente" — el `.obs` existe desde 2026-06-06 — y se documenta el endurecimiento de `VRSimpleRegistration.cs` del commit `33d05949b7`, 2026-07-06. Sin cambios de código en `Rock.Blocks/Security` desde esa fecha)
+
 ## Estado de la rama: `hotfix-18.1`
 
 ---
@@ -156,7 +158,21 @@ BlockTypeGuid:  61C805E0-F228-4DCA-9934-3F12FEC67C7D
 
 Estos GUIDs son de VidaReal y deben registrarse en la base de datos Rock via migracion o manualmente en `EntityType` y `BlockType`.
 
-### Archivo frontend pendiente
+### Archivo frontend (YA EXISTE — corrección 2026-10-15)
+
+> Este apartado decía "pendiente", pero `Rock.JavaScript.Obsidian.Blocks/src/Security/vrSimpleRegistration.obs` existe desde el commit `c205d270a3` (2026-06-06) y se modificó en `33d05949b7` (2026-07-06) y `0c44380057` (2026-08-12). Se conserva abajo la especificación original como referencia de lo que el `.obs` implementa.
+
+### Endurecimiento del 2026-07-06 (commit `33d05949b7`)
+
+- **Validación server-side** en `Register`: nombre y apellido requeridos y de máximo 50 caracteres; email con formato válido y teléfono de 7 a 15 dígitos **solo cuando no vienen verificados** por el state OTP.
+- **Cuenta existente:** si ya hay un `UserLogin` con el username passwordless, responde `IsSuccess = false`, `IsExistingAccount = true` y "Ya existe una cuenta con esta información. Por favor inicia sesión." (nueva propiedad en `VRRegisterResponseBag`).
+- **Género saneado:** solo acepta 1/2; cualquier otro valor se guarda como `Unknown`.
+- **Teléfono E.164:** nuevo helper `SplitPhone()` que separa "+502…" / "+503…" / "+1…" en código de país + número local, para no duplicar el código en `PhoneNumber.Number`. Se usa tanto al prellenar el InitBox como al guardar.
+- **Auto-login:** tras crear la persona y el login, llama `UserLoginService.UpdateLastLogin` y `Authorization.SetAuthCookie(...)` con la duración `PasswordlessSignInSessionDuration`. Antes el usuario completaba su perfil pero quedaba anónimo al redirigir.
+
+Relacionado: el portón passwordless por página (`/acceso` + shortcode Lava `requiereacceso`) usa el bloque `Login` de esta carpeta sin cambios de código; ver `Rock/Security/Authentication/CHANGES.md`.
+
+### Especificación original del frontend (referencia)
 
 El bloque requiere un archivo `.obs` en:
 ```

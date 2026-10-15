@@ -7,8 +7,18 @@
 
 ## Estado
 
-**La migración ya está en producción (2026-09-06).** Este folder queda como registro del
-despliegue y como origen de los binarios que aún faltan subir.
+Última actualización: 2026-10-15
+
+> **Al 2026-10-15 los binarios de este folder están OBSOLETOS — no subirlos.** El `Rock.Blocks.dll`
+> (`fdf0d37c…`) y el `SundayServiceRegistration.obs.js` (104 523 B) son del 2026-09-07 (ventana
+> «Bienvenido» de 10 min). El 2026-09-10 la ventana pasó a 30 min con bloqueo de reservas nuevas
+> (`resultCode -5`), commiteado en `ab11c9d250` (2026-09-24). Esa versión de 30 min ya está
+> **en producción** (confirmado por Rodolfo, 2026-10-15), compilada del árbol actual junto con
+> Eventos §9.40 y el módulo QR (ver `Rock.Blocks/QREVENT/CHANGES.md` «Estado al 2026-10-15»). Este
+> kit sigue OBSOLETO como artefacto: no reusar sus binarios.
+
+**La migración ya está en producción (2026-09-06).** Este folder queda solo como registro
+histórico del despliegue. Ya no hay nada pendiente de subir desde aquí.
 
 | Paso | Estado |
 |---|---|
@@ -17,11 +27,14 @@ despliegue y como origen de los binarios que aún faltan subir.
 | Ciclo de prueba reservar → cambiar → cancelar → escanear | ✅ Corrido por el usuario esa noche |
 | `Step2.sql` (contraer) | ✅ Aplicado en prod 2026-09-06 22:44:53 (v2; la v1 falló a las 22:34, ver abajo) |
 | Verificación post-Step2 en prod | ✅ 2026-09-07: columnas `NOT NULL`, índices y FK como se esperaba, 0 filas sin alias, contadores cuadran, sin excepciones del módulo |
-| **Binarios de este folder (fecha 09-07)** | ⏳ **Pendientes de subir** — ver «Qué falta subir» |
+| **Binarios de este folder (fecha 09-07)** | ⛔ **Obsoletos al 2026-10-15** (superados por la versión de 30 min); ver nota arriba |
 
-## Qué falta subir
+## Qué faltaba subir (histórico, al 2026-09-07)
 
-Cambios posteriores al despliegue de la migración. Los tres van en un mismo reinicio.
+> Ya no aplica: estos cambios quedaron superados por la versión de 30 min, que está en producción
+> (confirmado 2026-10-15). Se conserva como registro. **No subir estos binarios.**
+
+Cambios posteriores al despliegue de la migración. Los tres iban en un mismo reinicio.
 
 | Archivo | Destino | Qué trae |
 |---|---|---|
@@ -100,7 +113,7 @@ cualquier `ALTER COLUMN` futuro en estas tablas: soltar primero los índices de 
 
 | Archivo | Qué es |
 |---|---|
-| `Rock.Blocks.dll` | Bloques compilados. Ver «Qué falta subir». |
+| `Rock.Blocks.dll` | Bloques compilados (obsoletos, no subir). Ver «Qué faltaba subir». |
 | `SundayServiceRegistration.obs.js` | Bundle de la página del feligrés. |
 | `sundayServiceCapacityAdmin.obs.js` | Bundle de Cupos (Configuración + Métricas). |
 | `Dev Tools/Sql/QREVENT_SundayService_PersonAlias_Step1.sql` | Expandir + doble escritura: columnas, backfill, FK a PersonAlias, índices, 4 SPs. Idempotente. |
@@ -127,7 +140,7 @@ Desde la app:
 - [x] Reservar un cupo → aparece en «Mi reserva».
 - [x] Cambiar horario y cancelar → el slot recupera el cupo.
 - [x] Escanear el QR → check-in OK y el nombre sale en pantalla del escáner.
-- [ ] «Bienvenido» en vivo en el teléfono al escanear — **pendiente**, requiere el DLL de 09-07 y un escaneo real.
+- [ ] «Bienvenido» en vivo en el teléfono al escanear — **pendiente de ver funcionar** con un escaneo real (el código ya está en prod).
 
 Prueba del merge (la razón de todo esto), pendiente en dev:
 

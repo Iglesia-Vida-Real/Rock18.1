@@ -3,6 +3,41 @@
 > Documento de contexto para retomar el trabajo en una sesión futura.
 > Estado al 2026-06-15: **implementado y compilado** (incluye NIT en pantalla de pago, ver §8). Pendiente: build del bundle Obsidian + config y pruebas en staging.
 
+Última actualización: 2026-10-15
+
+> **Revisión 2026-10-15.** El código de esta workflow action no cambió desde 2026-07-02 (el
+> commit del 2026-08-27 solo corrigió rutas en este doc). Desde el repo no se puede confirmar
+> si la lista "Qué falta" de §8 ya se ejecutó en prod — **PENDIENTE (2026-10-15): el dev que
+> recibe el proyecto debe verificarlo en Rock admin y en Odoo** antes de darla por cerrada.
+> Ojo: hoy existen **dos caminos a Odoo FEL** que comparten addon y Global Attributes de NIT:
+> 1. Esta workflow action (Event Registration nativo de Rock).
+> 2. `Rock/Model/Eventos/Services/FelService.cs` del módulo custom de Eventos/Boletería, que
+>    portó esta lógica. Ver §9.
+
+## 9. Camino 2: FelService del módulo Eventos (agregado 2026-10-15)
+
+- Estado por orden en `_com_vidareal_Events_Order.OdooStatus` (mismos valores que §4).
+- Disparo: el barrido `EventsMaintenance` (cada 5 min) reintenta solo órdenes `Paid` +
+  `Total > 0` + `FinancialTransactionId` no nulo + status nulo/`Reintentando`/`PendienteFEL` +
+  más de 10 min de antigüedad.
+- Config en Global Attributes: `OdooEventSaleBaseUrl` (**Field Type Text plano**: el código NO
+  la desencripta; si se crea como Encrypted Text falla cada 5 min con "invalid request URI")
+  y `OdooEventSaleApiKey` (Encrypted Text, header `X-API-KEY`). URL final = base +
+  `/api/event/sell`. Tras cambiarlos: limpiar caché o reciclar el app pool. Comparte
+  `OdooNitApiUrl`/`OdooNitApiBearerToken` con el camino 1.
+- **Ruta silenciosa:** 400 en los steps order/confirm/invoice, 404, 409 y 5xx dejan la orden en
+  `Reintentando` **sin excepción** (`FelService.HandleResponse`). Solo los errores de red,
+  timeout o URI inválida llegan a `ExceptionLog`. Rock descarta el body del 400.
+- Diagnóstico: replicar el POST con curl usando el payload de `FelService.PostSale`, con una
+  referencia falsa (prefijo `diag-`) y NIT `CF` — **nunca una referencia real**, porque el addon
+  deduplica por Guid de transacción y contaminaría la orden. En Odoo.sh los logs salen en UTC
+  (Guatemala = UTC-6).
+- Un `ModifiedDateTime` congelado no significa que no reintente: si el status reasignado es
+  igual, EF no guarda nada.
+- Caso real (2026-07-17, dev): error "Incompatible companies" en el step `invoice` porque el
+  diario de ventas `(copia)` estaba asignado a otra compañía. Se arregló en Odoo
+  (Contabilidad → Diarios), no en Rock.
+
 ## 1. Objetivo
 
 Por cada **inscripción nueva pagada** del módulo de eventos de Rock (Event Registration, pago con `Plugin.EpayVisanetGateway`), generar automáticamente en Odoo: cliente + orden de venta + **factura FEL certificada en SAT** + pago registrado. El disparo es un **workflow de Rock** con una action custom que hace `POST /api/event/sell` al addon de Odoo.

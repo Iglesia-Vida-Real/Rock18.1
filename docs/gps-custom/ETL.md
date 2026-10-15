@@ -1,5 +1,7 @@
 # Módulo GPS — Migración de datos
 
+Última actualización: 2026-10-15 (revisado; diseño sin cambios desde `ae2f580256`, 2026-09-07 — **sin código escrito todavía**, no existe `Plugin.VidaRealGps`)
+
 > De MariaDB (WordPress) a SQL Server (Rock). Complementa [SDD.md](SDD.md) §10.
 > Volúmenes del respaldo del 02-09-2026.
 

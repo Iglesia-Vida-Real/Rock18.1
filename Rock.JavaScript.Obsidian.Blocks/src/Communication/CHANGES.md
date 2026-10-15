@@ -1,5 +1,7 @@
 # CHANGES.md — Rock.JavaScript.Obsidian.Blocks/src/Communication
 
+> **Última actualización:** 2026-10-15 (revisado; sin cambios de código en `src/Communication` desde 2026-06-06)
+
 ## Contexto
 
 Este directorio contiene los bloques Obsidian del modulo de **Comunicaciones** de Rock CMS.

@@ -1,5 +1,13 @@
 # QREVENT CelebremosQrCheckIn Migration (Rock 15.5.1 -> Rock 18.1)
 
+Última actualización: 2026-10-15
+
+> **Documento histórico** (migración 15.5.1 → 18.1). Revisado el 2026-10-15: `CelebremosQrCheckIn`
+> no tuvo cambios funcionales posteriores a la migración. Estado vigente del módulo QREVENT (todo en
+> producción, confirmado 2026-10-15): `Rock.Blocks/QREVENT/CHANGES.md` y
+> `Rock.JavaScript.Obsidian.Blocks/src/QREVENT/CHANGES.md`.
+
+
 ## Source
 - Back (Rock15): `Rock.Blocks/QREVENT/CelebremosQrCheckIn.cs`
 - Front (Rock15): `Rock.JavaScript.Obsidian.Blocks/src/QREVENT/CelebremosQrCheckIn.obs`

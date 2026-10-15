@@ -1,5 +1,7 @@
 # LayoutCustom (Header / Footer) — Contexto y cambios (VidaReal fork)
 
+> **Última actualización:** 2026-10-15 (revisado; sin cambios de código en `Rock.Blocks/LayoutCustom` desde 2026-06-06)
+
 ## 1. Qué son estos bloques
 
 `Header` y `Footer` son bloques Obsidian **completamente nuevos**, creados para VidaReal. No existen en el repositorio upstream de SparkDevNetwork/Rock.

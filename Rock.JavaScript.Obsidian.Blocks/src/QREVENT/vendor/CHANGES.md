@@ -1,5 +1,7 @@
 # CHANGES.md — QREVENT / vendor (ZXing)
 
+> **Última actualización:** 2026-10-15 (revisado; sin cambios en `src/QREVENT/vendor` ni en las versiones de `@zxing/*` de `package.json` desde 2026-06-06. Recordatorio: los avisos "Can't resolve original location" de rollup al compilar vienen de `@zxing/browser`, no de nuestros bloques)
+
 ## Que es ZXing
 
 **ZXing** ("Zebra Crossing") es una libreria open source de lectura y escritura de codigos de barras y codigos QR.

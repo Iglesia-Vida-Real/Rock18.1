@@ -1,5 +1,26 @@
 # ePay Visanet Gateway — Contexto para Claude Code
 
+Última actualización: 2026-10-15
+
+> **Estado a 2026-10-15.**
+> - Las tres copias del control (`ObsidianSource/`, `Deploy/` y la servida en
+>   `RockWeb/Plugins/EpayVisanetGateway/Obsidian/`) están sincronizadas y commiteadas
+>   (último commit `81d2622dbc`, 2026-10-06). Verificado con `diff --strip-trailing-cr`.
+> - **En producción** (confirmado por Rodolfo, 2026-10-15): el `.obs.js` servido
+>   (`RockWeb/Plugins/EpayVisanetGateway/Obsidian/epayVisanetGatewayControl.obs.js`) con
+>   los textos del 2026-10-05 y el select de cuotas del 2026-09-24, subido con el paquete
+>   del ajuste de Eventos a las capturas (ver `docs/eventos-custom/RESEARCH_Y_PLAN.md` §9.40).
+>   No hay cambios en la DLL del gateway desde 2026-07-04.
+> - **PENDIENTE (decisión de negocio, abierta desde 2026-10-05):** ¿Epay debe rechazar
+>   American Express como lo hace Dar? Hoy la acepta (CVV de 4).
+> - **PENDIENTE (2026-10-15):** dejar registrado un cobro real de punta a punta tras los
+>   cambios de textos (en dev solo se probó con orden gratuita).
+
+> **Select de cuotas — 2026-09-24 (commit `ab11c9d250`).** Solo CSS: el
+> `select.epayInput` pasó de `appearance:auto` a `appearance:none` con altura fija
+> de 48px y chevron SVG propio, porque con la apariencia nativa del SO quedaba
+> ~12px más alto que los inputs vecinos. Aplicado en las tres copias.
+
 > **Endurecimiento de seguridad 2026-06-22.** Se trasladó al plugin la misma
 > postura de seguridad del bloque Cybersource, adaptada a que esto es un
 > `GatewayComponent` (Rock es dueño de la `FinancialTransaction`; no hay patrón

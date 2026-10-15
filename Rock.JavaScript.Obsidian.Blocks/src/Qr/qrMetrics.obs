@@ -37,6 +37,24 @@
                     </div>
                 </header>
 
+                <!-- ===== Qué se está mirando =====
+                     Con cientos de códigos, elegir uno de un desplegable obliga a saberse el nombre.
+                     Se elige desde la tabla de abajo (buscar, filtrar, ordenar por escaneos) o desde
+                     el top; acá solo se dice qué se está viendo y cómo volver. -->
+                <div v-if="hasDynamicCodes" class="qrmFocus" :class="{ qrmFocusOn: selected }">
+                    <template v-if="selected">
+                        <span class="qrmFocusLbl">Viendo solo</span>
+                        <strong class="qrmFocusName">{{ selected.name }}</strong>
+                        <span v-if="selected.categoryName" class="qrmTag">{{ selected.categoryName }}</span>
+                        <a v-if="options.detailPageUrl" class="qrmLink qrmFocusLink" :href="hrefFor(selected)">Abrir el código</a>
+                        <button type="button" class="qrmFocusBtn" @click="selectCode('')">× Ver todos los códigos</button>
+                    </template>
+                    <template v-else>
+                        <span class="qrmFocusLbl">Mostrando los {{ fmt(allCodes.length) }} códigos dinámicos.</span>
+                        <button type="button" class="qrmFocusBtn" @click="goToCodes">Buscar un código específico ↓</button>
+                    </template>
+                </div>
+
                 <!-- Región viva siempre presente: un aria-live que nace junto con su texto no se
                      anuncia, y NotificationBox no trae ninguno propio. -->
                 <div class="qrmLive" aria-live="polite" aria-atomic="true">
@@ -51,14 +69,28 @@
                         <span class="qrmKpiNum">{{ fmt(data.totalScans) }}</span>
                         <span class="qrmKpiLbl">escaneos</span>
                     </div>
-                    <div class="qrmKpi">
-                        <span class="qrmKpiNum">{{ fmt(data.activeCodes) }}</span>
-                        <span class="qrmKpiLbl">códigos activos</span>
-                    </div>
-                    <div class="qrmKpi" :class="{ qrmKpiAlert: data.staleCodes > 0 }">
-                        <span class="qrmKpiNum">{{ fmt(data.staleCodes) }}</span>
-                        <span class="qrmKpiLbl">dormidos · {{ options.staleDays }} días</span>
-                    </div>
+                    <!-- Con un código filtrado, "códigos activos" y "dormidos" valdrían 0 o 1: se
+                         cambian por lo que sí dice algo de un código suelto. -->
+                    <template v-if="selected">
+                        <div class="qrmKpi">
+                            <span class="qrmKpiNum qrmKpiNumSm">{{ selected.lastScanDateTime ? shortDate(selected.lastScanDateTime) : "—" }}</span>
+                            <span class="qrmKpiLbl">último escaneo</span>
+                        </div>
+                        <div class="qrmKpi" :class="{ qrmKpiAlert: selected.isStale }">
+                            <span class="qrmKpiNum qrmKpiNumSm">{{ selectedStatus }}</span>
+                            <span class="qrmKpiLbl">estado</span>
+                        </div>
+                    </template>
+                    <template v-else>
+                        <div class="qrmKpi">
+                            <span class="qrmKpiNum">{{ fmt(data.activeCodes) }}</span>
+                            <span class="qrmKpiLbl">códigos activos</span>
+                        </div>
+                        <div class="qrmKpi" :class="{ qrmKpiAlert: data.staleCodes > 0 }">
+                            <span class="qrmKpiNum">{{ fmt(data.staleCodes) }}</span>
+                            <span class="qrmKpiLbl">dormidos · {{ options.staleDays }} días</span>
+                        </div>
+                    </template>
                     <div class="qrmKpi">
                         <span class="qrmKpiNum">{{ fmt(data.distinctCountries) }}</span>
                         <span class="qrmKpiLbl">países</span>
@@ -80,7 +112,9 @@
                 </div>
 
                 <div v-else-if="data.totalScans === 0" class="qrmEmpty">
-                    <p class="qrmEmptyText">Todavía no hay escaneos registrados en este rango.</p>
+                    <p class="qrmEmptyText">{{ selected
+                        ? "Este código no tiene escaneos registrados en este rango."
+                        : "Todavía no hay escaneos registrados en este rango." }}</p>
                 </div>
 
                 <template v-else>
@@ -152,17 +186,19 @@
                     </section>
 
                     <div class="qrmGrid2">
-                        <!-- ===== Top de códigos ===== -->
-                        <section class="qrmCard">
+                        <!-- ===== Top de códigos =====
+                             El top y los dormidos comparan códigos entre sí: con uno solo filtrado
+                             no hay nada que comparar, y su estado ya está en los KPIs. -->
+                        <section v-if="!selected" class="qrmCard">
                             <h2 class="qrmH2">Más escaneados</h2>
                             <!-- camelCase obligatorio: los attrs de un componente funcional NO se
                                  camelizan, así que :href-for llegaba como undefined. -->
-                            <BarList :rows="topRows" :hrefFor="hrefFor" />
+                            <BarList :rows="topRows" :onPick="pickRow" />
                             <p v-if="topNote" class="qrmNote">{{ topNote }}</p>
                         </section>
 
                         <!-- ===== Dormidos ===== -->
-                        <section class="qrmCard">
+                        <section v-if="!selected" class="qrmCard">
                             <h2 class="qrmH2">Dormidos</h2>
                             <p class="qrmNote">Material impreso que nadie está usando. Es la lista que justifica
                                 retirar o reemplazar.</p>
@@ -226,6 +262,78 @@
                         <RockButton btnType="default" class="qrmBtn" @click="onExport">Exportar CSV</RockButton>
                     </div>
                 </template>
+
+                <!-- ===== Todos los códigos =====
+                     Es el selector del panel. Fuera del bloque de gráficos a propósito: un código
+                     sin escaneos en el rango igual tiene que poder elegirse (para confirmar que no
+                     se usa), y con el panel vacío esta tabla es lo único útil que queda. -->
+                <section v-if="hasDynamicCodes" id="qrmCodes" class="qrmCard qrmCodes">
+                    <h2 class="qrmH2">Todos los códigos</h2>
+                    <p class="qrmNote">Elegí un código para ver sus métricas en todo el panel. Los
+                        escaneos son del rango elegido arriba.</p>
+
+                    <div class="qrmCodeFilters">
+                        <div ref="codeSearchWrap">
+                            <TextBox v-model="codeSearch" label="Buscar" placeholder="Nombre o categoría" class="qrmInput" />
+                        </div>
+                        <DropDownList v-model="codeCategory" label="Categoría" class="qrmInput"
+                                      :items="categoryItems" showBlankItem />
+                        <DropDownList v-model="codeSort" label="Ordenar por" class="qrmInput"
+                                      :items="codeSortItems" :showBlankItem="false" />
+                        <CheckBox v-model="codeShowInactive" label="Incluir inactivos" />
+                    </div>
+
+                    <div v-if="filteredCodes.length === 0" class="qrmNone">Ningún código coincide con la búsqueda.</div>
+
+                    <div v-else class="qrmTableWrap" tabindex="0" role="group" aria-label="Tabla de códigos, desplazable">
+                        <table class="qrmTable">
+                            <caption class="qrmSrOnly">{{ codesCaption }}</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Código</th>
+                                    <th scope="col" class="qrmNum">Escaneos</th>
+                                    <th scope="col">Último escaneo</th>
+                                    <th scope="col"><span class="qrmSrOnly">Acción</span></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="row in pagedCodes" :key="row.idKey ?? row.name ?? ''"
+                                    class="qrmRow"
+                                    :class="{ qrmRowOn: row.idKey === selected?.idKey, qrmRowOff: !row.isActive }"
+                                    @click="pickRow(row)">
+                                    <td>
+                                        <span class="qrmRowName">{{ row.name }}</span>
+                                        <span v-if="row.categoryName" class="qrmTag">{{ row.categoryName }}</span>
+                                        <span v-if="!row.isActive" class="qrmTag qrmTagOff">inactivo</span>
+                                        <span v-else-if="row.isStale" class="qrmTag qrmTagWarn">dormido</span>
+                                    </td>
+                                    <td class="qrmNum">
+                                        <span class="qrmRowCount">{{ fmt(row.count) }}</span>
+                                        <!-- Barra contra el máximo del catálogo, no de la página:
+                                             si no, la primera fila de cada página llegaría al 100 %. -->
+                                        <span class="qrmRowTrack" aria-hidden="true">
+                                            <span class="qrmRowFill" :style="{ width: rowPct(row) + '%' }"></span>
+                                        </span>
+                                    </td>
+                                    <td>{{ row.lastScanDateTime ? shortDate(row.lastScanDateTime) : "nunca" }}</td>
+                                    <td class="qrmNum">
+                                        <!-- El botón es el control accesible; el clic en la fila es
+                                             atajo de mouse. stop: sin él, el clic llega dos veces. -->
+                                        <button v-if="row.idKey !== selected?.idKey" type="button" class="qrmRowBtn"
+                                                @click.stop="pickRow(row)">Ver métricas</button>
+                                        <span v-else class="qrmRowHere">viendo</span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div v-if="pageCount > 1" class="qrmPager">
+                        <button type="button" class="qrmRowBtn" :disabled="codePage === 0" @click="codePage--">← Anterior</button>
+                        <span class="qrmPagerText">{{ pageRangeText }}</span>
+                        <button type="button" class="qrmRowBtn" :disabled="codePage >= pageCount - 1" @click="codePage++">Siguiente →</button>
+                    </div>
+                </section>
             </div>
         </div>
     </Panel>
@@ -289,7 +397,9 @@
        notas, ejes): no pasa AA. Este tono da ~5,1:1 y sigue leyéndose recesivo. */
     --ink-faint: #5E6E7A;
     --rule: #E1E8ED;
+    --rule-strong: #C9D4DC;
     --action: #1E5B87;       /* el único tono de las marcas: pasa contraste >=3:1 */
+    --action-soft: #EAF1F6;
     --steel: #A2BACA;        /* solo grilla y ejes: recesivo a propósito */
     --warn-text: #8F5B0B;
     --warn-bg: #FDF2E1;
@@ -321,6 +431,48 @@
 .qrmTitle { font-family: var(--font-title); font-weight: 700; font-size: 26px; color: var(--vr-navy); margin: 0; }
 .qrmSub { color: var(--ink-soft); font-size: 13px; margin: 4px 0 0; }
 .qrmRange { min-width: 190px; }
+.qrmHead > div:first-child { flex: 1; min-width: 0; }
+.qrmKpiNumSm { font-size: 20px; line-height: 1.4; }
+
+/* ===== Qué se está mirando ===== */
+.qrmFocus { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; background: var(--paper); border: 1px solid var(--rule); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 14px; font-size: 13px; }
+.qrmFocusOn { background: var(--action-soft); border-color: var(--action); }
+.qrmFocusLbl { color: var(--ink-soft); }
+.qrmFocusName { color: var(--vr-navy); font-size: 15px; }
+.qrmFocusLink { font-size: 13px; }
+.qrmFocusBtn { margin-left: auto; background: none; border: 1px solid var(--rule-strong); border-radius: var(--radius-sm); padding: 5px 10px; font-size: 12px; font-weight: 600; color: var(--action); cursor: pointer; }
+.qrmFocusBtn:hover { background: var(--paper-alt); }
+.qrmTag { display: inline-block; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; padding: 2px 7px; border-radius: 999px; background: var(--action-soft); color: var(--action); margin-left: 6px; white-space: nowrap; vertical-align: middle; }
+.qrmTagOff { background: #FBE3E0; color: var(--vr-red); }
+.qrmTagWarn { background: var(--warn-bg); color: var(--warn-text); }
+
+/* ===== Top: el nombre filtra el panel ===== */
+.qrmBarPick { background: none; border: 0; padding: 0; text-align: left; color: var(--action); font-weight: 600; cursor: pointer; }
+.qrmBarPick:hover { text-decoration: underline; }
+
+/* ===== Todos los códigos ===== */
+.qrmCodes { margin-top: 16px; }
+.qrmCodeFilters { display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 12px; align-items: end; margin: 10px 0 12px; }
+.qrmTableWrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: var(--radius-sm); }
+.qrmTable { width: 100%; border-collapse: collapse; font-size: 13px; }
+.qrmTable thead th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-faint); font-weight: 600; padding: 10px 12px; border-bottom: 1px solid var(--rule-strong); white-space: nowrap; }
+.qrmTable tbody td { padding: 9px 12px; border-bottom: 1px solid var(--rule); vertical-align: middle; }
+.qrmTable tbody tr:last-child td { border-bottom: none; }
+.qrmTable .qrmNum { text-align: right; white-space: nowrap; }
+.qrmRow { cursor: pointer; }
+.qrmRow:hover { background: var(--paper-alt); }
+.qrmRowOn, .qrmRowOn:hover { background: var(--action-soft); }
+.qrmRowOff { opacity: .6; }
+.qrmRowName { font-weight: 600; color: var(--ink); }
+.qrmRowCount { font-family: var(--font-num); color: var(--vr-navy); display: inline-block; min-width: 40px; }
+.qrmRowTrack { display: inline-block; width: 80px; height: 6px; background: var(--paper-alt); border-radius: 3px; margin-left: 8px; vertical-align: middle; overflow: hidden; }
+.qrmRowFill { display: block; height: 100%; background: #1E5B87; }
+.qrmRowBtn { background: none; border: 1px solid var(--rule-strong); border-radius: var(--radius-sm); padding: 4px 10px; font-size: 12px; font-weight: 600; color: var(--action); cursor: pointer; white-space: nowrap; }
+.qrmRowBtn:hover:not(:disabled) { background: var(--paper-alt); }
+.qrmRowBtn:disabled { opacity: .4; cursor: default; }
+.qrmRowHere { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--action); font-weight: 600; }
+.qrmPager { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 12px; }
+.qrmPagerText { font-size: 12px; color: var(--ink-soft); font-family: var(--font-num); }
 
 .qrmKpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 16px; }
 .qrmKpi { background: var(--paper); border: 1px solid var(--rule); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow-card); }
@@ -416,15 +568,21 @@
 @media (max-width: 720px) {
     .qrmPage { margin: 0; padding: 16px 12px 24px; }
     .qrmHead { flex-direction: column; }
+    .qrmRange { width: 100%; }
+    .qrmCodeFilters { grid-template-columns: 1fr; }
+    .qrmRowTrack { display: none; }
+    .qrmFocusBtn { margin-left: 0; }
 }
 </style>
 
 <script setup lang="ts">
-    import { computed, ref, h, FunctionalComponent } from "vue";
+    import { computed, ref, h, watch, nextTick, FunctionalComponent } from "vue";
     import Panel from "@Obsidian/Controls/panel.obs";
     import DropDownList from "@Obsidian/Controls/dropDownList.obs";
     import NotificationBox from "@Obsidian/Controls/notificationBox.obs";
     import RockButton from "@Obsidian/Controls/rockButton.obs";
+    import TextBox from "@Obsidian/Controls/textBox.obs";
+    import CheckBox from "@Obsidian/Controls/checkBox.obs";
     import { ListItemBag } from "@Obsidian/ViewModels/Utility/listItemBag";
     import { useConfigurationValues, useInvokeBlockAction } from "@Obsidian/Utility/block";
     import { MetricsData, MetricsOptions, TopCode, UNRESOLVED_COUNTRY_NAME } from "./QrMetrics/types.partial";
@@ -441,6 +599,21 @@
     const errorMessage = ref("");
     const hoverDay = ref<number | null>(null);
     const rangeDaysRaw = ref("90");
+    const codeKeyRaw = ref(options.value.initialCodeKey ?? "");
+    let lastRequestId = 0;
+
+    /** Valor del filtro de categoría para los códigos sin categoría. */
+    const NO_CATEGORY = "__none__";
+
+    /** 20 filas: se leen sin scroll y 200 códigos son 10 páginas, no una lista infinita. */
+    const PAGE_SIZE = 20;
+
+    const codeSearch = ref("");
+    const codeCategory = ref("");
+    const codeSort = ref("scans");
+    const codeShowInactive = ref(false);
+    const codePage = ref(0);
+    const codeSearchWrap = ref<HTMLElement | null>(null);
 
     const TL_W = 600;
     const TL_H = 140;
@@ -463,6 +636,88 @@
     const rangeDays = computed({
         get: () => rangeDaysRaw.value,
         set: (v: string) => { rangeDaysRaw.value = v; void onRangeChange(); }
+    });
+
+    // #region Tabla de códigos
+
+    const allCodes = computed<TopCode[]>(() => data.value.allCodes ?? []);
+
+    /** Categorías presentes en los códigos, para el filtro. Sin categoría va al final. */
+    const categoryItems = computed<ListItemBag[]>(() => {
+        const names = new Set<string>();
+        let hasNone = false;
+        for (const c of allCodes.value) {
+            if (c.categoryName) { names.add(c.categoryName); }
+            else { hasNone = true; }
+        }
+        const items: ListItemBag[] = [...names].sort((a, b) => a.localeCompare(b, "es")).map(n => ({ value: n, text: n }));
+        if (hasNone) { items.push({ value: NO_CATEGORY, text: "Sin categoría" }); }
+        return items;
+    });
+
+    const codeSortItems: ListItemBag[] = [
+        { value: "scans", text: "Más escaneados" },
+        { value: "recent", text: "Escaneo más reciente" },
+        { value: "name", text: "Nombre" }
+    ];
+
+    const filteredCodes = computed<TopCode[]>(() => {
+        const term = normalize(codeSearch.value.trim());
+        const cat = codeCategory.value;
+
+        const list = allCodes.value.filter(c => {
+            if (!codeShowInactive.value && !c.isActive && c.idKey !== selected.value?.idKey) { return false; }
+            if (cat === NO_CATEGORY ? !!c.categoryName : (cat && c.categoryName !== cat)) { return false; }
+            if (term && !normalize(`${c.name ?? ""} ${c.categoryName ?? ""}`).includes(term)) { return false; }
+            return true;
+        });
+
+        switch (codeSort.value) {
+            case "name":
+                list.sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", "es"));
+                break;
+            case "recent":
+                list.sort((a, b) => timeOf(b.lastScanDateTime) - timeOf(a.lastScanDateTime));
+                break;
+            default:
+                list.sort((a, b) => b.count - a.count || (a.name ?? "").localeCompare(b.name ?? "", "es"));
+                break;
+        }
+
+        return list;
+    });
+
+    const pageCount = computed(() => Math.max(1, Math.ceil(filteredCodes.value.length / PAGE_SIZE)));
+
+    const pagedCodes = computed(() =>
+        filteredCodes.value.slice(codePage.value * PAGE_SIZE, (codePage.value + 1) * PAGE_SIZE));
+
+    const pageRangeText = computed(() => {
+        const total = filteredCodes.value.length;
+        const from = codePage.value * PAGE_SIZE + 1;
+        const to = Math.min(total, from + PAGE_SIZE - 1);
+        return `${fmt(from)}–${fmt(to)} de ${fmt(total)}`;
+    });
+
+    const codesCaption = computed(() =>
+        `Códigos dinámicos: ${filteredCodes.value.length} de ${allCodes.value.length}, página ${codePage.value + 1} de ${pageCount.value}.`);
+
+    /** Máximo de todo el catálogo: la barra compara contra todos, no contra la página. */
+    const codesMax = computed(() => Math.max(1, ...allCodes.value.map(c => c.count)));
+
+    // Cambiar la búsqueda o el orden con la página 7 abierta dejaría una página vacía.
+    watch([codeSearch, codeCategory, codeSort, codeShowInactive], () => { codePage.value = 0; });
+
+    // #endregion
+
+    /** El código filtrado según el servidor: manda lo que volvió, no lo que se pidió. */
+    const selected = computed<TopCode | null>(() => data.value.selectedCode ?? null);
+
+    const selectedStatus = computed(() => {
+        const s = selected.value;
+        if (!s) { return ""; }
+        if (!s.isActive) { return "Inactivo"; }
+        return s.isStale ? "Dormido" : "Activo";
     });
 
     const timeline = computed(() => data.value.timeline ?? []);
@@ -624,7 +879,7 @@
         return options.value.detailPageUrl.replace("((Key))", row.idKey ?? "");
     }
 
-    type BarListProps = { rows: BarRow[]; hrefFor?: (row: TopCode | undefined) => string };
+    type BarListProps = { rows: BarRow[]; onPick?: (row: TopCode) => void };
 
     /**
      * Lista de barras horizontales. Una sola serie de magnitud: un tono, y el nombre de cada fila
@@ -644,9 +899,16 @@
         }
 
         return h("ul", { class: "qrmBars" }, props.rows.map(r => {
-            const href = props.hrefFor && r.row ? props.hrefFor(r.row) : "";
-            const label = href
-                ? h("a", { class: "qrmBarName qrmLink", href, title: r.name }, r.name)
+            // Con onPick el nombre es un botón que filtra el panel: el top es la forma más
+            // directa de llegar a los códigos que importan.
+            const row = r.row;
+            const label = props.onPick && row
+                ? h("button", {
+                    type: "button",
+                    class: "qrmBarName qrmBarPick",
+                    title: `Ver solo ${r.name}`,
+                    onClick: () => props.onPick?.(row)
+                }, r.name)
                 : h("span", { class: "qrmBarName", title: r.name }, r.name);
 
             return h("li", { class: "qrmBar", key: r.key }, [
@@ -664,17 +926,58 @@
 
     // Sin esto Vue trata cada atributo como attr crudo (instance.props = attrs) y los attrs NO se
     // camelizan: `href-for` nunca llegaba a `props.hrefFor` y el top perdía los enlaces en silencio.
-    BarList.props = ["rows", "hrefFor"];
+    BarList.props = ["rows", "onPick"];
 
     // #endregion
 
     // #region Event Handlers
 
+    /** Filtra el panel por un código ("" = todos) y sube a ver el resultado. */
+    function selectCode(key: string): void {
+        if (key === codeKeyRaw.value) { return; }
+        codeKeyRaw.value = key;
+        void onRangeChange();
+        window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    function pickRow(row: TopCode): void {
+        if (row.idKey) { selectCode(row.idKey); }
+    }
+
+    /** Baja a la tabla y deja el cursor en el buscador. */
+    function goToCodes(): void {
+        document.getElementById("qrmCodes")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        void nextTick(() => codeSearchWrap.value?.querySelector("input")?.focus({ preventScroll: true }));
+    }
+
+    function normalize(value: string): string {
+        return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    }
+
+    function timeOf(value: string | null | undefined): number {
+        if (!value) { return 0; }
+        const t = new Date(value).getTime();
+        return isNaN(t) ? 0 : t;
+    }
+
+    function rowPct(row: TopCode): number {
+        return row.count > 0 ? Math.max(2, Math.round((row.count / codesMax.value) * 100)) : 0;
+    }
+
     async function onRangeChange(): Promise<void> {
         errorMessage.value = "";
         hoverDay.value = null;
 
-        const result = await invokeBlockAction<MetricsData>("Refresh", { days: Number(rangeDaysRaw.value) });
+        const requestId = ++lastRequestId;
+        const result = await invokeBlockAction<MetricsData>("Refresh", {
+            days: Number(rangeDaysRaw.value),
+            qrCodeKey: codeKeyRaw.value
+        });
+
+        // Si mientras tanto se cambió el código o el rango, esta respuesta ya no es la que se ve.
+        if (requestId !== lastRequestId) {
+            return;
+        }
 
         if (!result.isSuccess || !result.data) {
             errorMessage.value = result.errorMessage || "No se pudieron cargar las métricas.";
@@ -682,6 +985,27 @@
         }
 
         data.value = result.data;
+        syncUrl();
+    }
+
+    /**
+     * Deja el código en la URL (QrCodeId) para que el enlace se pueda compartir o recargar sin
+     * perder el filtro. replaceState: cambiar el filtro no debe llenar el historial.
+     */
+    function syncUrl(): void {
+        try {
+            const url = new URL(window.location.href);
+            if (codeKeyRaw.value) {
+                url.searchParams.set("QrCodeId", codeKeyRaw.value);
+            }
+            else {
+                url.searchParams.delete("QrCodeId");
+            }
+            window.history.replaceState(window.history.state, "", url.toString());
+        }
+        catch {
+            // Sin URL sincronizada el panel funciona igual.
+        }
     }
 
     /**
@@ -705,7 +1029,9 @@
             }
         };
 
-        push("top", topRows.value);
+        if (!selected.value) {
+            push("top", topRows.value);
+        }
         push("dispositivo", clientRows.value);
         push("sistema_operativo", osRows.value);
         push("pais", countryRows.value);
@@ -728,7 +1054,10 @@
         const url = URL.createObjectURL(blob);
         const anchor = document.createElement("a");
         anchor.href = url;
-        anchor.download = `qr-metricas-${new Date().toISOString().substring(0, 10)}.csv`;
+        const slug = selected.value?.name
+            ? "-" + selected.value.name.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase()
+            : "";
+        anchor.download = `qr-metricas${slug}-${new Date().toISOString().substring(0, 10)}.csv`;
         anchor.style.display = "none";
         document.body.appendChild(anchor);
         anchor.click();

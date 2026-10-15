@@ -1,5 +1,15 @@
 # Módulo Wallet VidaReal — Plan y arquitectura
 
+Última actualización: 2026-10-15
+
+> **Estado a 2026-10-15.** Migraciones **001–016** commiteadas (la próxima es la 17). El módulo
+> ya atiende tráfico de producción: el `WalletPassKitController` documenta un User-Agent real
+> visto **en prod el 2026-08-28**, así que el "Pendiente: deploy a prod" del párrafo de abajo
+> (2026-07-08) quedó viejo al menos para el endpoint de descarga. Al 2026-10-15 el módulo
+> está **en producción** (confirmado por Rodolfo), migraciones hasta la 016. Queda por documentar
+> — **PENDIENTE (2026-10-15):** el smoke del ciclo de updates push (§10.1) y el render Lava real del filtro `WalletPassUrl`
+> (§10.1b). Cambios posteriores al 2026-08-10 en §9 (entradas del 2026-08-28 en adelante).
+
 > **Estado (2026-07-08):** CONSTRUIDO y funcionando en dev (migraciones 001–013,
 > `Plugin.VidaRealWallet/README.md` tiene la tabla). Módulo INDEPENDIENTE de Eventos:
 > emisión, diseño y **actualización push** de passes de Apple Wallet y Google Wallet,
@@ -289,7 +299,28 @@ del UpdatedDateTime (se devuelve como `lastUpdated` tag).
   - Verificado en iPhone real (screenshot del usuario 15:44): tarjeta renderizando con
     foto, campus "Punto Villa Nueva" y QR.
 
+- **2026-08-28 / commit `1b9b247e48` (2026-09-03) — intersticial para navegadores embebidos**:
+  `WalletPassKitController` detecta el navegador interno de WhatsApp, Facebook, Instagram, Line y
+  WeChat (`IsInAppBrowser`: marcadores de UA, `; wv` en Android, iOS sin `Safari/`) y sirve
+  `BuildOpenInBrowserPage` en vez del `.pkpass`, porque esos WebViews no saben instalarlo (iOS lo
+  pinta como texto crudo, Android lo descarta). En Android usa `intent://` para abrir el navegador;
+  en iOS no hay forma programática, se da la instrucción. Ojo: el WebView de WhatsApp en iPhone SÍ
+  manda `Safari/` (UA visto en prod), por eso se busca el marcador `WAiOS`.
+- **2026-09-24 — correo del pase digital**: plantilla `docs/wallet-module/correo-pase-digital.html`
+  + notas en `correo-pase-digital.md` (reemplazo de `GetMinistryPassUrl` por `WalletPassUrl`, Guid de
+  cada plantilla, por qué no acortar el link). `miPaseDigital.obs` pasa a móvil a sangre
+  (`calc(50% - 50vw)`), igual que el checkout.
+- **2026-10-05 — vista web del pase en Mis Entradas** (`myTickets.obs`, commit `81d2622dbc`): al tocar
+  una entrada se dibuja el pase en web con el diseño del de Apple Wallet. NO lee la `WalletTemplate`:
+  los textos fijos del reverso están copiados de las migraciones 007/008 (si cambian en la
+  plantilla, cambiarlos también en `myTickets.obs`). Subió con el paquete de Eventos, **en
+  producción** (confirmado 2026-10-15; ver `Plugin.VidaRealEvents/README.md`).
+
 ## 10. Pendientes
+
+> Revisado 2026-10-15: el punto 2 (rediseñar el visor de Mis Entradas con el mockup) quedó
+> atendido por la vista web del pase del 2026-10-05; los demás siguen abiertos salvo lo que
+> confirme la verificación en prod indicada al inicio.
 
 1. **Deploy a prod** (runbook §8b) + smoke del ciclo de updates (primera vez).
 1b. Smoke del filtro Lava en runtime: workflow/communication con

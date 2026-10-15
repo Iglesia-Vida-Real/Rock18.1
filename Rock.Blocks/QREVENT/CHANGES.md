@@ -1,5 +1,7 @@
 # QREVENT — Modulo de Check-in con QR (Backend)
 
+Última actualización: 2026-10-15
+
 ## Que es QREVENT
 
 QREVENT es un modulo completamente nuevo desarrollado para VidaReal.tv, **no existe en el Rock original** (SparkDevNetwork/Rock). Implementa check-in de asistencia mediante codigos QR para eventos y servicios dominicales. Fue desarrollado originalmente en Rock 15.5.1 y migrado a Rock 18.1 (rama `hotfix-18.1`).
@@ -9,6 +11,26 @@ El modulo cubre dos casos de uso distintos:
 2. **Reservacion de lugar** en servicios dominicales con sistema de hold temporal y codigo QR de ingreso.
 
 ---
+
+## Estado al 2026-10-15
+
+Todo el codigo de QREVENT esta **commiteado** en `hotfix-18.1`: `ae2f580256` (2026-09-07:
+PersonAlias, RealTime, metricas, ventana de 10 min) y `ab11c9d250` (2026-09-24: ventana de 30 min
++ bloqueo `-5`, ver la ultima seccion). Sin cambios de codigo de QREVENT despues de esa fecha.
+
+| Cambio | Estado |
+|---|---|
+| Todo lo de la tabla de abajo (al 2026-09-07) | En prod |
+| Tarjeta «Bienvenido» a 10 min (07-sep) | Superada por la de 30 min; no hace falta subirla por separado |
+| **Ventana «Bienvenido» de 30 min + bloqueo server-side de reservas nuevas (`-5`)** + horarios llenos visibles («Lleno» / «Solo N») + saludo en primer nombre + primer apellido + sin CTA «Reservar otro servicio» (10-sep) | **En producción** (confirmado por Rodolfo, 2026-10-15). (`Rock.Blocks.dll` + `SundayServiceRegistration.obs.js` + `sundayServiceCapacityAdmin.obs.js`). |
+| Fix de deadlock del check-in (`sp_SundayServiceCheckIn`) + guardado de QR en iOS/WebView | **En producción** (confirmado por Rodolfo, 2026-10-15). |
+| «Bienvenido» RealTime | **PENDIENTE (2026-10-15):** sigue sin verse funcionar con un escaneo real (revisar `/rock-rt` desde el WebView). |
+| Correos duplicados por doble clic y cancelacion de reserva ya escaneada | **PENDIENTE de decision de negocio** (ver «Hallazgos abiertos»). |
+
+**Ojo al redesplegar:** el `Rock.Blocks.dll` de hoy se compila del mismo arbol que Eventos §9.40 y
+el modulo QR (incluido su filtro de Uso, en prod pero pendiente de commit). El kit de
+`Dev Tools/Deploy/SundayService_PersonAlias/` quedo **OBSOLETO** como artefacto: su `Rock.Blocks.dll` y su
+`SundayServiceRegistration.obs.js` son del 2026-09-07 (ventana de 10 min); no usarlos.
 
 ## Estado en produccion (al 2026-09-07)
 
@@ -21,9 +43,9 @@ El modulo cubre dos casos de uso distintos:
 | Contador de ingresos + pestaña Metricas (06-sep) | En prod desde 2026-09-06 |
 | Identidad por `PersonAliasId`: Step1 + DLL + Step2 (06-sep) | **En prod desde 2026-09-06**; verificado el 07-sep |
 | «Bienvenido» RealTime al escanear (06-sep) | Codigo en prod; **el aviso en vivo no se ha visto funcionar con un escaneo real** |
-| Tarjeta «Bienvenido» limitada a 10 min (07-sep) | Compilada, **pendiente de subir** |
+| Tarjeta «Bienvenido» limitada a 10 min (07-sep) | Superada por la de 30 min, que esta en prod (confirmado 2026-10-15) |
 
-Nada de esto esta commiteado todavia: el arbol de `hotfix-18.1` tiene los cambios sin commit.
+~~Nada de esto esta commiteado todavia~~ — corregido 2026-10-15: commiteado en `ae2f580256` (2026-09-07).
 Los binarios y el registro del despliegue viven en
 `Dev Tools/Deploy/SundayService_PersonAlias/README.md`.
 
@@ -771,3 +793,25 @@ reloj del teléfono, que en la práctica va corrido.
 **Compatibilidad:** el bundle viejo ignora el campo y se comporta como antes (tarjeta todo el
 día); el bundle nuevo con el DLL viejo no muestra la tarjeta, porque trata `visibleForSeconds`
 ausente como 0. Lo correcto es subir los dos juntos.
+
+## La ventana «Bienvenido» pasa a 30 minutos y bloquea reservas nuevas (2026-09-10)
+
+Commiteado en `ab11c9d250` (2026-09-24). **En producción** (confirmado por Rodolfo, 2026-10-15).
+
+**Decision de negocio:** `SundayServiceTopic.WelcomeVisibleMinutes` pasa de 10 a **30**, y deja de
+ser solo UI: durante esos 30 minutos tras el check-in la persona **no puede apartar ni confirmar**
+otra reserva.
+
+**Servidor (`SundayServiceRegistration.cs`):** nuevo `HasRecentCheckIn(rockContext, personId)`
+(check-in con `CheckedInDateTime >= ahora - WelcomeVisibleMinutes`). `HoldUpsert` y
+`ConfirmReservation` lo revisan y devuelven el nuevo **`resultCode = -5`** («ya tiene check-in
+dentro de la ventana de bienvenida»). `ConfirmReservation` lo vuelve a validar aunque el cliente
+ignore el `-5` de `HoldUpsert`.
+
+**Front (`SundayServiceRegistration.obs`):** maneja el `-5`; la tarjeta perdio su boton de salida
+(quien acaba de entrar espera los 30 min); los horarios llenos se listan deshabilitados con
+«Lleno» / «Solo N» en vez de desaparecer; saludo en primer nombre + primer apellido para que
+quepa en una linea de movil; se quito el CTA «Reservar otro servicio».
+
+**Tabla de resultCodes de reserva al dia:** 1 ok · 0 / -1 / -2 / -3 (ver secciones previas) ·
+-4 horario ya cerro (2026-09-01) · **-5 ventana de bienvenida (2026-09-10)**.

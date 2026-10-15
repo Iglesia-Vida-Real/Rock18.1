@@ -1,6 +1,8 @@
 # Authentication — Cambios VidaReal (hotfix-18.1)
 
-Este documento describe los cambios realizados por VidaReal sobre el subsistema de autenticación del core de Rock CMS. Los cambios son modificaciones en el working tree (sin commit propio en este branch) sobre la base del upstream `hotfix-18.1` de Spark Development Network.
+> **Última actualización:** 2026-10-15 (revisión de traspaso; sin cambios de código en `Rock/Security/Authentication` desde 2026-07-06. Corrección: los cambios YA están commiteados — `c205d270a3` (2026-06-06) y `33d05949b7` (2026-07-06) —, no solo en el working tree. Se agrega §"Portón passwordless por página")
+
+Este documento describe los cambios realizados por VidaReal sobre el subsistema de autenticación del core de Rock CMS. Los cambios son modificaciones (originalmente en el working tree; commiteadas en `c205d270a3` y `33d05949b7`) sobre la base del upstream `hotfix-18.1` de Spark Development Network.
 
 ---
 
@@ -263,3 +265,22 @@ Al recibir actualizaciones de Spark (nuevos hotfixes de la rama 18.x), los archi
 | `MatchingPersonResult.cs` | Bajo | Cambios en las propiedades de la clase |
 
 Estrategia recomendada al hacer merge: usar `git diff HEAD...origin/hotfix-18.1` para identificar que cambio Spark y verificar manualmente cada bloque antes de aceptar la version del upstream.
+
+---
+
+## Portón passwordless por página (`requiereacceso` + `/acceso`) — funcionando desde 2026-08-05
+
+Permite exigir login passwordless en páginas puntuales (p. ej. Eventos) **sin cambiar el login global del sitio**. Es **solo configuración en el admin de Rock**: no hay código C# nuevo ni nada que compilar. Se documenta aquí porque depende del comportamiento de `PasswordlessAuthentication.cs`.
+
+Piezas:
+1. Página `/acceso` en el sitio externo (View para All Users) con el bloque Login Obsidian (`Rock.Blocks.Security.Login`): Secondary Authentication Types = Passwordless, Default Login Method = Passwordless, Show Internal Database Login = No. **No** es la Login Page del sitio.
+2. Shortcode Lava `requiereacceso` (Inline, sin Lava commands, sin parámetros): si `CurrentPerson` es nulo, hace `PageRedirect` a `/acceso?returnurl=<url actual escapada>`.
+3. En cada página a proteger: un bloque HTML Content con `{[ requiereacceso ]}` y **Cache Duration = 0** (si se cachea, el redirect falla).
+
+Por qué funciona: `Login.cs` (`GetRedirectUrlAfterLogin`) prioriza el query param `ReturnUrl`, y el magic link del correo de `PasswordlessAuthentication.cs` preserva `ReturnUrl` junto con Code/State/IsPasswordless.
+
+Reglas:
+- **NO denegar View a anónimos** en las páginas protegidas: `RockPage` redirigiría al login GLOBAL del sitio antes de que corra el shortcode.
+- El shortcode es control de flujo (UX), no seguridad de datos. La protección real está en los block actions (`EventCheckout.cs` y `MyTickets.cs` validan `CurrentPerson` en servidor); mantener ese patrón en bloques nuevos detrás del portón.
+- Prerrequisitos: proveedor *Passwordless Authentication* activo y system communication "Passwordless Login Confirmation" activa (por WhatsApp va por la plantilla OTP, ver arriba).
+- Si cambia la ruta `/acceso`, actualizarla dentro del shortcode.

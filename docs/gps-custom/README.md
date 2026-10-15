@@ -1,5 +1,12 @@
 # Módulo GPS Custom — documentación de diseño
 
+Última actualización: 2026-10-15 (revisado; diseño sin cambios desde `ae2f580256`, 2026-09-07 — **sin código escrito todavía**, no existe `Plugin.VidaRealGps`)
+
+> **PENDIENTE (2026-10-15):** arrancar la implementación (primer paso sugerido: `GpsRoutingService` +
+> migración 001, verificable contra los 4 461 casos históricos) y cerrar las 3 decisiones abiertas:
+> ficha del GPS propia vs `Group Detail` nativo; desempate de director con varios directores por
+> punto (R10); si el límite de dos GPS antes de «no incorporado» es regla o costumbre.
+
 > **Producto propio** de gestión de grupos pequeños (GPS) sobre Rock 18.1, en reemplazo del
 > plugin de WordPress `gps` (14 425 líneas de PHP, MariaDB).
 > Estado (2026-09-07): **diseño cerrado, sin código escrito todavía.** Contrastado contra las 17

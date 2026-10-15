@@ -1,5 +1,26 @@
 # Changes
 
+Última actualización: 2026-10-15 (última versión del plugin: 1.4.7, commit `1b9b247e48` del 2026-09-03; sin cambios de código desde entonces)
+
+> **PENDIENTE (abierto 2026-10-05, sin corregir al 2026-10-15) — dos defectos vistos en el
+> checkout de Eventos:**
+> 1. **Congela textos dinámicos de Vue.** El traductor reemplaza nodos de texto; en bloques
+>    Obsidian un `{{ busy ? "Procesando…" : "Pagar" }}` se queda con el valor viejo porque Vue
+>    actualiza un nodo que ya no está en la página ("Pagar" mostraba "Procesando…").
+>    Mitigación en los bloques: envolver todo texto dinámico de Vue (botones con estado busy,
+>    contadores, códigos) en `<span class="notranslate">`. El contador de reserva del checkout ya
+>    lo hace.
+> 2. **Traduce español a español.** Con UI ya en español la IA "corrige" textos: "Eventos •
+>    Reportería" sale como "Eventos • Reportes" y la columna "Inicia" como "Iniciar". Si aparece un
+>    texto en español distinto al del código fuente, sospechar primero del traductor.
+> Falta decidir el arreglo en el plugin (p. ej. no reemplazar nodos administrados por Vue, o no
+> mandar a la IA strings que ya están en el idioma destino).
+
+> **Incidente de corrupción (CERRADO 2026-08-05).** El front-end de `RockWeb/Plugins/com_vidareal/Translator/`
+> apareció lleno de bytes nulos (corrupción de disco). Se reconstruyó desde la spec (`1e1efd641f`) y
+> luego se restauraron los ORIGINALES desde un respaldo externo, con el guard `inFlight` nuevo
+> (`0c380daec6`). El respaldo confirmó que el C# del repo era auténtico. Ver la 1.2.0 abajo.
+
 ## 1.4.7 — FIX de regresión: el guard de churn apagaba los menús
 - **Síntoma**: en el perfil de persona solo se traducían **3 pestañas** (`Perfil`, `Atributos extendidos`, `Pasos`); `Groups`, `Documents`, `Contributions`, `Benevolence`, `History` quedaban en inglés. Se reprodujo en `es` y en `zh`: exactamente 3 por tanda en la caché, que es el valor de `SLOT_MAX_CHANGES`.
 - **Causa**: el `churning()` de la 1.4.6 contaba textos distintos **por ranura**. Las pestañas son nodos HERMANOS (`<ul class="nav nav-tabs"><li><a>`) y comparten `slotKey`, así que la ranura parecía reescribirse 9 veces en un segundo — la firma de un contador — y se apagaba a partir de la cuarta. Afectaba a cualquier menú, tab o breadcrumb de más de 3 ítems, es decir al caso de uso central del plugin.

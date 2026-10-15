@@ -1,5 +1,15 @@
 # VidaReal DOM Translator (`com_vidareal` / Translator)
 
+Última actualización: 2026-10-15
+
+> **Nota 2026-10-15.** Desde la 1.4.0 el panel de administración es el bloque Obsidian
+> **`TranslatorDashboard`** (migración 004): reemplaza a los bloques WebForms `TranslatorSettings` y
+> `TranslationList`, cuyos `.ascx` quedan en disco sin uso. Donde abajo se habla del "⚙ Configuración
+> del bloque" o del "2º bloque de la página", la config y el grid están hoy dentro del dashboard. La
+> versión vigente es la **1.4.7** (ver `CHANGES.md`). **PENDIENTE (2026-10-15):** el traductor congela
+> textos dinámicos de Vue y traduce español a español; en bloques Obsidian, envolver textos
+> dinámicos en `<span class="notranslate">` (detalle en `CHANGES.md`).
+
 Traduce la interfaz de Rock (inglés) al idioma destino **en el front, a nivel DOM, con JavaScript**. Las traducciones se generan con Azure OpenAI pero se **persisten en BD**: cada string único se traduce **una sola vez**; las cargas siguientes leen de caché (cliente → BD), sin tokens.
 
 > **Alcance por defecto = UI, NO datos.** Traduce labels, botones (texto de `<button>` y `value` de `<input type=submit/button/reset>` = etiqueta, no dato), títulos, párrafos de UI, placeholders, mensajes de validación/alertas, texto visible de `<option>` y atributos visibles (`title`, `placeholder`, `aria-label`, `alt`). **Nunca** toca el `value` de inputs de datos (text/password/email/hidden…), el `value` de `<option>`, ni contenido editable, ni datos (nombres, montos, fechas, emails, GUIDs, Lava, interior de grids). Ampliar el alcance corre riesgo de traducir datos de la BD.

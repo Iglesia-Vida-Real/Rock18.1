@@ -1,5 +1,7 @@
 # Cambios en el módulo Security — VidaReal fork (Rock 18.1)
 
+> **Última actualización:** 2026-10-15 (revisado; sin cambios de código en `src/Security` desde 2026-08-12, commit `0c44380057`, que este documento ya cubre. El portón passwordless por página `/acceso` + shortcode `requiereacceso` usa `login.obs` sin cambios de código; ver `Rock/Security/Authentication/CHANGES.md`)
+
 ## Resumen ejecutivo
 
 Este módulo contiene los bloques Obsidian (Vue 3) del área de seguridad/autenticación de Rock RMS. VidaReal realizó una personalización profunda de la interfaz de usuario para adaptar el look and feel a la marca y al idioma español, sin modificar la lógica de negocio del lado del servidor.

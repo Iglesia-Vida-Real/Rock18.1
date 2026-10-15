@@ -2,15 +2,37 @@
 
 Arquitectura: `Rock/Model/Qr/ARCHITECTURE.md` · Pruebas manuales: `docs/qr-custom/SMOKE_TESTS.md`
 
-**Fecha límite dura: 22 de octubre de 2026.** Ese día se corta la plataforma externa que este
-módulo reemplaza. Todo QR impreso que hoy resuelve por esa plataforma deja de funcionar; los QR
-nuevos tienen que estar emitidos bajo el dominio corto propio antes de esa fecha.
+**Estado: EN PRODUCCIÓN (confirmado por Rodolfo, 2026-10-15).** El módulo está operativo en prod
+con el dominio corto `q.vidareal.tv`. Dato histórico: la plataforma externa que este módulo
+reemplaza vencía el 22 de octubre de 2026; el reemplazo quedó en producción antes de esa fecha.
+Este runbook queda como referencia para redespliegues y para reconstruir el ambiente.
+
+Última actualización: 2026-10-15
+
+## Estado al 2026-10-15 (leer primero)
+
+| Tema | Estado |
+|---|---|
+| Código del módulo (dominio, servicios, 4 bloques, bags, `.obs`, migraciones 001–007, 116 tests MSTest en `Rock.Tests/Model/Qr/`) | **Commiteado** el 2026-10-06 en `81d2622dbc` («Eventos y Modulo de QRS»), rama `hotfix-18.1`. |
+| Filtro por código en «Uso» + tabla «Todos los códigos» + enlace «ver métricas» en el catálogo | **En producción, PENDIENTE DE COMMIT** (ver §G). Es lo único del módulo que queda por versionar. |
+| Dominio corto | **Resuelto 2026-09-29: `q.vidareal.tv`** — registro A al web server de prod, certificado Let's Encrypt propio (vence **2026-12-28**) emitido con *Certify The Web* en el web server. Certify emitió el certificado pero **no creó el binding**: se creó a mano en IIS (`https`, 443, host header `q.vidareal.tv`, SNI). |
+| **PENDIENTE CRÍTICO (2026-10-15) — riesgo vigente** | Renovación del certificado de `q.vidareal.tv` el **2026-12-28**: Certify no actualiza el binding. Revisar en Certify la sección *Deployment* de ese certificado. Si en diciembre renueva sin re-vincular, el binding queda con el certificado vencido y **todos los QR impresos** muestran advertencia de seguridad. |
+| Sitio del dominio corto en Rock | **Hecho:** `q.vidareal.tv` funcionando en prod (confirmado 2026-10-15). Si se reconstruye el ambiente, debe ser el **único** `SiteDomain` del sitio, con las banderas de §B.2. |
+| Grupo «Generador de QR» | Módulo en uso en prod (confirmado 2026-10-15). Mantener la membresía al día. |
+| Despliegue a prod | **Hecho** (confirmado por Rodolfo, 2026-10-15): DLLs, bundles y migraciones Qr 001–007 aplicadas; operativo. |
+| **PENDIENTE (2026-10-15)** | Documentar `Plugin.VidaRealQr` en el procedimiento de build (8 plugins, §A.3); su DLL ya está en prod. |
+| Fecha dura (histórico) | 22-oct-2026 (vencimiento de la plataforma externa). Se reemplazó antes del vencimiento. |
+
+Nota de artefactos en dev: existe una copia suelta de `com.vidareal.Qr.dll` dentro de
+`RockWeb/Obsidian/Blocks/Qr/` (misma fecha/tamaño que la de `RockWeb/Bin`). No hace daño, pero
+**no es un destino de despliegue**: el DLL va solo a `RockWeb/Bin`.
 
 **Estado al 2026-09-28 (dev):** 2 códigos en el catálogo, ambos **estáticos**; **0 dinámicos** y
 **0 escaneos** atribuidos al módulo. Los 577 escaneos que existen en `Interaction` son de short
 links del módulo Wallet, no de éste. Es decir: **el camino dinámico completo —token, redirección,
-escaneo, panel de uso— nunca ha corrido de punta a punta.** Ese es el riesgo del despliegue, no
-los bugs.
+escaneo, panel de uso— nunca ha corrido de punta a punta** (en dev, a esa fecha). Ese era el riesgo
+del despliegue, no los bugs. **Al 2026-10-15 el módulo está operativo en producción** (confirmado
+por Rodolfo).
 
 ---
 
@@ -236,6 +258,13 @@ FROM [Site] s WHERE s.EnabledForShortening = 1 ORDER BY s.Id;
 - **Binding en IIS** para ese host.
 - **Certificado TLS válido** para ese host (lo exige `RequiresEncryption = 1`). Sin certificado,
   el teléfono muestra advertencia y el QR ya está impreso.
+
+**Hecho el 2026-09-29 para `q.vidareal.tv`:** DNS (A al web server), certificado Let's Encrypt
+(Certify The Web, vence 2026-12-28) y binding IIS creado **a mano** — antes de eso IIS solo tenía
+bindings comodín (`*:80:*`, `*:443:*`) y servía el certificado de `personas.vidareal.tv` a
+cualquier host. URL impresa ≈ `https://q.vidareal.tv/<token>` (29 caracteres → 33 módulos con
+ECC H). **PENDIENTE (2026-10-15) — riesgo vigente:** Certify **no** actualiza el binding; en la
+renovación del 2026-12-28 re-vincular a mano (o configurar la sección *Deployment* de Certify).
 
 ### B.5 Block settings del módulo
 
@@ -513,13 +542,40 @@ No hay rollback de software. El plan es de comunicación:
    con el mismo token en dos sitios, el que no matchea el sitio cae al **primero que encuentre**.
    Verificar el 302 en ambos dominios.)
 3. Si el dominio equivocado es `localhost` o una IP interna: **no hay rescate técnico**. Se
-   reimprime. Estimar costo y plazo contra el 22-oct **el mismo día** que se detecta.
+   reimprime. Estimar costo y plazo **el mismo día** que se detecta.
 
 ### F.5 La migración 007 y el rollback
 
 `007_QrDropRedundantIndex` borra un índice que sobra; su `Down()` está **vacío a propósito** y no
 lo recrea. Bajar el `com.vidareal.Qr.dll` a una versión anterior **no** vuelve a crear el índice,
 y no hace falta: el core ya cubre el predicado con `IX_EntityId_ChannelId`. No es una regresión.
+
+---
+
+## G. Filtro por código en «Uso» — EN PRODUCCIÓN, PENDIENTE DE COMMIT (al 2026-10-15)
+
+Pedido de usuarios del 2026-10-06: poder ver el uso de **un** código. El desplegable de códigos se
+**descartó** (con ~200 códigos es inútil). Lo que quedó en el árbol de trabajo, sin commit (ya
+corre en producción, confirmado 2026-10-15; es lo único del módulo que queda por versionar):
+
+| Archivo | Cambio |
+|---|---|
+| `Rock.Blocks/Qr/QrMetrics.cs` | Parámetro de página `QrCodeId` (IdKey) leído al abrir; si no corresponde a un código dinámico se ignora y abre con todo. `Refresh(days, qrCodeKey = null)`: con un IdKey inexistente devuelve `ActionNotFound` (no el panel completo). `BuildData` calcula conteos y último escaneo de **todo** el catálogo (alimentan la tabla) y luego recorta KPIs/serie/dispositivo/procedencia al código filtrado. `DynamicCodeCount` sigue siendo del catálogo. |
+| `Rock.ViewModels/Blocks/Qr/QrMetrics/QrMetricsBags.cs` | `QrTopCodeBag.IsActive`, `QrMetricsDataBag.SelectedCode` y `AllCodes`, `QrMetricsOptionsBag.InitialCodeKey`. |
+| `Rock.JavaScript.Obsidian.Blocks/src/Qr/QrMetrics/types.partial.ts` | Espejo a mano de los bags anteriores. |
+| `Rock.JavaScript.Obsidian.Blocks/src/Qr/qrMetrics.obs` | Tabla «Todos los códigos» (búsqueda sin acentos, filtro por categoría incl. «Sin categoría», orden, «Incluir inactivos», 20 filas/página); clic en una fila o en el top filtra todo el panel; barra «Viendo solo X · × Ver todos los códigos»; `QrCodeId` sincronizado en la URL con `history.replaceState`. El top ya no enlaza al detalle. |
+| `Rock.JavaScript.Obsidian.Blocks/src/Qr/qrCodeList.obs` | Enlace «ver métricas» por fila dinámica → página de Uso con `?QrCodeId=<IdKey>`. |
+
+**Para commitear:**
+
+- **PENDIENTE (2026-10-15): commitear** estos 5 archivos tal cual (es lo que corre en prod).
+  Casos para una regresión futura: abrir con `?QrCodeId=`, filtrar, quitar filtro, recargar,
+  IdKey inválido, código inactivo.
+- **PENDIENTE (2026-10-15):** `QrMetrics.cs` y `QrMetricsBags.cs` quedaron con fin de línea **LF**
+  (git avisa «LF will be replaced by CRLF»). El repo usa CRLF; normalizar antes del commit.
+- Estos cambios tocan `Rock.Blocks.dll`, `Rock.ViewModels.dll` y dos bundles: en un redeploy van
+  con §A.1 completo, no por separado. El `Rock.Blocks.dll` de este árbol también lleva los cambios
+  de Eventos del 2026-10-05 (ver `docs/eventos-custom/RESEARCH_Y_PLAN.md` §9.40), también ya en prod.
 
 ---
 
@@ -531,7 +587,8 @@ y no hace falta: el core ya cubre el predicado con `IX_EntityId_ChannelId`. No e
 - [ ] `IX_InteractionComponent_Channel_Entity` ya **no** existe.
 - [ ] Sitio dedicado del dominio corto creado, con **un solo** `SiteDomain`, verificado **por SQL**.
 - [ ] Las cuatro banderas en 1 y `DefaultPageId` no nulo.
-- [ ] DNS + binding IIS + certificado TLS del dominio corto.
+- [x] DNS + binding IIS + certificado TLS del dominio corto (`q.vidareal.tv`, 2026-09-29).
+- [ ] Renovación de Certify verificada: re-vincula el binding (vence 2026-12-28).
 - [ ] Block setting «Sitio del dominio corto» apuntando a ese sitio.
 - [ ] **SVG de un código dinámico decodificado: el dominio embebido es el correcto, en `https`.**
 - [ ] `curl -I` desde fuera del servidor → 302 con el `Location` esperado.

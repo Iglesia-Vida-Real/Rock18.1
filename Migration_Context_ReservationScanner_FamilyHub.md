@@ -1,5 +1,17 @@
 # Migration Context: ReservationScanner + FamilyHub (Rock 15.5.1 -> Rock 18.1)
 
+Última actualización: 2026-10-15
+
+> **Documento histórico** (migración 15.5.1 -> 18.1, abril 2026). Lo que cambió después, a 2026-10-15:
+> - **ReservationScanner** fue reescrito en buena parte (ago-sep 2026): check-in vía
+>   `sp_SundayServiceCheckIn` (fix de deadlock), ventana de puerta de inicio-15 a inicio+80 min, hora del
+>   servidor para el contador, blindaje de red, aviso RealTime «Bienvenido» e identidad por
+>   `PersonAliasId` (en prod desde 2026-09-06). Detalle: `Rock.Blocks/QREVENT/CHANGES.md`.
+> - **FamilyHub** (`src/FamilyHub/FamilyHub.obs`): el 2026-07-24 se eliminó el header/topbar
+>   (`vrTopBar`, marca «VidaReal.tv») y su CSS huérfano; el contenido arranca en `vrContainer`.
+>   Fix de Known Relationships: `FamilyHub_KnownRelationship_Fix_Context.md`.
+
+
 ## 1) QREVENT / ReservationScanner
 
 ### Source

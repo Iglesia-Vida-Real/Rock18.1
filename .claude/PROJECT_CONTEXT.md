@@ -1,5 +1,10 @@
 # PROJECT_CONTEXT.md — Rock CMS fork VidaReal
 
+Última actualización: 2026-10-15 — estado de traspaso y pendientes por módulo: tabla al inicio de
+`CHANGES.md` (raíz). Último commit `81d2622dbc` (2026-10-06); sin commitear solo el filtro de Uso
+del módulo QR (ya en producción, PENDIENTE DE COMMIT). Todo lo desarrollado está en producción
+(confirmado por Rodolfo, 2026-10-15).
+
 ## Que es este proyecto
 
 **Rock RMS** es un CMS/ChMS (Church Management System) open source creado por SparkDevNetwork. Es el sistema central de gestion para iglesias: personas, familias, finanzas, comunicaciones, eventos, check-in, flujos de trabajo, etc.
@@ -23,7 +28,7 @@
 - **BlockActions:** Los endpoints del backend se decoran con `[BlockAction]` y son llamados desde el frontend via `invokeBlockAction("NombreAccion", payload)`.
 - **Inicializacion:** `GetObsidianBlockInitialization()` retorna el estado inicial del bloque al cargar la pagina.
 - **Plugins externos:** Proyectos C# separados en `Plugin.*` que se despliegan como DLLs en Rock.
-- **Namespace VidaReal:** `Rock.Blocks.Dar`, `Rock.Blocks.QREVENT`, `Rock.Blocks.FamilyHub`, `Rock.Blocks.LayoutCustom`, `Rock.WhatsApp`
+- **Namespace VidaReal:** `Rock.Blocks.Dar`, `Rock.Blocks.QREVENT`, `Rock.Blocks.FamilyHub`, `Rock.Blocks.LayoutCustom`, `Rock.Blocks.Eventos`, `Rock.Blocks.Wallet`, `Rock.Blocks.Qr`, `Rock.WhatsApp`
 
 ### Frontend (Vue 3 / TypeScript — Obsidian framework)
 - **Archivos:** Extension `.obs` (son Single File Components de Vue 3 con TypeScript)
@@ -77,6 +82,10 @@ quedaban huerfanas al fusionar personas. Ahora la identidad es `PersonAliasId` c
 `PersonAlias` —nunca a `Person.Id`— y las consultas leen por **conjunto de alias**. Los SPs
 vigentes salen de `Dev Tools/Sql/QREVENT_SundayService_PersonAlias_Step1.sql`, no del hardening.
 **El SQL va siempre antes del DLL:** el DLL manda `@PersonAliasId` y los SPs previos fallarian.
+
+**«Bienvenido» de 30 min (2026-09-10, commit `ab11c9d250`):** tras el check-in la tarjeta dura 30
+min y durante ese lapso el servidor rechaza reservas nuevas (`HoldUpsert`/`ConfirmReservation` →
+`resultCode -5`). **en producción (confirmado por Rodolfo, 2026-10-15)**.
 
 **Dependencias tecnicas:**
 - `Rock.JavaScript.Obsidian.Blocks/src/QREVENT/vendor/zxing.lib.ts` — Libreria ZXing para leer QR desde camara
@@ -159,8 +168,8 @@ Modulo nuevo de comunicacion.
 ### 7. Eventos/Boletería Custom — `Rock/Model/Eventos/` + `Rock.Blocks/Eventos/` (2026-06-29 →)
 Producto propio de boletería end-to-end. **NO reusa `Registration*`**; esquema propio `_com_vidareal_Events_*` (7 entidades: Event, TicketType, Order, Ticket, PromoCode, CheckinLog, EventStaff).
 
-- **6 bloques Obsidian** (`src/Eventos/*.obs`): Event Admin (CRUD + vista Permisos + preguntas por boleto/plantillas), Event Checkout (rediseño 2026: hold/timer, promo, NIT/SAT, FEL multilínea, gratis, mutex Charging, preguntas al asistente con prefill, invitados = personas reales + known relationship), My Tickets (hub + visor QR), Ticket Scanner (escaneo continuo + contadores en vivo), Event Report (respuestas + fecha de compra en CSV), Question Catalog (catálogo central de preguntas y plantillas, `eventos/preguntas`).
-- **Migraciones** en plugin aislado `Plugin.VidaRealEvents/` (assembly `com.vidareal.Events`, 001–017); el DLL NO se autocopia a `RockWeb/Bin`.
+- **7 bloques Obsidian** (`src/Eventos/*.obs`; el 7.º es Event Calendar público): Event Admin (CRUD + vista Permisos + preguntas por boleto/plantillas), Event Checkout (rediseño 2026: hold/timer, promo, NIT/SAT, FEL multilínea, gratis, mutex Charging, preguntas al asistente con prefill, invitados = personas reales + known relationship), My Tickets (hub + visor QR), Ticket Scanner (escaneo continuo + contadores en vivo), Event Report (respuestas + fecha de compra en CSV), Question Catalog (catálogo central de preguntas y plantillas, `eventos/preguntas`).
+- **Migraciones** en plugin aislado `Plugin.VidaRealEvents/` (assembly `com.vidareal.Events`, 001–025 al 2026-10-15; 017 consolidada); el DLL NO se autocopia a `RockWeb/Bin`.
 - **Permisos por-usuario** (`EventStaff`): acceso total solo `RSR - Rock Administration`; staff gestiona eventos pero escanea/reporta solo lo asignado; gestión de permisos exige ADMINISTRATE.
 - **Preguntas al asistente**: catálogo = Person Attributes (categoría "Preguntas de Eventos"); config por boleto en `TicketType.QuestionsJson`; snapshot por compra en `Ticket.AnswersJson`; write-back al perfil tras el pago; plantillas en System Setting `com_vidareal_EventQuestionTemplates`.
 - **Arquitectura hexagonal (2026-07-02)**: los bloques son adaptadores delgados (auth + mapeo bags); la lógica vive en `Rock/Model/Eventos/Services/` — núcleo: CheckoutService (mutex Charging + finalize atómico), HoldService (reservas/cupo), PricingService (puro), CheckoutAttendeeService (invitados/KR/anti-IDOR), AttendeeQuestionService, CheckinService; adaptadores de salida: PaymentService, FelService, NitLookupService (SAT), QrService, TicketEmailService, TicketPdfService (⚠️ `PaperFormat`, no `Width/Height` — bug cultura es-GT). Los servicios devuelven resultados de dominio, nunca `BlockActionResult`.
@@ -170,12 +179,45 @@ Producto propio de boletería end-to-end. **NO reusa `Registration*`**; esquema 
 ### 8. Wallet (Apple/Google Wallet passes) — `Rock/Model/Wallet/` (2026-07-06 →)
 Módulo INDEPENDIENTE y reutilizable de pases de wallet, self-hosted (sin SaaS): emisión desde plantillas diseñables (Lava en campos/colores), pkpass firmado (cert Pass Type ID `pass.tv.vidareal.eventos`, vence 2027-08-05), **actualizaciones push** (PassKit Web Service en `Rock.Rest/VidaReal/WalletPassKitController.cs` — anónimo por contrato de Apple, auth `ApplePass <token>` — + APNs HTTP/2 vía `System.Net.Http.WinHttpHandler`) y Google Wallet (JWT RS256 + REST; espera cuenta emisor).
 
-- Esquema `_com_vidareal_Wallet_*` (WalletTemplate / WalletPass / WalletDeviceRegistration); migraciones en `Plugin.VidaRealWallet/` (assembly `com.vidareal.Wallet`, 001–013, numeración PROPIA).
+- Esquema `_com_vidareal_Wallet_*` (WalletTemplate / WalletPass / WalletDeviceRegistration); migraciones en `Plugin.VidaRealWallet/` (assembly `com.vidareal.Wallet`, 001–016 al 2026-10-15, numeración PROPIA).
 - **API pública = `Rock.Model.WalletService`** (GetOrIssuePass / RefreshPass / VoidPass / GetPkpass / GetPkpassBundle / GetGoogleSaveUrl). Consumidores: Eventos vía `Rock/Model/Eventos/Services/TicketWalletService.cs` (botones en Mis Entradas Y en el paso Listo del checkout — bundle .pkpasses multi-entrada; editar evento → refresh+push de sus pases) y **cualquier workflow/comunicación vía filtro Lava `WalletPassUrl`** (`Rock/Lava/Filters/LavaFilters.VidaRealWallet.cs` → endpoint anónimo `api/vidareal/wallet/v1/download/{serial}?token=`; plantilla VidaAventura = pase de persona con QR del Alternate Id).
 - Diseñador de plantillas: `Rock.Blocks/Wallet/WalletTemplateAdmin.cs` + `src/Wallet/walletTemplateAdmin.obs`, página `wallet/plantillas` (menú Eventos → Boletería, solo Rock Administration). Guardar plantilla re-empuja el diseño a los pases emitidos.
 - Config: Global Attributes `AppleWalletPassP12`/`AppleWalletPassP12Password` (+ Google pendiente); `PublicApplicationRoot` HTTPS obligatorio para updates.
 - ⚠️ PassKit NO renderiza HTML: layout fijo de Apple (sin pills/acentos custom). El QR del pase = `Ticket.UniqueCode` (mismo del PDF y el escáner).
 - **Doc maestro (leer primero):** `docs/wallet-module/RESEARCH_Y_PLAN.md`. Migraciones: `Plugin.VidaRealWallet/README.md`.
+
+### 9. QR Generator — `Rock/Model/Qr/` + `Rock.Blocks/Qr/` (2026-09-24 →) — EN PRODUCCIÓN
+Generador de QR institucionales que reemplaza una plataforma externa. Un QR dinámico **es** un
+`PageShortLink` nativo de Rock bajo el dominio corto `q.vidareal.tv`; el módulo agrega catálogo
+(`_com_vidareal_Qr_Code`), diseño (color + logo), estáticos (WiFi, vCard, mailto, tel) y
+reportería (Uso + Reportería). 4 bloques (`QrCodeDetail`, `QrCodeList`, `QrMetrics`,
+`QrDashboard`), migraciones 001–007 en `Plugin.VidaRealQr` (**no está en el procedimiento de build
+de 7 plugins: es el 8.º**), 116 tests en `Rock.Tests/Model/Qr/`.
+- **Trampa nº 1:** lo impreso es `Site.DefaultDomainUri` = el **primer `SiteDomain` por `Order`**. El
+  sitio del dominio corto debe tener un solo dominio y `EnabledForShortening`, `RequiresEncryption`,
+  `EnableExclusiveRoutes`, `EnableVisitorTracking` en 1. Verificar decodificando el SVG, no la pantalla.
+- **Estado (2026-10-15):** operativo en producción (confirmado por Rodolfo): sitio/dominio
+  `q.vidareal.tv` funcionando, migraciones 001–007 aplicadas; la plataforma externa se reemplazó
+  antes de su vencimiento (22-oct-2026, dato histórico). Pendiente: commitear el filtro de Uso (en
+  prod, PENDIENTE DE COMMIT) y la renovación del certificado (vence 2026-12-28; Certify no
+  actualiza el binding).
+- **Docs:** `docs/qr-custom/DEPLOY.md` (leer primero), `Rock/Model/Qr/ARCHITECTURE.md`, `docs/qr-custom/SMOKE_TESTS.md`.
+
+### 10. GPS (grupos pequeños) — solo diseño
+Reemplazo del plugin WordPress `gps`. Diseño cerrado en `docs/gps-custom/` (empezar por
+`README.md`); **sin código** al 2026-10-15.
+
+### Integraciones y configuracion sin codigo (para no buscarlas en el repo)
+- **Odoo FEL, dos caminos:** el workflow action `PostEventSaleToOdoo` (`Plugin.OdooEventSale`, para
+  `RegistrationEntry`) y `FelService` del módulo Eventos (Global Attributes `OdooEventSaleBaseUrl`
+  —**Text plano**, el código no lo desencripta— y `OdooEventSaleApiKey`). Un 400/404/409/5xx de Odoo
+  deja la orden en `Reintentando` **sin excepción**. Ver `Plugin.OdooEventSale/CONTEXT.md` §9.
+- **Passwordless por página:** shortcode Lava `requiereacceso` + página `/acceso` (2026-08-05).
+- **Métricas de correo:** Event Webhook de SendGrid habilitado en prod 2026-09-09 →
+  `RockWeb/App_Code/TwilioSendGrid.ashx.cs`. **PENDIENTE:** validar firma ECDSA, aislar dev,
+  retención del canal.
+- **Traductor (`Plugin.VidaRealTranslator`):** reemplaza nodos de texto; todo texto dinámico de Vue
+  va en `<span class="notranslate">`. También cambia español a español (pendiente corregir).
 
 ---
 
@@ -272,7 +314,7 @@ C:\repos\Rock15.5\
 - **Email IT:** serviciosit@vidareal.tv
 - **Repositorio local:** `C:\repos\Rock15.5`
 - **Branch activo:** `hotfix-18.1`
-- **Developer principal:** rodobriones (Rodolfo Rodriguez)
+- **Developer principal:** rodobriones (Rodolfo Rodriguez) — deja el proyecto en oct-2026; traspaso a un nuevo desarrollador (ver `ONBOARDING.md` y `docs/HANDOFF/`)
 
 ---
 
@@ -293,9 +335,11 @@ Estos archivos `.md` en la raiz del repositorio documentan sesiones de trabajo a
 | Archivo | Modulo | Descripcion |
 |---|---|---|
 | `docs/eventos-custom/RESEARCH_Y_PLAN.md` | Eventos/Boletería Custom | Doc maestro del módulo propio de boletería: modelo de datos, arquitectura, decisiones y todas las sesiones (§9.x) |
-| `Plugin.VidaRealEvents/README.md` | Eventos/Boletería Custom | Migraciones 001–017, modelo de permisos, build/deploy del DLL |
+| `Plugin.VidaRealEvents/README.md` | Eventos/Boletería Custom | Migraciones 001–025 (017 consolidada), modelo de permisos, build/deploy del DLL |
 | `docs/wallet-module/RESEARCH_Y_PLAN.md` | Wallet | Doc maestro del módulo Wallet: arquitectura, PassKit/APNs/Google, runbook de deploy, historial y pendientes |
-| `Plugin.VidaRealWallet/README.md` | Wallet | Migraciones 001–013 del assembly com.vidareal.Wallet, build/deploy |
+| `Plugin.VidaRealWallet/README.md` | Wallet | Migraciones 001–016 del assembly com.vidareal.Wallet, build/deploy |
+| `docs/qr-custom/DEPLOY.md` + `SMOKE_TESTS.md`, `Rock/Model/Qr/ARCHITECTURE.md` | QR Generator | Estado, runbook de despliegue (dominio corto), pruebas, arquitectura |
+| `docs/gps-custom/README.md` | GPS | Diseño del módulo (sin código) |
 | `AI_HANDOFF_ROCK18_EVENT_CRM.md` | Eventos / CRM | i18n en Event/RegistrationEntry y Crm/FamilyPreRegistration, reglas ES/EN, DatePicker, pitfalls Vue, template Lava recomendado, + Facturación FEL/NIT en pantalla de pago (2026-06-15) |
 | `Plugin.OdooEventSale/CONTEXT.md` + `README.md` | OdooEventSale | Integración Rock eventos → Odoo FEL: workflow action, NIT/SAT, Global Attributes, configuración staging, checklist |
 | `EPAY_FLOW_SUMMARY.md` | DAR / ePay | Flujo completo de cobro con cuotas ePay Visanet: SOAP, FeeCoverageAmount, calculo de balance, checklist de despliegue |

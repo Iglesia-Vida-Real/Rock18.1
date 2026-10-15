@@ -79,6 +79,9 @@ namespace Rock.ViewModels.Blocks.Qr.QrMetrics
         /// </para>
         /// </remarks>
         public bool IsStale { get; set; }
+
+        /// <summary>Si el código está activo. Lo usa la ficha del código filtrado.</summary>
+        public bool IsActive { get; set; }
     }
 
     /// <summary>
@@ -235,6 +238,26 @@ namespace Rock.ViewModels.Blocks.Qr.QrMetrics
         /// seguimiento de visitantes y por eso casi todo sale anónimo.
         /// </summary>
         public string QualityNote { get; set; }
+
+        /// <summary>
+        /// El código por el que se filtró el panel, o null si el panel mira todo el catálogo.
+        /// </summary>
+        /// <remarks>
+        /// Con un filtro puesto, TODAS las cifras de este bag son solo de ese código, excepto
+        /// <see cref="DynamicCodeCount"/>, que sigue siendo el del catálogo: decide el estado
+        /// vacío "no hay códigos dinámicos" y filtrar no lo cambia.
+        /// </remarks>
+        public QrTopCodeBag SelectedCode { get; set; }
+
+        /// <summary>
+        /// Todos los códigos dinámicos con sus escaneos en el rango, haya filtro o no.
+        /// </summary>
+        /// <remarks>
+        /// Es la tabla desde la que se elige qué código mirar. Va completa —no recortada como el
+        /// top— porque con cientos de códigos la búsqueda, el filtro por categoría y la
+        /// paginación se hacen en el navegador sin volver al servidor.
+        /// </remarks>
+        public List<QrTopCodeBag> AllCodes { get; set; } = new List<QrTopCodeBag>();
     }
 
     /// <summary>
@@ -254,5 +277,7 @@ namespace Rock.ViewModels.Blocks.Qr.QrMetrics
         /// <summary>Días sin escaneo tras los cuales un código se marca como dormido.</summary>
         public int StaleDays { get; set; }
 
+        /// <summary>IdKey del código con el que abre el panel (parámetro QrCodeId), o null.</summary>
+        public string InitialCodeKey { get; set; }
     }
 }

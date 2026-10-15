@@ -1,5 +1,7 @@
 # QREVENT — Modulo de Check-in con QR (Frontend Obsidian)
 
+Última actualización: 2026-10-15
+
 ## Que es este directorio
 
 Contiene los bloques frontend Obsidian (Vue 3 + TypeScript, formato `.obs`) del modulo QREVENT de VidaReal.tv. Es modulo completamente nuevo, **no existe en Rock original**.
@@ -8,16 +10,28 @@ Cada archivo `.obs` es un Single File Component (SFC) de Vue que incluye `<templ
 
 ---
 
+## Estado al 2026-10-15
+
+Codigo commiteado (`ae2f580256` 2026-09-07 y `ab11c9d250` 2026-09-24). Los bundles vigentes en
+`RockWeb/Obsidian/Blocks/QREVENT/` de dev son del 2026-10-06 (`SundayServiceRegistration.obs.js`
+106 692 B, `sundayServiceCapacityAdmin.obs.js` 75 229 B).
+
+**En producción** (confirmado por Rodolfo, 2026-10-15): la version de 30 min de «Bienvenido» con el
+manejo del `-5`, horarios llenos visibles y saludo corto (ultima seccion de este archivo), la de
+CapacityAdmin con selector propio + rango por semana, y el fix de guardado de QR en iOS/WebView. El
+bundle de Registration del kit `Dev Tools/Deploy/SundayService_PersonAlias/` es viejo (2026-09-07,
+104 523 B): kit OBSOLETO, no usarlo.
+
 ## Estado de los bundles en produccion (al 2026-09-07)
 
 | Bundle | Estado |
 |---|---|
 | `celebremosQrCheckIn.obs.js`, `qrScanner.obs.js`, `reservationScanner.obs.js` | En prod |
-| `sundayServiceRegistration.obs.js` con «¡Bienvenido!» en vivo | En prod desde 2026-09-06; la version con la tarjeta acotada a 10 min esta **pendiente de subir** |
-| `sundayServiceCapacityAdmin.obs.js` con la pestaña Metricas | En prod desde 2026-09-06; la version con el selector propio y el rango por semana esta **pendiente de subir** |
+| `sundayServiceRegistration.obs.js` con «¡Bienvenido!» en vivo | En prod desde 2026-09-06; la version de 10 min quedo superada por la de 30 min, en prod (confirmado 2026-10-15) |
+| `sundayServiceCapacityAdmin.obs.js` con la pestaña Metricas | En prod desde 2026-09-06; la version con el selector propio y el rango por semana tambien esta en prod (confirmado 2026-10-15) |
 
-Los binarios pendientes y su destino estan listados en
-`Dev Tools/Deploy/SundayService_PersonAlias/README.md`. Nada de esto esta commiteado todavia.
+El registro de ese despliegue esta en `Dev Tools/Deploy/SundayService_PersonAlias/README.md`
+(kit OBSOLETO como artefacto). (Al 2026-10-15 todo esta commiteado y en prod.)
 
 **Recordatorio de build:** `npm run build` devuelve exit 0 aunque falle el tsconfig de QREVENT.
 Verificar siempre el tamaño y la fecha del `.obs.js` generado antes de darlo por bueno.
@@ -1192,3 +1206,17 @@ estado vacío de Métricas ofrece «Ver semana pasada» junto a «Ver últimas 1
 ahora arranca en una semana en vez de tres meses. Generar un trimestre pide apretar «3 meses»
 antes. Es más difícil crear cupos de más por accidente, pero es un clic extra para quien estaba
 acostumbrado al comportamiento anterior.
+
+## SundayServiceRegistration: «Bienvenido» de 30 min, `-5`, horarios llenos y saludo corto (2026-09-10)
+
+Commiteado en `ab11c9d250` (2026-09-24). **En producción** (confirmado por Rodolfo, 2026-10-15).
+Contraparte de servidor: `Rock.Blocks/QREVENT/CHANGES.md`, ultima seccion.
+
+- **`-5`:** `HoldUpsert` / `ConfirmReservation` pueden responder `resultCode = -5` (check-in hace
+  menos de 30 min); el front lo muestra como mensaje y no avanza.
+- **Tarjeta «¡Bienvenido!»** dura 30 min (`visibleForSeconds` del servidor) y ya no tiene boton
+  para salir de ella.
+- **Horarios llenos visibles:** todos los horarios se listan; el lleno y el que no alcanza para la
+  cantidad pedida quedan deshabilitados con «Lleno» / «Solo N».
+- **Saludo:** primer nombre + primer apellido, mobile-first.
+- **Se elimino** el CTA «Reservar otro servicio».

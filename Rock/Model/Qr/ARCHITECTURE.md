@@ -1,5 +1,10 @@
 # Módulo QR Generator — Arquitectura
 
+Última actualización: 2026-10-15 — código commiteado en `81d2622dbc` (2026-10-06); el filtro por
+código del panel de Uso (`QrMetrics` + `qrMetrics.obs` + enlace en `qrCodeList.obs`) está **en
+producción, pendiente de commit**, ver `docs/qr-custom/DEPLOY.md` §G. Dominio corto: `q.vidareal.tv`.
+Módulo **en producción** (confirmado por Rodolfo, 2026-10-15). Estado de despliegue y pendientes: `docs/qr-custom/DEPLOY.md` (sección «Estado al 2026-10-15»).
+
 Reemplaza una plataforma externa de generación de QR que **se corta el 22 de octubre de 2026**.
 Misma forma que Eventos: el código vive en el core del fork, las migraciones en un plugin propio;
 las dependencias apuntan al dominio y los bloques son adaptadores delgados que no llevan lógica.
@@ -19,6 +24,9 @@ no tiene: catálogo, diseño, códigos estáticos y reportería.
 │    QrCodeList     catálogo: qué existe, a dónde apunta, cuánto se usa, qué está dormido.
 │    QrMetrics      panel de USO: escaneos en el tiempo, top, dispositivo, procedencia,
 │                   día y hora.
+│                   (En prod, pendiente de commit) filtro por un código: `?QrCodeId=<IdKey>` y
+│                   `Refresh(days, qrCodeKey)`; la tabla «Todos los códigos»
+│                   (`AllCodes`) se filtra/pagina en el navegador.
 │    QrDashboard    REPORTERÍA del programa: catálogo, gobernanza, salud, contra el
 │                   período anterior del mismo largo.
 │    → autorización (CanView/CanEdit sobre el BlockCache), PageParameter, block settings,
@@ -162,7 +170,7 @@ Correr esto **antes** de dar por bueno un upgrade del fork:
 
 - **Accesibilidad completa.** **No hay auditoría** de navegación por teclado, de lectores de
   pantalla ni de los gráficos del panel; los bloques usan los componentes estándar de Obsidian y
-  hasta ahí llega la garantía. Se pospuso por el 22-oct; es deuda reconocida, no un descuido. Lo
+  hasta ahí llega la garantía. Se pospuso por la fecha de reemplazo de la plataforma externa (22-oct-2026); es deuda reconocida, no un descuido. Lo
   que **sí** está resuelto es el contraste del código generado (mínimo 3.0, validado al guardar),
   porque ahí un fallo no se corrige: se imprime.
 - **Tests unitarios.** No hay ninguno. Los candidatos naturales son puros y baratos

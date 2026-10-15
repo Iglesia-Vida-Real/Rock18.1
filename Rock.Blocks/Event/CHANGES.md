@@ -1,5 +1,7 @@
 # RegistrationEntry — Cambios VidaReal vs upstream Rock (hotfix-18.1)
 
+> **Última actualización:** 2026-10-15 (revisión de traspaso: se agregó §7 con el commit `7fc618ef10`; sin cambios de código en este bloque desde 2026-06-22)
+
 ## 1. Contexto
 
 `RegistrationEntry` es el bloque Obsidian oficial de Rock para registro a eventos. VidaReal no creó un bloque nuevo — **modificó el bloque existente** con cambios muy focalizados. Esta documentación registra exactamente qué se cambió y por qué.
@@ -8,6 +10,7 @@ El commit base de comparación es `ca2ca0ec94` (upstream Rock). Los commits de V
 
 - `ee2fa59514` — Events, flujos i18n
 - `ebe7f8d459` — Epay, eventos y cobros
+- `7fc618ef10` (2026-06-22) — Up to Date, translate, eventos, odoo → facturación FEL/NIT + rediseño visual (ver §7)
 
 ---
 
@@ -189,7 +192,7 @@ else {
 
 | Área | Alcance del cambio | Propósito |
 |---|---|---|
-| `RegistrationEntry.cs` (C#) | +4 líneas | Persistir `FeeCoverageAmount` en transacciones; fix de query string en redirect de gateway |
+| `RegistrationEntry.cs` (C#) | +4 líneas (hasta 2026-06-06; +~190 más el 2026-06-22, ver §7) | Persistir `FeeCoverageAmount` en transacciones; fix de query string en redirect de gateway |
 | `RegistrationService.cs` (C#) | +2 líneas | Excluir `FeeCoverageAmount` del cálculo de balance para que no reduzca artificialmente el saldo pendiente |
 | `utils.partial.ts` | +242 líneas | Sistema completo de i18n EN/ES con ~80 claves de texto y persistencia en localStorage |
 | `registrationEntry.obs` | +140 líneas | Selector idioma, transiciones de pasos, indicador móvil, numeración en español |
@@ -207,3 +210,35 @@ else {
 - El idioma default es `"es"`. Si se desplegara este bloque en un sitio solo en inglés, cambiar el default en `getRegistrationEntryUiLanguage()`.
 - `FeeCoverageAmount` requiere que el gateway (Epay) envíe ese campo en `PaymentInfo`. Verificar que el adaptador de Epay lo populea antes de llamar `ProcessPaymentWithTransaction`.
 - La remoción de `SaveFinancialAccountForm` en `success.partial.obs` es intencional para VidaReal. Si otro tenant necesita esa funcionalidad, restaurar el componente y sus computed (`gatewayGuid`, `transactionCode`, `gatewayPersonIdentifier`, `enableSaveAccount`).
+
+---
+
+## 7. Facturación FEL / NIT y rediseño visual (commit `7fc618ef10`, 2026-06-22)
+
+Este commit es posterior a la redacción original de este documento (2026-06-06) y amplía bastante el diff contra upstream. Resumen para quien herede el bloque:
+
+### 7.1 Backend — `RegistrationEntry.cs` (+~190 líneas)
+
+- `#region Vida Real - NIT / FEL Validation` con el BlockAction **`ValidateNitInfo(nit)`**: valida el NIT contra el certificador FEL (`RetornaDatosClienteRequest`, XML) y devuelve `{ name, address }` saneados de SAT. Mismo contrato que el bloque de donaciones DAR.
+- Configuración por Global Attributes `OdooNitApiUrl` y `OdooNitApiBearerToken` (este último se intenta desencriptar; si falla, se usa como texto plano). Los valores **no** van en este documento.
+- Defensas: whitelist de hosts (anti-SSRF, solo `https`), rate limit en proceso de 10 validaciones/min por IP (diccionario estático con cota de 5000 entradas, solo single-node), NIT normalizado a alfanumérico en mayúsculas con máximo 32 caracteres, sanitización de la respuesta (`SanitizeSatText`). La API responde 200 también para NIT inexistente: sin `<nombre>` se trata como inválido.
+- En `ProcessPostSave`, `LaunchWorkflow` ahora pasa `{ "Nit", "WantsInvoice" }` como atributos pre-poblados a **todos** los workflow types del registro. Los workflows que no tienen esos atributos los ignoran. Lo consume el workflow "Odoo - Venta de Evento" (`Plugin.OdooEventSale`, acción `PostEventSaleToOdoo`).
+
+### 7.2 ViewModels — `RegistrationEntryArgsBag.cs` (+12) y `registrationEntryArgsBag.d.ts` (+6)
+
+Props `WantsInvoice` (bool; si es false se factura como CF) y `Nit` (string). Al regenerar ViewModels/TypeScript con las herramientas de Rock hay que preservarlas.
+
+### 7.3 Frontend
+
+- `types.partial.ts`: estado `wantsInvoice`, `nit`, `nitName`, `nitAddress`.
+- `payment.partial.obs` (+270): sección "¿Desea factura?" con switch, input NIT normalizado al escribir, botón "Validar NIT", razón social/dirección de solo lectura. El botón de pago queda **deshabilitado** si se pidió factura y el NIT no está validado; cambiar el NIT invalida la razón social previa.
+- `registrationEntry.obs` (+276/−): nueva paleta de tokens `--re-*` (canvas `#e7ecf9`, superficie blanca, acento degradado `#2563eb → #6366f1`, radios mayores), transición con dirección (`re-step-fwd` / `re-step-back`) y envío de `nit`/`wantsInvoice` en el args bag.
+- `summary.partial.obs` (+91): registrantes como "chips" con iniciales; lista de espera con ícono de reloj.
+- `registrar.partial.obs` (+36): panel del registrador con barra lateral de acento e ícono.
+- `intro.partial.obs`: clase renombrada a `registrationentry-intro-count`.
+
+### 7.4 Notas de mantenimiento adicionales
+
+- Es el mayor punto de conflicto con upstream en este bloque: al hacer merge de `RegistrationEntry.cs` conservar la región completa y el cambio en `LaunchWorkflow`.
+- El rate limit es por proceso: con varios nodos web el límite efectivo se multiplica.
+- Diagnóstico de fallas FEL del lado de Odoo: ver `Plugin.OdooEventSale/CONTEXT.md` y `AI_HANDOFF_ROCK18_EVENT_CRM.md`.

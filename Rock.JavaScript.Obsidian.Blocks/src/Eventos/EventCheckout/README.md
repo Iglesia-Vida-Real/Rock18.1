@@ -1,5 +1,7 @@
 # EventCheckout — partials del checkout
 
+Última actualización: 2026-10-15 (revisado; sin cambios de código desde `81d2622dbc`, 2026-10-06).
+
 Patrón `Event/RegistrationEntry`: el shell `../eventCheckout.obs` crea el estado con
 `provideCheckoutState()` y contiene TODO el `<style>` (NO-scoped a propósito: estiliza también a
 estos partials); cada paso lo inyecta con `useCheckoutState()` y destructura solo lo que su

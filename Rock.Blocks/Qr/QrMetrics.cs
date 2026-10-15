@@ -77,6 +77,11 @@ namespace Rock.Blocks.Qr
     {
         #region Keys
 
+        private static class PageParameterKey
+        {
+            public const string QrCodeId = "QrCodeId";
+        }
+
         private static class AttributeKey
         {
             public const string DetailPage = "DetailPage";
@@ -168,11 +173,26 @@ namespace Rock.Blocks.Qr
 
             using ( var rockContext = new RockContext() )
             {
+                var options = GetOptions();
+
+                // El parámetro viene de la URL (el enlace "Métricas" del catálogo). Si no es un
+                // código dinámico del catálogo se ignora y el panel abre con todo, en vez de
+                // fallar por un enlace viejo.
+                var requestedKey = PageParameter( PageParameterKey.QrCodeId );
+                var data = BuildData( rockContext, DefaultRangeDays, requestedKey.IsNotNullOrWhiteSpace() ? requestedKey : null );
+
+                if ( requestedKey.IsNotNullOrWhiteSpace() && data.SelectedCode == null )
+                {
+                    data = BuildData( rockContext, DefaultRangeDays );
+                }
+
+                options.InitialCodeKey = data.SelectedCode?.IdKey;
+
                 return new
                 {
                     notAuthorized = false,
-                    options = GetOptions(),
-                    data = BuildData( rockContext, DefaultRangeDays )
+                    options,
+                    data
                 };
             }
         }
@@ -182,11 +202,12 @@ namespace Rock.Blocks.Qr
         #region Block Actions
 
         /// <summary>
-        /// Recalcula el panel para otro rango.
+        /// Recalcula el panel para otro rango y, opcionalmente, para un solo código.
         /// </summary>
         /// <param name="days">Días hacia atrás; 0 significa toda la historia.</param>
+        /// <param name="qrCodeKey">IdKey del código a mirar; vacío para todo el catálogo.</param>
         [BlockAction]
-        public BlockActionResult Refresh( int days )
+        public BlockActionResult Refresh( int days, string qrCodeKey = null )
         {
             if ( !CanView() )
             {
@@ -195,7 +216,16 @@ namespace Rock.Blocks.Qr
 
             using ( var rockContext = new RockContext() )
             {
-                return ActionOk( BuildData( rockContext, days ) );
+                var data = BuildData( rockContext, days, qrCodeKey );
+
+                // Un filtro que no encontró su código no puede devolver el panel completo: la
+                // pantalla diría el nombre del código y mostraría las cifras de todos.
+                if ( qrCodeKey.IsNotNullOrWhiteSpace() && data.SelectedCode == null )
+                {
+                    return ActionNotFound( "Ese código ya no existe o no es dinámico." );
+                }
+
+                return ActionOk( data );
             }
         }
 
@@ -206,7 +236,10 @@ namespace Rock.Blocks.Qr
         /// <summary>
         /// Arma todo el panel en una sola pasada.
         /// </summary>
-        private QrMetricsDataBag BuildData( RockContext rockContext, int days )
+        /// <param name="rockContext">Contexto de base de datos.</param>
+        /// <param name="days">Días hacia atrás; 0 significa toda la historia.</param>
+        /// <param name="qrCodeKey">IdKey de un código para mirar solo ese; null para todos.</param>
+        private QrMetricsDataBag BuildData( RockContext rockContext, int days, string qrCodeKey = null )
         {
             var staleDays = GetAttributeValue( AttributeKey.StaleDays ).AsIntegerOrNull() ?? DefaultStaleDays;
             var now = RockDateTime.Now;
@@ -229,28 +262,27 @@ namespace Rock.Blocks.Qr
                 .Where( q => q.QrType == QrCodeType.Dinamico && q.PageShortLinkId.HasValue )
                 .ToList();
 
-            var shortLinkIds = codes.Select( c => c.PageShortLinkId.Value ).Distinct().ToList();
+            // Se informa ANTES de la salida temprana y ANTES del filtro: sin esto el panel vacío
+            // culpaba al rango de fechas ("no hay escaneos en este rango") cuando la causa real es
+            // que no existe ni un código dinámico y cambiar el rango no arreglaría nada.
+            var allShortLinkIds = codes.Select( c => c.PageShortLinkId.Value ).Distinct().ToList();
+            data.DynamicCodeCount = allShortLinkIds.Count;
 
-            // Se informa ANTES de la salida temprana: sin esto el panel vacío culpaba al rango de
-            // fechas ("no hay escaneos en este rango") cuando la causa real es que no existe ni un
-            // código dinámico y cambiar el rango no arreglaría nada.
-            data.DynamicCodeCount = shortLinkIds.Count;
-
-            if ( !shortLinkIds.Any() )
+            if ( !allShortLinkIds.Any() )
             {
                 data.GeoAvailable = true;
                 return data;
             }
 
-            var counts = QrMetricsService.GetScanCounts( rockContext, shortLinkIds, start, null );
-            var lastScans = QrMetricsService.GetLastScanDates( rockContext, shortLinkIds );
-
-            data.TotalScans = counts.Values.Sum();
-            data.ActiveCodes = codes.Count( c => c.IsActive );
+            // Conteo y último escaneo de TODO el catálogo, haya filtro o no: alimentan la tabla
+            // de códigos, que es por donde se elige qué código mirar. Son dos consultas agrupadas,
+            // no una por código, así que con 200 códigos cuestan lo mismo que con 5.
+            var counts = QrMetricsService.GetScanCounts( rockContext, allShortLinkIds, start, null );
+            var lastScans = QrMetricsService.GetLastScanDates( rockContext, allShortLinkIds );
 
             var staleCutoff = now.AddDays( -staleDays );
 
-            var rows = codes.Select( c =>
+            var allRows = codes.Select( c =>
             {
                 var id = c.PageShortLinkId.Value;
                 var last = lastScans.TryGetValue( id, out var l ) ? ( DateTime? ) l : null;
@@ -262,6 +294,7 @@ namespace Rock.Blocks.Qr
                     CategoryName = c.Category?.Name,
                     Count = counts.TryGetValue( id, out var n ) ? n : 0,
                     LastScanDateTime = last?.ToRockDateTimeOffset(),
+                    IsActive = c.IsActive,
 
                     // Un código que nunca se escaneó solo está dormido si ÉL YA TIENE la edad del
                     // plazo. Antes bastaba con no tener escaneos, así que uno creado ayer nacía
@@ -271,6 +304,30 @@ namespace Rock.Blocks.Qr
                 };
             } ).ToList();
 
+            data.AllCodes = allRows;
+
+            // El filtro por código recorta la entrada y nada más: todo lo de abajo (KPIs, serie,
+            // dispositivo, procedencia) ya trabaja sobre los códigos y short links que reciba.
+            // El IdKey se compara en memoria porque es calculado, no columna.
+            var rows = allRows;
+
+            if ( qrCodeKey.IsNotNullOrWhiteSpace() )
+            {
+                rows = allRows.Where( r => r.IdKey == qrCodeKey ).ToList();
+                codes = codes.Where( c => c.IdKey == qrCodeKey ).ToList();
+                data.SelectedCode = rows.FirstOrDefault();
+
+                if ( data.SelectedCode == null )
+                {
+                    data.GeoAvailable = true;
+                    return data;
+                }
+            }
+
+            var shortLinkIds = codes.Select( c => c.PageShortLinkId.Value ).Distinct().ToList();
+
+            data.TotalScans = rows.Sum( r => r.Count );
+            data.ActiveCodes = codes.Count( c => c.IsActive );
             data.StaleCodes = rows.Count( r => r.IsStale );
 
             // Los nunca escaneados que todavía no cumplen el plazo: no son material muerto, son
