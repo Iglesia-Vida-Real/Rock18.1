@@ -25,7 +25,7 @@ Solo **dos** ramas contienen trabajo propio (57 commits de `rodobriones` en tota
 
 | Rama | Base | Commits propios | Último commit | Estado |
 |---|---|---|---|---|
-| **`hotfix-18.1`** | Rock **18.1** oficial (`upstream/hotfix-18.1` @ `f8e5bcf161`, 2025-12-08) | 43 (2026-02-10 → 2026-10-06) | `81d2622dbc` «Eventos y Modulo de QRS» (2026-10-06) | **Rama viva. Es la que corre en producción. Trabajar aquí.** |
+| **`hotfix-18.1`** | Rock **18.1** oficial (`upstream/hotfix-18.1` @ `f8e5bcf161`, 2025-12-08) | 44 (2026-02-10 → 2026-10-15) | `36fa46789a` «Paquete de traspaso» (2026-10-15) | **Rama viva. Es la que corre en producción. Trabajar aquí.** |
 | `hotfix-1.15.5` | Rock 15.5 | 14 (2026-01-19 → 2026-02-21) | `4e2b65b1e2` «Workflow y Donation entry» | Histórica. Lo que servía se portó a 18.1 (ver `*_Migration_Context.md` en la raíz). No se usa. |
 
 Otras referencias:
@@ -53,7 +53,10 @@ Todo lo commiteado está en `origin`. (Los 3 commits de la restauración de `Roc
 
 ## 4. Cambios sin commitear
 
-### 4.1 Código del módulo QR — en producción, PENDIENTE DE COMMIT — NO perder
+**Ninguno.** Working tree limpio al 2026-10-15. El commit `36fa46789a` («Paquete de traspaso»,
+pusheado a `origin/hotfix-18.1`) incluyó:
+
+### 4.1 Código del módulo QR (en producción)
 
 | Archivo | Cambio |
 |---|---|
@@ -63,23 +66,13 @@ Todo lo commiteado está en `origin`. (Los 3 commits de la restauración de `Roc
 | `Rock.JavaScript.Obsidian.Blocks/src/Qr/QrMetrics/types.partial.ts` | Tipos |
 | `Rock.JavaScript.Obsidian.Blocks/src/Qr/qrCodeList.obs` | Enlace «ver métricas» desde el catálogo |
 
-Total: 5 archivos, +480/−41. Compilado y copiado a `RockWeb` de dev el 2026-10-06. **Ya está en
-producción** (confirmado por Rodolfo, 2026-10-15: el módulo QR está operativo en prod con este
-filtro); es lo **único** que queda por versionar. Compila: el 2026-10-15 `msbuild Rock.Blocks` (Release) dio exit 0 y el DLL de
-`bin\Release` es posterior a los fuentes modificados (13:48 → 13:52 del 06-oct). Detalle y plan en
-`docs/qr-custom/DEPLOY.md` §G.
+Total: 5 archivos, +480/−41. Es lo que corre en producción (confirmado por Rodolfo, 2026-10-15), así
+que un checkout limpio de `hotfix-18.1` reproduce prod. Detalle en `docs/qr-custom/DEPLOY.md` §G.
 
-**Acción del dev entrante:** commitearlo tal cual (es lo que corre en prod) antes de cualquier otra
-cosa, para que el repo refleje producción. Mientras esté sin commitear, **cualquier
-`Rock.Blocks.dll` que se compile lo incluye**, y un checkout limpio de `hotfix-18.1` **no**
-reproduce lo que corre en prod.
+### 4.2 Documentación y scripts (paquete de traspaso)
 
-### 4.2 Documentación (paquete de traspaso)
-
-El día del traspaso se actualizaron muchos `.md` (CHANGES.md de bloques, docs de módulos,
-contextos de migración, READMEs de plugins) y se agregaron `CLAUDE.md`, `docs/HANDOFF/` y
-`Dev Tools/Build/`. Esos cambios son solo documentación y scripts; deben commitearse juntos en un
-commit tipo «Docs: paquete de traspaso».
+`CLAUDE.md`, `ONBOARDING.md` reescrito, `docs/HANDOFF/`, `Dev Tools/Build/` y la actualización de
+~57 `.md` de módulos y plugins. Además `.claude/settings.local.json` dejó de versionarse.
 
 ### 4.3 Artefactos locales que no están en git (y está bien)
 

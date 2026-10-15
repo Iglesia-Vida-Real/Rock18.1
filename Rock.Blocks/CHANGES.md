@@ -43,7 +43,7 @@ Los bloques Obsidian reemplazan a los WebForms tradicionales (`.ascx`). Rock 18.
 | `FamilyHub/FamilyHub.cs` | Nuevo | `FamilyHub/CHANGES.md` | Sin cambios de backend desde 2026-06-06 |
 | `LayoutCustom/` (Header, Footer) | Nuevo | `LayoutCustom/CHANGES.md` | Sin cambios desde 2026-06-06 |
 | `QREVENT/` (SundayServiceRegistration, ReservationScanner, SundayServiceCapacityAdmin, QRScanner, CelebremosQrCheckIn, `RealTime/SundayServiceTopic.cs`) | Nuevo | `QREVENT/CHANGES.md` | En producción (confirmado 2026-10-15); detalle en ese documento |
-| `Qr/` (QrCodeDetail, QrCodeList, QrDashboard, QrMetrics) | Nuevo — QR Generator | `Rock/Model/Qr/ARCHITECTURE.md`, `docs/qr-custom/` | Commiteado en `81d2622dbc`; en producción (confirmado 2026-10-15). **En prod, PENDIENTE DE COMMIT (2026-10-15):** `Qr/QrMetrics.cs` (tabla de códigos + filtro por QR en «Uso»), ver `docs/qr-custom/` |
+| `Qr/` (QrCodeDetail, QrCodeList, QrDashboard, QrMetrics) | Nuevo — QR Generator | `Rock/Model/Qr/ARCHITECTURE.md`, `docs/qr-custom/` | Commiteado en `81d2622dbc`; en producción (confirmado 2026-10-15). **En prod, commiteado en `36fa46789a` (2026-10-15):** `Qr/QrMetrics.cs` (tabla de códigos + filtro por QR en «Uso»), ver `docs/qr-custom/` |
 | `Security/Login.cs` | Modificación upstream | `Security/CHANGES.md` | Último cambio 2026-07-06 |
 | `Security/VRSimpleRegistration.cs` | Nuevo | `Security/CHANGES.md` | Último cambio 2026-07-06 |
 | `Wallet/PaseDigital.cs`, `Wallet/WalletTemplateAdmin.cs` | Nuevo | `docs/wallet-module/`, `Plugin.VidaRealWallet/README.md` | Último cambio 2026-08-12 |

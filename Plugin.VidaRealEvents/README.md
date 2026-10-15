@@ -136,7 +136,7 @@ revertir con gente comprando no es algo para improvisar.
 `Rock.Blocks.csproj` es estilo SDK: compila **todo** `.cs` bajo `Rock.Blocks/`, commiteado o no.
 Al 2026-10-05 el árbol tenía el módulo QR sin commitear; desde el commit `81d2622dbc` (2026-10-06)
 el módulo QR está commiteado, salvo el filtro por código del panel «Uso» (5 archivos en producción
-pero PENDIENTES DE COMMIT al 2026-10-15: `Rock.Blocks/Qr/QrMetrics.cs`, `QrMetricsBags.cs` y tres del front; ver
+pero commiteados en `36fa46789a` al 2026-10-15: `Rock.Blocks/Qr/QrMetrics.cs`, `QrMetricsBags.cs` y tres del front; ver
 `docs/qr-custom/`). Los modelos del QR viven en `Rock/Model/Qr/` → `Rock.dll`, y sus migraciones en
 `Plugin.VidaRealQr` (assembly aparte). Un `Rock.Blocks.dll` compilado aquí y subido SOLO, contra un
 `Rock.dll` de producción que no trae esos modelos, deja tipos que no cargan. Compilar las cuatro

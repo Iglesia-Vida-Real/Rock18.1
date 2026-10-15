@@ -16,7 +16,7 @@
    `git status` limpio, o al menos saber exactamente qué cambio sin commitear viaja dentro de cada
    DLL. `Rock.Blocks.dll` y `Rock.dll` arrastran **todo** lo que haya en el árbol (p. ej. al
    2026-10-15 arrastran los cambios sin commitear del módulo QR, que ya están en prod pero
-   PENDIENTES DE COMMIT: commitearlos antes del próximo build).
+   ya commiteados en `36fa46789a`).
 2. **Los DLL del fork van juntos.** `Rock.dll`, `Rock.Blocks.dll`, `Rock.ViewModels.dll`,
    `Rock.Rest.dll` del **mismo build**. Mezclar versiones da `TypeLoadException` /
    `MissingMethodException` sobre `Rock.ViewModels.Blocks.*` y páginas vacías.
@@ -156,7 +156,7 @@ dominical de QREVENT); evitar días de venta de un evento grande (checkout de Ev
 
 | Qué | Artefactos | Estado |
 |---|---|---|
-| **Módulo QR Generator** | `Rock.dll`, `Rock.Blocks.dll`, `Rock.ViewModels.dll`, `com.vidareal.Qr.dll` (migraciones 001–007), bundles `RockWeb\Obsidian\Blocks\Qr\*` | **En producción.** Sitio/dominio `q.vidareal.tv` operativo; reemplazó la plataforma externa antes de su vencimiento (22-oct-2026). El filtro por código en «Uso» (5 archivos) está en prod pero **PENDIENTE DE COMMIT** (ver `ESTADO_REPO.md` §4). Riesgo vigente: el certificado de `q.vidareal.tv` vence el 2026-12-28 y Certify no actualiza el binding. |
+| **Módulo QR Generator** | `Rock.dll`, `Rock.Blocks.dll`, `Rock.ViewModels.dll`, `com.vidareal.Qr.dll` (migraciones 001–007), bundles `RockWeb\Obsidian\Blocks\Qr\*` | **En producción.** Sitio/dominio `q.vidareal.tv` operativo; reemplazó la plataforma externa antes de su vencimiento (22-oct-2026). El filtro por código en «Uso» (5 archivos) está en prod pero **commiteado en `36fa46789a`** (ver `ESTADO_REPO.md` §4). Riesgo vigente: el certificado de `q.vidareal.tv` vence el 2026-12-28 y Certify no actualiza el binding. |
 | Eventos ajustado a capturas de diseño (2026-10-05, §9.39–§9.40) | `Rock.Blocks.dll`, `com.vidareal.Events.dll` (migraciones hasta 025), bundles `RockWeb\Obsidian\Blocks\Eventos\*`, `RockWeb\Plugins\EpayVisanetGateway\Obsidian\*.obs.js` | **En producción.** |
 | QREVENT: ventana «Bienvenido» 30 min + bloqueo de reservas (`-5`) | `Rock.Blocks.dll` + `SundayServiceRegistration.obs.js` + `sundayServiceCapacityAdmin.obs.js` | **En producción.** |
 | QREVENT: fix de deadlock del check-in (`sp_SundayServiceCheckIn`), guardado de QR en iOS/WebView, cierre de horarios pasados | SQL + `Rock.Blocks.dll` + bundles QREVENT | **En producción.** |

@@ -1,8 +1,8 @@
 # PROJECT_CONTEXT.md — Rock CMS fork VidaReal
 
 Última actualización: 2026-10-15 — estado de traspaso y pendientes por módulo: tabla al inicio de
-`CHANGES.md` (raíz). Último commit `81d2622dbc` (2026-10-06); sin commitear solo el filtro de Uso
-del módulo QR (ya en producción, PENDIENTE DE COMMIT). Todo lo desarrollado está en producción
+`CHANGES.md` (raíz). Último commit `36fa46789a` (2026-10-15, paquete de traspaso; incluye el filtro de Uso
+del módulo QR). Working tree limpio. Todo lo desarrollado está en producción
 (confirmado por Rodolfo, 2026-10-15).
 
 ## Que es este proyecto
@@ -198,8 +198,8 @@ de 7 plugins: es el 8.º**), 116 tests en `Rock.Tests/Model/Qr/`.
   `EnableExclusiveRoutes`, `EnableVisitorTracking` en 1. Verificar decodificando el SVG, no la pantalla.
 - **Estado (2026-10-15):** operativo en producción (confirmado por Rodolfo): sitio/dominio
   `q.vidareal.tv` funcionando, migraciones 001–007 aplicadas; la plataforma externa se reemplazó
-  antes de su vencimiento (22-oct-2026, dato histórico). Pendiente: commitear el filtro de Uso (en
-  prod, PENDIENTE DE COMMIT) y la renovación del certificado (vence 2026-12-28; Certify no
+  antes de su vencimiento (22-oct-2026, dato histórico). Filtro de Uso commiteado en `36fa46789a` (en
+  prod, commiteado en `36fa46789a`) y la renovación del certificado (vence 2026-12-28; Certify no
   actualiza el binding).
 - **Docs:** `docs/qr-custom/DEPLOY.md` (leer primero), `Rock/Model/Qr/ARCHITECTURE.md`, `docs/qr-custom/SMOKE_TESTS.md`.
 

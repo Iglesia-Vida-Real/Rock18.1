@@ -1,7 +1,7 @@
 # Cambios del fork VidaReal respecto a Rock RMS upstream (SparkDevNetwork)
 
 Fecha del análisis: **2026-10-15** · Rama analizada: `hotfix-18.1` (HEAD `81d2622dbc`) + working tree.
-Lista plana para checklist de merge: [`core-files-modified.txt`](core-files-modified.txt) (148 rutas).
+Lista plana para checklist de portado: [`core-files-modified.txt`](core-files-modified.txt) (148 rutas).
 
 Este documento compara el fork contra **la versión de Rock de la que nació**, no contra otras ramas
 del fork. Su objetivo es que el próximo desarrollador sepa qué partes del core de Rock se tocaron,
@@ -13,7 +13,7 @@ qué es código propio y cómo actualizar a una versión nueva de Rock sin perde
 
 1. [Base upstream: de qué versión de Rock parte el fork](#1-base-upstream)
 2. [Resumen en números](#2-resumen-en-números)
-3. [A. Modificaciones al core de Rock](#a-modificaciones-al-core-de-rock) (lo crítico para merges)
+3. [A. Modificaciones al core de Rock](#a-modificaciones-al-core-de-rock) (lo crítico al actualizar)
 4. [B. Código nuevo dentro de proyectos core](#b-código-nuevo-dentro-de-proyectos-core)
 5. [C. Proyectos y plugins propios](#c-proyectos-y-plugins-propios)
 6. [D. Scripts SQL, temas, App_Code, assets, Dev Tools y documentación](#d-scripts-sql-temas-app_code-assets-dev-tools-y-documentación)
@@ -47,8 +47,9 @@ git describe --tags --abbrev=0 HEAD           # -> 18.1.0
 git rev-list --count --merges f8e5bcf161..HEAD   # -> 0 (historia lineal)
 ```
 
-Se verificó además que `f8e5bcf161` es ancestro de los tags `18.7.0` y `19.7.0`, así que una
-actualización se puede hacer como merge de 3 vías normal (ver
+Se verificó además que `f8e5bcf161` es ancestro de los tags `18.7.0` y `19.7.0`. Aun así, el
+procedimiento recomendado para actualizar **no es un merge** sobre este repo: se baja la BD de prod,
+se clona Rock limpio, se sube de versión mayor en versión mayor y lo propio se porta al final (ver
 [procedimiento](#cómo-actualizar-a-una-nueva-versión-de-rock)).
 
 > **Ojo con la documentación vieja.** Varios `CHANGES.md` del repo dicen *"Base de comparación:
@@ -68,7 +69,7 @@ git diff 18.1.0 HEAD -- <archivo>       # cambio exacto de un archivo core
 ## 2. Resumen en números
 
 Total: **634 archivos** distintos entre `18.1.0` y `HEAD` (486 agregados, 139 modificados, 9
-borrados), más 5 archivos de código sin commitear (módulo QR; ya en producción, PENDIENTE DE COMMIT).
+borrados), más 5 archivos del módulo QR que al momento del análisis estaban sin commitear (ya en producción; commiteados después en `36fa46789a`).
 
 | Categoría | Archivos | Comentario |
 |---|---|---|
@@ -281,7 +282,7 @@ con tablas prefijadas `_com_vidareal_*` y se registran solas en `RockContext`
 | Módulo | Archivos | Qué es | Docs |
 |---|---|---|---|
 | **Eventos / Boletería** | `Rock/Model/Eventos/` (7 entidades + enums + 19 servicios), `Rock/Jobs/EventsMaintenance.cs`, `Rock.Blocks/Eventos/` (7 bloques + bags), `Rock.ViewModels/Blocks/Eventos/`, `src/Eventos/` (8 `.obs` + 8 partials del checkout) | Boletería propia end-to-end (no usa `Registration*`): checkout con hold, ePay, FEL vía Odoo, PDF/correo, Wallet, scanner, reportería, calendario público | `Rock/Model/Eventos/ARCHITECTURE.md`, `docs/eventos-custom/` |
-| **QR Generator** | `Rock/Model/Qr/` (entidades + 3 servicios), `Rock.Blocks/Qr/` (4), `Rock.ViewModels/Blocks/Qr/` (8), `src/Qr/` (4 `.obs` + 5 `types.partial.ts`), `Rock.Tests/Model/Qr/` (2, 116 tests MSTest) | Generador de QR institucionales con short links y métricas. **Sin commitear (working tree):** `Rock.Blocks/Qr/QrMetrics.cs`, `Rock.ViewModels/Blocks/Qr/QrMetrics/QrMetricsBags.cs`, `src/Qr/qrMetrics.obs`, `src/Qr/qrCodeList.obs`, `src/Qr/QrMetrics/types.partial.ts` (+480/−41: tabla de códigos y filtro por QR en «Uso»; en producción, PENDIENTE DE COMMIT). **En producción** (confirmado 2026-10-15; `q.vidareal.tv` operativo) | `Rock/Model/Qr/ARCHITECTURE.md`, `docs/qr-custom/` |
+| **QR Generator** | `Rock/Model/Qr/` (entidades + 3 servicios), `Rock.Blocks/Qr/` (4), `Rock.ViewModels/Blocks/Qr/` (8), `src/Qr/` (4 `.obs` + 5 `types.partial.ts`), `Rock.Tests/Model/Qr/` (2, 116 tests MSTest) | Generador de QR institucionales con short links y métricas. **Sin commitear (working tree):** `Rock.Blocks/Qr/QrMetrics.cs`, `Rock.ViewModels/Blocks/Qr/QrMetrics/QrMetricsBags.cs`, `src/Qr/qrMetrics.obs`, `src/Qr/qrCodeList.obs`, `src/Qr/QrMetrics/types.partial.ts` (+480/−41: tabla de códigos y filtro por QR en «Uso»; en producción, commiteado en `36fa46789a`). **En producción** (confirmado 2026-10-15; `q.vidareal.tv` operativo) | `Rock/Model/Qr/ARCHITECTURE.md`, `docs/qr-custom/` |
 | **Wallet (Apple/Google)** | `Rock/Model/Wallet/` (4 + 5 servicios), `Rock/Lava/Filters/LavaFilters.VidaRealWallet.cs` (filtro `WalletPassUrl`), `Rock.Rest/VidaReal/WalletPassKitController.cs`, `Rock.Blocks/Wallet/` (2), `src/Wallet/` (2) | Pases self-hosted, pkpass firmado, APNs, PassKit Web Service | `docs/wallet-module/RESEARCH_Y_PLAN.md` |
 | **QREVENT / Servicio dominical** | `Rock.Blocks/QREVENT/` (5 + `RealTime/SundayServiceTopic.cs`), `src/QREVENT/` (5 `.obs` + `vendor/zxing.lib.ts`) | Reservas del servicio dominical, scanners QR, Celebremos, cupos y métricas, «Bienvenido» por RealTime. Depende de SPs/tablas de `Dev Tools/Sql` | `Rock.Blocks/QREVENT/CHANGES.md`, `src/QREVENT/CHANGES.md` |
 | **Donaciones (Dar)** | `Rock.Blocks/Dar/` (2 + plantilla de correo), `src/Dar/` (2) | Formulario de donación Cybersource/ePay multi-moneda con reCAPTCHA y anti-fraude; dashboard | `Rock.Blocks/Dar/CHANGES.md`, `src/Dar/CHANGES.md` |
@@ -398,94 +399,123 @@ ninguna migración de Rock.
 
 ## Cómo actualizar a una nueva versión de Rock
 
-Magnitud de referencia (diff upstream desde `18.1.0`): a **`18.7.0`** cambian 1 251 archivos; a
-**`19.7.0`**, 5 417. Recomendación: subir primero a la última 18.x (menos conflictos, mismo modelo de
-temas y check-in) y planificar 19.x como un proyecto aparte.
+> **Procedimiento recomendado por Rodolfo (dueño saliente, 2026-10-15): NO actualizar este repo.**
+> Se baja una copia de la BD de prod, se clona Rock limpio en otra carpeta, se sube la BD **de
+> versión mayor en versión mayor** con Rock sin modificar (aplicando en cada salto las migraciones y
+> actualizaciones de Rock) y **solo al final** se mete el desarrollo propio. Este repo queda como
+> referencia de solo lectura.
+
+**Por qué no un merge sobre este repo:** hay 148 archivos core modificados, varios con decenas de
+commits upstream encima (ver [alto riesgo](#archivos-core-de-alto-riesgo)). De `18.1.0` a `19.7.0`
+cambian 5 417 archivos, desaparece `RockNextGen/Layouts/Blank.aspx`, la compilación de temas se
+mueve y los bloques de check-in WebForms pasan a Obsidian. Un merge obliga a resolver conflictos
+sobre código que en la versión nueva ya no existe o ya no hace falta; portar desde cero obliga a
+decidir, cambio por cambio, si se rehace, si la versión nueva ya lo resuelve o si se descarta.
+
+Últimas versiones al 2026-10-15: **`18.7.0`** y **`19.7.0`** (13-oct-2026). Ruta desde prod (18.1):
+`18.1 → 18.7.0 → 19.7.0` (y así con cada versión mayor que salga después).
 
 ### 0. Antes de empezar
 
-1. Tener todo commiteado y pusheado (al 2026-10-15 hay código QR en producción PENDIENTE DE COMMIT, ver sección B).
-2. Respaldo completo de la BD de prod y prueba de restauración en un servidor de staging. Las
-   migraciones de Rock **no tienen vuelta atrás**.
-3. Etiquetar el estado actual: `git tag vidareal-pre-upgrade-<AAAAMMDD>`.
-4. Leer las notas de versión de Rock de cada versión intermedia (cambios de requisitos de .NET, SQL
-   Server, bloques WebForms "chopeados" a Obsidian).
+1. Leer las notas de versión de Rock de **cada** versión mayor del camino: requisitos de .NET
+   Framework, SQL Server e IIS, bloques WebForms reemplazados por Obsidian y bloques retirados.
+2. Servidor de staging separado de prod (nunca el de prod). Las migraciones de Rock **no tienen
+   vuelta atrás**: cada salto se hace sobre copia y se guarda un respaldo antes del siguiente.
+3. Aislar staging para que no envíe nada real: deshabilitar transportes de comunicación (SendGrid,
+   WhatsApp), jobs que envían correo/SMS, gateways de pago en modo real y la integración con
+   Odoo/FEL. Ver `docs/HANDOFF/SETUP_DESARROLLO.md` (cómo aislar la BD de dev).
+4. Etiquetar este repo en el estado que corre en prod: `git tag vidareal-prod-<AAAAMMDD>` y pushear el
+   tag. Desde ahí se porta todo. **Ya existe `vidareal-prod-20261015`** (commit `36fa46789a`, estado
+   de prod al traspaso); si prod cambia después, crear una etiqueta nueva.
 
-### 1. Traer upstream y crear la rama de trabajo
+### 1. Bajar la BD de prod
 
-```bash
-git fetch upstream --tags
-git checkout -b upgrade/18.7.0 hotfix-18.1
-git merge --no-ff 18.7.0          # merge de 3 vías con base 18.1.0 (es ancestro común)
-```
+1. Respaldo `COPY_ONLY` de `Rock18` en el servidor SQL de prod (no rompe la cadena de respaldos):
+   ```sql
+   BACKUP DATABASE [Rock18] TO DISK = N'<ruta>\Rock18_upgrade.bak' WITH COPY_ONLY, COMPRESSION, CHECKSUM;
+   ```
+2. Restaurarla en staging con otro nombre (p. ej. `RockUpgrade`).
+3. Copiar también `RockWeb\Content` de prod (archivos subidos; no está en git).
+4. Antes de arrancar Rock, correr la consulta de `[PluginMigration]` de la sección E y guardar el
+   resultado: sirve para comprobar al final que las migraciones propias quedaron al día.
 
-No usar `rebase`: los 43 commits mezclan módulos completos y re-aplicarlos uno por uno multiplica
-los conflictos.
-
-### 2. Resolver conflictos con la lista de archivos core
-
-Usar [`core-files-modified.txt`](core-files-modified.txt) como checklist: **todo archivo de esa
-lista debe revisarse aunque git no marque conflicto** (un merge limpio puede dejar el cambio propio
-en una función que upstream movió o dejó de llamar).
-
-Técnica recomendada por archivo (toma la versión nueva de Rock y le re-aplica el parche propio):
+### 2. Clonar Rock limpio en otra carpeta
 
 ```bash
-f=Rock/Web/UI/Controls/AddressControl.cs
-git diff 18.1.0 hotfix-18.1 -- "$f" > /tmp/vr.patch   # el cambio VidaReal, aislado
-git checkout 18.7.0 -- "$f"                          # versión upstream limpia
-git apply -3 /tmp/vr.patch                           # re-aplica; si falla, deja marcas de conflicto
+git clone https://github.com/SparkDevNetwork/Rock.git C:/repos/Rock-upgrade
+cd C:/repos/Rock-upgrade
+git checkout 18.7.0          # primer salto
 ```
 
-Reglas por tipo de archivo:
+Este clon es **Rock sin ningún cambio**. Compilar `Rock.sln` en Release con MSBuild y el framework
+Obsidian (`npm ci && npm run build` en `Rock.JavaScript.Obsidian` y `Rock.JavaScript.Obsidian.Blocks`).
+Apuntar `RockWeb/web.ConnectionStrings.config` a `RockUpgrade`.
 
-| Tipo | Cómo resolver |
-|---|---|
-| `package-lock.json` | Tomar upstream, re-agregar `@zxing/*` en `package.json` y correr `npm install` |
-| `*.d.ts` de `Framework/ViewModels` | Tomar upstream y re-agregar las props (o regenerar con el CodeGen de Rock tras compilar `Rock.ViewModels`) |
-| `Rock.sln`, `*.csproj` | Tomar upstream y re-agregar las líneas propias (proyecto `Rock.WhatsApp`, `WinHttpHandler`, `System.IO.Compression`, `EPPlus`) |
-| `theme.css` de RockNextGen | No mergear: tomar upstream y re-aplicar los dos overrides (color `--base-primary` e ícono). En 19.x hacerlo en el origen del nuevo proyecto `Rock.Frontend.Styles` o en un CSS propio |
-| Bloques que upstream borró o migró a Obsidian (p. ej. `CheckIn/Manager/Roster.ascx`, `RockNextGen/Layouts/Blank.aspx` en 19.x) | Decidir si el cambio propio sigue siendo necesario en el bloque nuevo; no resucitar el archivo borrado |
-| `.githooks/commit-msg`, archivos de `RockWeb/Content/` | Si el merge los trae de vuelta: borrar el hook; los de `Content/` se pueden dejar |
-| `RockWeb/Plugins/.gitignore` | Conservar la versión del fork (sin `*/*`) |
+### 3. Saltar de versión mayor en versión mayor (solo Rock)
 
-### 3. Verificaciones de compatibilidad del código nuevo
+Para cada versión del camino (`18.7.0`, luego `19.7.0`, …):
+
+1. `git checkout <versión>` y compilar.
+2. Arrancar RockWeb contra `RockUpgrade`. Rock corre sus migraciones al iniciar; esperar a que
+   termine y revisar el log de excepciones.
+3. **Esperar a que terminen los jobs post-actualización** que crea cada versión (*Admin → System
+   Settings → Jobs*: los jobs de migración de datos / de arranque de esa versión). No saltar a la
+   siguiente versión mayor con jobs de migración pendientes.
+4. Revisar que el sitio interno arranca y que el login funciona.
+5. Respaldar `RockUpgrade` (`RockUpgrade_<versión>.bak`) antes del siguiente salto. Si un salto
+   falla, se vuelve a este respaldo y no a prod.
+
+Qué esperar en esta etapa, porque **el código propio todavía no está**:
+
+- Páginas con bloques propios (Eventos, QR, QREVENT, Dar, FamilyHub, LayoutCustom…) muestran error
+  de bloque o de tipo no encontrado. Es normal; esa lista es el checklist de lo que falta portar.
+- `EntityType`/`BlockType`/`FieldType` cuyas clases no existen quedan huérfanos en la BD. **No
+  borrarlos**: al volver el código propio con el mismo nombre de clase, Rock los vuelve a enlazar y se
+  conservan atributos y configuración.
+- Las tablas `_com_vidareal_*` y sus datos no las toca ninguna migración de Rock. Si una migración
+  core falla por una llave foránea de una tabla propia hacia una tabla core (p. ej. `PersonAlias` o
+  `Group`), quitar temporalmente esa FK en staging, terminar el salto y anotarla para recrearla en el
+  paso 4.
+
+### 4. Meter el desarrollo propio
+
+Con la BD ya en la versión final y Rock limpio funcionando, portar lo propio en este orden:
+
+| Orden | Qué | De dónde sale | Cómo |
+|---|---|---|---|
+| 1 | Plugins (`Plugin.*`, `Rock.WhatsApp`) | Sección C | Copiar el proyecto, refrescar `Dependencies/` con los DLL de la versión nueva, compilar y corregir lo que cambió de API. Sus migraciones ya corrieron en prod: Rock no las repite (están registradas en `[PluginMigration]`) |
+| 2 | Código nuevo dentro de proyectos core | Sección B | **Recomendado: sacarlo a proyectos `Plugin.*`** (entidades, servicios, bloques, bags y `.obs`) en lugar de volver a meterlo en `Rock.dll`/`Rock.Blocks.dll`. Mantener el mismo nombre de clase y namespace, o actualizar `EntityType`/`BlockType` en la BD con una migración. Así el siguiente upgrade casi no toca el core |
+| 3 | Parches al core | Sección A + [`core-files-modified.txt`](core-files-modified.txt) | Uno por uno: ver el cambio propio con `git diff 18.1.0 vidareal-prod-<fecha> -- <archivo>`, confirmar si la versión nueva ya lo resuelve y solo si hace falta re-aplicarlo sobre el archivo nuevo. Si upstream borró o migró el bloque a Obsidian, rehacer el cambio en el bloque nuevo o descartarlo |
+| 4 | Scripts, temas, App_Code, fuentes | Sección D | Copiar y probar. El tema `VidAventuracheckin` y los overrides de `RockNextGen` se revisan contra el nuevo sistema de temas |
+| 5 | Plugins de terceros del Rock Shop | Sección C (`RockWeb/Plugins`) | Instalar desde el Rock Shop las versiones compatibles con la versión nueva; no copiar las viejas |
+
+Para consultar el código viejo desde el repo nuevo:
+
+```bash
+git remote add legacy https://github.com/<org>/Rock15.5.git
+git fetch legacy --tags
+git show vidareal-prod-<fecha>:Rock.Blocks/Event/RegistrationEntry.cs
+git diff 18.1.0 vidareal-prod-<fecha> -- <archivo>   # el cambio propio, aislado
+```
+
+Verificaciones del código propio en la versión nueva:
 
 1. **Colisión de nombres en `Rock.Model`.** Las entidades propias usan nombres genéricos (`Event`,
    `Order`, `Ticket`, `TicketType`, `PromoCode`, `CheckinLog`, `EventStaff`, `QrCode`, `QrDesign`,
-   `WalletPass`, `WalletTemplate`, `WalletDeviceRegistration`). Al 2026-10-15 ninguno existe en
-   `upstream/develop`, pero hay que repetir el chequeo en cada versión:
+   `WalletPass`, `WalletTemplate`, `WalletDeviceRegistration`). Al 2026-10-15 ninguno existe upstream,
+   pero hay que repetir el chequeo en cada versión (otra razón para moverlas a un namespace propio):
    ```bash
    for n in Event Order Ticket TicketType PromoCode CheckinLog EventStaff QrCode QrDesign WalletPass WalletTemplate WalletDeviceRegistration; do
      git grep -l -E "public (partial )?class $n\b" <tag> -- Rock/Model; done
    ```
-   Una colisión rompe la compilación de `Rock.dll`; la salida sería mover el módulo a su propio
-   namespace (decisión pendiente documentada en `CHANGES.md` raíz: "reabrir mudanza a plugin al
-   planificar 18.1→19.x").
-2. Buscar marcadores en el árbol mergeado para confirmar que nada se perdió:
-   `git grep -n -E "VR:|\[VidaReal\]|Fork VidaReal|VidaReal" -- Rock Rock.Blocks Rock.Rest Rock.ViewModels Rock.JavaScript.Obsidian RockWeb/Blocks`.
-3. Comparar el diff propio antes y después: `git diff 18.7.0 upgrade/18.7.0 --stat` debería parecerse
-   a `git diff 18.1.0 hotfix-18.1 --stat` (mismos archivos, tamaños similares).
+2. Volver a correr la consulta de `[PluginMigration]` y compararla con la del paso 1.4.
+3. Que no queden bloques con error en las páginas de los módulos propios.
 
-### 4. Compilar (orden obligatorio)
+### 5. Probar y pasar a prod
 
-1. `Rock.sln` en Release con MSBuild (no `dotnet build`).
-2. Refrescar `Plugin.*/Dependencies/` con los DLL recién compilados (`Rock.dll`, `Rock.Common.dll`,
-   `Rock.Enums.dll`, `Rock.Rest.dll`, `Rock.Lava.Shared.dll`…) y compilar los 7 plugins.
-3. `Rock.JavaScript.Obsidian` → `npm ci && npm run build` (framework completo).
-4. `Rock.JavaScript.Obsidian.Blocks` → `npm ci && npm run build` (verificar tamaño/fecha de los
-   `.obs.js`: el build puede salir con código 0 aunque un tsconfig falle).
-5. Re-compilar los controles Obsidian de `Plugin.EpayVisanetGateway` y
-   `Plugin.CybersourceInlineRestGateway` si cambió la API de gateways hospedados.
-
-### 5. Probar en staging (copia de la BD de prod)
-
-1. Arrancar Rock: correrán las migraciones core de la versión nueva y luego las de plugins.
-2. Revisar el log de excepciones al arrancar (hay un error benigno conocido de
-   `AIAgentSessionAnchor`; no parchear `RockContext.cs`).
-3. Smoke tests: `docs/eventos-custom/SMOKE_TESTS.md`, `docs/qr-custom/SMOKE_TESTS.md`,
-   `docs/gps-custom/SMOKE_TESTS.md` (cuando exista código), más estos flujos que dependen de archivos
-   core modificados:
+1. Smoke tests: `docs/eventos-custom/SMOKE_TESTS.md`, `docs/qr-custom/SMOKE_TESTS.md`,
+   `docs/gps-custom/SMOKE_TESTS.md` (cuando exista código), más estos flujos que dependen de parches
+   al core:
    - Login passwordless por teléfono con y sin código de país; selección entre varias personas
      (foto y edad); OTP numérico.
    - Inscripción a evento de Rock con NIT/factura y pago en cuotas (saldo sin fee coverage).
@@ -495,8 +525,31 @@ Reglas por tipo de archivo:
    - Lista de transacciones y perfil de donaciones con GTQ y USD.
    - Merge de personas por ID.
    - Respuesta de WhatsApp atribuida a la persona correcta; sticker WebP visible.
-4. Desplegar a prod siguiendo `CHANGES.md` raíz §"Despliegue a producción" (framework Obsidian
-   completo, todos los DLL del mismo build, reinicio completo del servidor).
+   - Boletería completa con pago de prueba, FEL en Odoo y pase de Wallet.
+2. **Corte a prod:** ensayar el proceso completo al menos una vez. El día del corte, repetir los
+   pasos 1 y 3 con un respaldo fresco de prod (los datos cambiaron desde el ensayo), desplegar el
+   código propio ya portado y validado, y correr los smoke tests en prod. Ventana de mantenimiento
+   anunciada y respaldo de prod justo antes.
+3. El repo nuevo pasa a ser el oficial; este queda archivado (solo lectura) como referencia.
+
+### Alternativa: merge sobre este repo (solo versiones menores)
+
+Para una actualización **menor dentro de la misma versión mayor** (p. ej. 18.1 → 18.7: 1 251
+archivos cambiados, mismo modelo de temas y check-in) un merge de 3 vías también es viable, porque
+`18.1.0` es ancestro común:
+
+```bash
+git fetch upstream --tags
+git checkout -b upgrade/18.7.0 hotfix-18.1
+git merge --no-ff 18.7.0
+```
+
+Revisar **todo** archivo de `core-files-modified.txt` aunque git no marque conflicto. Técnica por
+archivo: `git diff 18.1.0 hotfix-18.1 -- "$f" > vr.patch; git checkout 18.7.0 -- "$f"; git apply -3 vr.patch`.
+En `package-lock.json`, `*.d.ts`, `Rock.sln`/`*.csproj` y `theme.css` tomar upstream y re-agregar lo
+propio; no resucitar archivos que upstream borró; conservar `RockWeb/Plugins/.gitignore` del fork.
+Luego compilar (`Rock.sln` → refrescar `Plugin.*/Dependencies/` → plugins → Obsidian) y probar en
+staging como en el paso 5. **Para saltos de versión mayor usar el procedimiento principal.**
 
 ---
 

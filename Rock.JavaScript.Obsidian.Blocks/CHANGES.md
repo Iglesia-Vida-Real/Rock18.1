@@ -173,7 +173,7 @@ Ademas de los modulos nuevos, se modificaron bloques del core de Rock para adapt
 | `src/QREVENT/` | ademas de lo listado arriba: `SundayServiceCapacityAdmin.obs` (admin de cupos + pestana Metricas) | `src/QREVENT/CHANGES.md` |
 | `src/Security/` | ademas: `vrSimpleRegistration.obs` y el rediseno passwordless de julio 2026 | `src/Security/CHANGES.md`, `src/Security/Login/CHANGES.md` |
 
-### Trabajo sin commitear (en producción)
+### Filtro de Uso del módulo QR (en producción, commiteado en `36fa46789a`)
 
-- **En producción, PENDIENTE DE COMMIT (2026-10-15):** `src/Qr/qrMetrics.obs`, `src/Qr/qrCodeList.obs`, `src/Qr/QrMetrics/types.partial.ts` — tabla de codigos y filtro por QR en la pestana "Uso". Detalle y estado en `docs/qr-custom/`.
+- **En producción, commiteado en `36fa46789a` (2026-10-15):** `src/Qr/qrMetrics.obs`, `src/Qr/qrCodeList.obs`, `src/Qr/QrMetrics/types.partial.ts` — tabla de codigos y filtro por QR en la pestana "Uso". Detalle y estado en `docs/qr-custom/`.
 - **En producción (confirmado por Rodolfo, 2026-10-15):** bundles de `src/Eventos/` (ajuste a capturas del diseñador, 2026-10-05), de `src/Qr/` y de QREVENT (`src/QREVENT/CHANGES.md`). Ya no hay bundles pendientes de subir.

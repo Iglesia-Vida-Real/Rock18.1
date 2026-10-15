@@ -46,11 +46,11 @@
 
 | Archivo | Proposito | Cuando leerlo |
 |---|---|---|
-| `C:\repos\Rock15.5\docs\qr-custom\DEPLOY.md` | **Estado al dia + runbook de despliegue**: artefactos y orden, configuracion del sitio del dominio corto `q.vidareal.tv` (la trampa del `Order` de `SiteDomain`), verificacion por SQL/SVG/curl, seguridad, rollback, y §G el filtro por codigo en Uso (en prod, PENDIENTE DE COMMIT) | Antes de redesplegar o tocar el modulo. Leer primero. |
+| `C:\repos\Rock15.5\docs\qr-custom\DEPLOY.md` | **Estado al dia + runbook de despliegue**: artefactos y orden, configuracion del sitio del dominio corto `q.vidareal.tv` (la trampa del `Order` de `SiteDomain`), verificacion por SQL/SVG/curl, seguridad, rollback, y §G el filtro por codigo en Uso (en prod, commiteado en `36fa46789a`) | Antes de redesplegar o tocar el modulo. Leer primero. |
 | `C:\repos\Rock15.5\Rock\Model\Qr\ARCHITECTURE.md` | Capas, decision fundacional (el destino vive en el `PageShortLink`), trampas del core de short links, checklist de upgrade | Antes de tocar codigo del modulo. |
 | `C:\repos\Rock15.5\docs\qr-custom\SMOKE_TESTS.md` | Pruebas runtime (los «bloqueantes del 22-oct» son historicos: el modulo ya opera en prod) | Tras cualquier redeploy. |
 
-**Codigo:** `Rock/Model/Qr/` (+`Services/`), `Rock.Blocks/Qr/`, `Rock.ViewModels/Blocks/Qr/`, `src/Qr/`, migraciones en `Plugin.VidaRealQr` (001–007), tests en `Rock.Tests/Model/Qr/`. Commiteado en `81d2622dbc` salvo el filtro de Uso. **Estado (2026-10-15): operativo en produccion** (confirmado por Rodolfo): sitio/dominio `q.vidareal.tv` funcionando, migraciones Qr 001–007 aplicadas; se reemplazo la plataforma externa antes de su vencimiento (22-oct-2026, dato historico). Unico pendiente de versionado: los 5 archivos del filtro de Uso (**en prod, PENDIENTE DE COMMIT**). Riesgo vigente: renovacion del certificado de `q.vidareal.tv` el 2026-12-28 (Certify no actualiza el binding). El SDD v1.1 vive fuera del repo (Desktop del dev anterior).
+**Codigo:** `Rock/Model/Qr/` (+`Services/`), `Rock.Blocks/Qr/`, `Rock.ViewModels/Blocks/Qr/`, `src/Qr/`, migraciones en `Plugin.VidaRealQr` (001–007), tests en `Rock.Tests/Model/Qr/`. Commiteado en `81d2622dbc` salvo el filtro de Uso. **Estado (2026-10-15): operativo en produccion** (confirmado por Rodolfo): sitio/dominio `q.vidareal.tv` funcionando, migraciones Qr 001–007 aplicadas; se reemplazo la plataforma externa antes de su vencimiento (22-oct-2026, dato historico). Unico pendiente de versionado: los 5 archivos del filtro de Uso (**en prod, commiteado en `36fa46789a`**). Riesgo vigente: renovacion del certificado de `q.vidareal.tv` el 2026-12-28 (Certify no actualiza el binding). El SDD v1.1 vive fuera del repo (Desktop del dev anterior).
 
 ---
 
@@ -231,9 +231,9 @@ No hay archivos de contexto separados para Security. Usar `PROJECT_CONTEXT.md` q
 
 - **Branch activo:** `hotfix-18.1`
 - **Ultimo commit:** `81d2622dbc` — "Eventos y Modulo de QRS" (2026-10-06)
-- **Sin commitear:** el filtro por codigo del panel de Uso del modulo QR (5 archivos; `docs/qr-custom/DEPLOY.md` §G) — **ya en produccion, PENDIENTE DE COMMIT** — y la actualizacion de documentacion del 2026-10-15.
+- **Todo commiteado y pusheado** (2026-10-15, `36fa46789a`): incluye el filtro por codigo del panel de Uso del modulo QR (`docs/qr-custom/DEPLOY.md` §G) y la documentacion de traspaso.
 - **Produccion (confirmado por Rodolfo, 2026-10-15):** todo lo desarrollado esta en prod (QR Generator, Eventos hasta migracion 025, QREVENT, cascada GT, PersonAliasId, Epay, Wallet, Translator, passwordless, webhook SendGrid).
 - **Pendientes por modulo:** tabla «Estado de traspaso y pendientes» al inicio de `CHANGES.md` (raiz). Lo mas urgente ahora: transferir repo/accesos, rotar secretos y commitear el filtro de Uso de QR.
-- **Ojo al compilar `Rock.Blocks.dll`:** un solo assembly lleva Eventos §9.40, QR (incl. lo sin commitear) y QREVENT; cualquier deploy de ese DLL arrastra los tres.
+- **Ojo al compilar `Rock.Blocks.dll`:** un solo assembly lleva Eventos §9.40, QR y QREVENT; cualquier deploy de ese DLL arrastra los tres.
 - El estado historico del 2026-07-07 (Wallet fase 2) quedo superado: todo eso esta commiteado (`7d8adb2462`, `1fe6076da6`, `0c44380057`) y el modulo Wallet sirve trafico de prod.
 

@@ -10,7 +10,7 @@ Este repositorio es un **fork de [SparkDevNetwork/Rock](https://github.com/Spark
 - **Rama de trabajo:** `hotfix-18.1`
 - **Inicio de personalizaciones:** commit `ca2ca0ec94` — "Bloques nuevos" (10 de febrero de 2026)
 - **Ultimo commit de VidaReal:** `81d2622dbc` — "Eventos y Modulo de QRS" (6 de octubre de 2026)
-- **Sin commit en working tree (al 2026-10-15):** solo el filtro por código del panel de Uso del módulo QR (5 archivos: `Rock.Blocks/Qr/QrMetrics.cs`, `Rock.ViewModels/Blocks/Qr/QrMetrics/QrMetricsBags.cs`, `src/Qr/QrMetrics/types.partial.ts`, `src/Qr/qrMetrics.obs`, `src/Qr/qrCodeList.obs`) — ver `docs/qr-custom/DEPLOY.md` §G — **ya en producción, PENDIENTE DE COMMIT** — más esta actualización de documentación.
+- **Commiteado en `36fa46789a` (2026-10-15):** el filtro por código del panel de Uso del módulo QR (5 archivos: `Rock.Blocks/Qr/QrMetrics.cs`, `Rock.ViewModels/Blocks/Qr/QrMetrics/QrMetricsBags.cs`, `src/Qr/QrMetrics/types.partial.ts`, `src/Qr/qrMetrics.obs`, `src/Qr/qrCodeList.obs`) — ver `docs/qr-custom/DEPLOY.md` §G — **ya en producción, commiteado en `36fa46789a`** — más esta actualización de documentación.
 - **Producción (confirmado por Rodolfo, 2026-10-15):** todo lo desarrollado está en producción, incluido el módulo QR Generator (operativo en `q.vidareal.tv`).
 - **Nota 2026-10-15:** todo lo que en este archivo aparece como *"(sin commit)"* / *"NUEVO (sin commit)"* con fecha anterior al 2026-10-06 **ya está commiteado** (ver la tabla de commits). Las marcas se dejaron como registro histórico.
 - **Desarrolladores:** Equipo IT VidaReal (rodobriones)
@@ -21,7 +21,7 @@ Este repositorio es un **fork de [SparkDevNetwork/Rock](https://github.com/Spark
 
 | Área | Pendiente | Doc de referencia |
 |---|---|---|
-| **QR Generator** | **En producción** (confirmado 2026-10-15): `q.vidareal.tv` funcionando, migraciones 001–007 aplicadas; reemplazó la plataforma externa antes de su vencimiento (22-oct-2026). Pendiente: commitear el filtro de Uso (5 archivos, en prod, PENDIENTE DE COMMIT); renovar el certificado de `q.vidareal.tv` el 2026-12-28 (Certify no actualiza el binding: re-vincular a mano). | `docs/qr-custom/DEPLOY.md` |
+| **QR Generator** | **En producción** (confirmado 2026-10-15): `q.vidareal.tv` funcionando, migraciones 001–007 aplicadas; reemplazó la plataforma externa antes de su vencimiento (22-oct-2026). Filtro de Uso (5 archivos) commiteado en `36fa46789a`); renovar el certificado de `q.vidareal.tv` el 2026-12-28 (Certify no actualiza el binding: re-vincular a mano). | `docs/qr-custom/DEPLOY.md` |
 | **Eventos** | §9.39–§9.40 (DLLs + migraciones hasta 025 + bundles + `.obs.js` de Epay) **en producción** (confirmado 2026-10-15). Queda: dejar registrado un cobro real de punta a punta con su FEL; decisiones abiertas (Amex en Epay, contador en pasos 3-4). | `docs/eventos-custom/RESEARCH_Y_PLAN.md` §9.41 |
 | **QREVENT** | Ventana «Bienvenido» de 30 min + bloqueo `-5`, fix de deadlock y fix iOS/WebView **en producción** (confirmado 2026-10-15). Queda: ver funcionar el aviso RealTime con un escaneo real; decidir correos duplicados y cancelación de reserva ya escaneada. | `Rock.Blocks/QREVENT/CHANGES.md` |
 | **Direcciones GT** | En producción (confirmado 2026-10-15). Sin registro de que la lista de 340 municipios se haya revisado contra el INE: **verificar**. Recordar que es parche al core: re-aplicar en cada upgrade. | fila «Direcciones Guatemala» abajo |
@@ -30,7 +30,7 @@ Este repositorio es un **fork de [SparkDevNetwork/Rock](https://github.com/Spark
 | **Traductor** | Congela textos dinámicos de Vue (usar `notranslate`) y "traduce" español a español (Reportería→Reportes). | `Plugin.VidaRealTranslator/CHANGES.md` |
 | **Build** | El procedimiento documentado enumera 7 plugins; falta agregar `Plugin.VidaRealQr` (8.º; su DLL ya está en prod). | `docs/qr-custom/DEPLOY.md` §A.3 |
 | **WhatsApp** | Limpiar los Global Attributes `Twilio*WhatsApp*` huérfanos desde la migración del botón del Check-in Manager al transport (2026-08-03). | `Rock.WhatsApp/CHANGES.md` |
-| **Upgrades de Rock** | Parches al core que hay que re-verificar en cada merge upstream: `Sms.ProcessResponse` (+`SmsActionConversations`), `AddressControl`/`AddressCascade`, `RegistrationEntry` (NIT/FEL). | `Rock/CHANGES.md` |
+| **Upgrades de Rock** | Parches al core que hay que re-aplicar al actualizar Rock (procedimiento en `docs/HANDOFF/CAMBIOS_VS_UPSTREAM.md`): `Sms.ProcessResponse` (+`SmsActionConversations`), `AddressControl`/`AddressCascade`, `RegistrationEntry` (NIT/FEL). | `Rock/CHANGES.md` |
 
 ---
 

@@ -144,6 +144,14 @@ el humano inicia sesión en esa ventana (nunca pedir contraseñas), el script se
 `Page.captureScreenshot` con `captureBeyondViewport`). Ocultar `.cms-admin-footer` (intercepta
 clics). Los selects de Obsidian son Ant Select (`.ant-select-selector` → `.ant-select-item-option`).
 
+## Actualizar Rock
+
+**Actualizar Rock a otra versión:** no se hace sobre este repo. Procedimiento recomendado por
+Rodolfo: bajar una copia de la BD de prod, clonar Rock limpio en otra carpeta, subir la BD de
+versión mayor en versión mayor con Rock sin modificar (migraciones y jobs post-actualización en
+cada salto) y solo al final meter el desarrollo propio, idealmente movido a plugins. Detalle en
+`docs/HANDOFF/CAMBIOS_VS_UPSTREAM.md` § «Cómo actualizar a una nueva versión de Rock».
+
 ## Lo que nunca va al repo
 
 Contraseñas, connection strings, API keys, certificados (`.p12`), respaldos de BD, datos de

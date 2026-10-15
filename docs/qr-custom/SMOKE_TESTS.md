@@ -7,7 +7,7 @@ empezar acá**.
 Última actualización: 2026-10-15
 
 **Estado al 2026-10-15:** el módulo está commiteado (`81d2622dbc`, 2026-10-06) salvo el filtro por
-código del panel de Uso (en producción, PENDIENTE DE COMMIT, ver `DEPLOY.md` §G y la prueba §6.8
+código del panel de Uso (en producción, commiteado en `36fa46789a`, ver `DEPLOY.md` §G y la prueba §6.8
 de abajo). Dominio corto: **`q.vidareal.tv`** (DNS + TLS + binding desde 2026-09-29). **El módulo
 está operativo en producción** (confirmado por Rodolfo, 2026-10-15): sitio del dominio corto
 funcionando y migraciones 001–007 aplicadas. Este documento queda como runbook para cualquier
@@ -306,7 +306,7 @@ por ruta directa: `/qr`, `/qr/codigo/{QrCodeId}`.
 7. Navegación entre las tres pantallas (Catálogo ↔ Uso ↔ Reportería) por los botones.
    **Esperado:** los seis enlaces funcionan. Los cablea la migración 006, porque el menú de Admin
    Tools no muestra las nietas.
-8. **Filtro por código en Uso (en producción, PENDIENTE DE COMMIT al 2026-10-15).**
+8. **Filtro por código en Uso (en producción, commiteado en `36fa46789a` al 2026-10-15).**
    - En el catálogo, clic en «ver métricas» de un código dinámico.
      **Esperado:** abre Uso con `?QrCodeId=<IdKey>`, la barra «Viendo solo <nombre>» y todas las
      cifras (KPIs, serie, dispositivo, procedencia) solo de ese código.

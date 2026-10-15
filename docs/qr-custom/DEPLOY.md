@@ -14,7 +14,7 @@ Este runbook queda como referencia para redespliegues y para reconstruir el ambi
 | Tema | Estado |
 |---|---|
 | Código del módulo (dominio, servicios, 4 bloques, bags, `.obs`, migraciones 001–007, 116 tests MSTest en `Rock.Tests/Model/Qr/`) | **Commiteado** el 2026-10-06 en `81d2622dbc` («Eventos y Modulo de QRS»), rama `hotfix-18.1`. |
-| Filtro por código en «Uso» + tabla «Todos los códigos» + enlace «ver métricas» en el catálogo | **En producción, PENDIENTE DE COMMIT** (ver §G). Es lo único del módulo que queda por versionar. |
+| Filtro por código en «Uso» + tabla «Todos los códigos» + enlace «ver métricas» en el catálogo | **En producción, commiteado en `36fa46789a`** (ver §G). |
 | Dominio corto | **Resuelto 2026-09-29: `q.vidareal.tv`** — registro A al web server de prod, certificado Let's Encrypt propio (vence **2026-12-28**) emitido con *Certify The Web* en el web server. Certify emitió el certificado pero **no creó el binding**: se creó a mano en IIS (`https`, 443, host header `q.vidareal.tv`, SNI). |
 | **PENDIENTE CRÍTICO (2026-10-15) — riesgo vigente** | Renovación del certificado de `q.vidareal.tv` el **2026-12-28**: Certify no actualiza el binding. Revisar en Certify la sección *Deployment* de ese certificado. Si en diciembre renueva sin re-vincular, el binding queda con el certificado vencido y **todos los QR impresos** muestran advertencia de seguridad. |
 | Sitio del dominio corto en Rock | **Hecho:** `q.vidareal.tv` funcionando en prod (confirmado 2026-10-15). Si se reconstruye el ambiente, debe ser el **único** `SiteDomain` del sitio, con las banderas de §B.2. |
@@ -552,11 +552,11 @@ y no hace falta: el core ya cubre el predicado con `IX_EntityId_ChannelId`. No e
 
 ---
 
-## G. Filtro por código en «Uso» — EN PRODUCCIÓN, PENDIENTE DE COMMIT (al 2026-10-15)
+## G. Filtro por código en «Uso» — EN PRODUCCIÓN, commiteado en `36fa46789a` (al 2026-10-15)
 
 Pedido de usuarios del 2026-10-06: poder ver el uso de **un** código. El desplegable de códigos se
 **descartó** (con ~200 códigos es inútil). Lo que quedó en el árbol de trabajo, sin commit (ya
-corre en producción, confirmado 2026-10-15; es lo único del módulo que queda por versionar):
+corre en producción, confirmado 2026-10-15; versionado en `36fa46789a`):
 
 | Archivo | Cambio |
 |---|---|

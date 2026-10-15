@@ -117,11 +117,17 @@ handoff):
 
 ## 6. Fechas y pendientes que el dev entrante hereda
 
+- **Actualizar Rock a otra versión:** no se hace sobre este repo. Procedimiento recomendado por
+  Rodolfo: bajar una copia de la BD de prod, clonar Rock limpio en otra carpeta, subir la BD de
+  versión mayor en versión mayor con Rock sin modificar (migraciones y jobs post-actualización en
+  cada salto) y solo al final meter el desarrollo propio, idealmente movido a plugins. Detalle en
+  `docs/HANDOFF/CAMBIOS_VS_UPSTREAM.md` § «Cómo actualizar a una nueva versión de Rock».
+
 - **Todo lo desarrollado está en producción** (confirmado por Rodolfo, 2026-10-15), incluido el
   módulo QR Generator, operativo en `q.vidareal.tv` (reemplazó la plataforma externa antes de su
   vencimiento del 22-oct-2026). Ver `docs/qr-custom/DEPLOY.md`.
-- Cambios sin commitear del módulo QR (5 archivos, **ya en producción, PENDIENTE DE COMMIT**): ver
-  `docs/HANDOFF/ESTADO_REPO.md` §4. Es lo único que queda por versionar.
+- El repo refleja producción: todo commiteado y pusheado (`36fa46789a`, 2026-10-15), incluido el filtro de
+  Uso del módulo QR. Ver `docs/HANDOFF/ESTADO_REPO.md` §4.
 - Último despliegue conocido: `docs/HANDOFF/DEPLOY_PRODUCCION.md` §8.
 - **2026-12-28** vence el certificado de `q.vidareal.tv`; **2027-08-05** el de Apple Wallet.
 - El repo de GitHub está en una cuenta personal: transferirlo (ESTADO_REPO §6.1).
