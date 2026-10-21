@@ -506,7 +506,7 @@ Con la BD ya en la versión final y Rock limpio funcionando, portar lo propio en
 Para consultar el código viejo desde el repo nuevo:
 
 ```bash
-git remote add legacy https://github.com/<org>/Rock15.5.git
+git remote add legacy https://github.com/Iglesia-Vida-Real/Rock18.1.git
 git fetch legacy --tags
 git show vidareal-prod-<fecha>:Rock.Blocks/Event/RegistrationEntry.cs
 git diff 18.1.0 vidareal-prod-<fecha> -- <archivo>   # el cambio propio, aislado

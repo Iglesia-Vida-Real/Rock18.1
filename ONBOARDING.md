@@ -30,7 +30,7 @@ handoff.
 ## 2. Arranque rápido
 
 ```powershell
-git clone https://github.com/rodobriones/Rock15.5.git C:\repos\Rock15.5
+git clone https://github.com/Iglesia-Vida-Real/Rock18.1.git C:\repos\Rock18.1
 cd C:\repos\Rock15.5
 git checkout hotfix-18.1                                              # rama viva (NO develop)
 powershell -ExecutionPolicy Bypass -File ".\Dev Tools\Build\check-prereqs.ps1"   # solo lectura
@@ -131,4 +131,4 @@ handoff):
   Uso del módulo QR. Ver `docs/HANDOFF/ESTADO_REPO.md` §4.
 - Último despliegue conocido: `docs/HANDOFF/DEPLOY_PRODUCCION.md` §8.
 - **2026-12-28** vence el certificado de `q.vidareal.tv`; **2027-08-05** el de Apple Wallet.
-- El repo de GitHub está en una cuenta personal: transferirlo (ESTADO_REPO §6.1).
+- Repo en la organización `Iglesia-Vida-Real` (`Rock18.1`, transferido 2026-10-21); rama por defecto `hotfix-18.1`.

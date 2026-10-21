@@ -40,7 +40,7 @@ Sale con código 0 si no hay `[FAIL]`. Los `[WARN]` dicen qué falta copiar o co
 ## 2. Clonar
 
 ```powershell
-git clone https://github.com/rodobriones/Rock15.5.git C:\repos\Rock15.5
+git clone https://github.com/Iglesia-Vida-Real/Rock18.1.git C:\repos\Rock18.1
 cd C:\repos\Rock15.5
 git checkout hotfix-18.1          # rama de trabajo (NO develop; ver ESTADO_REPO.md)
 git remote add upstream https://github.com/SparkDevNetwork/Rock.git   # opcional, para comparar con Rock oficial

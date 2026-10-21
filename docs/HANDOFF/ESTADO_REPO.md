@@ -10,7 +10,7 @@
 
 | Remoto | URL | Para qué |
 |---|---|---|
-| `origin` | `https://github.com/rodobriones/Rock15.5.git` | **El fork de Vida Real.** Privado. Aquí se hace push. Está en la cuenta personal del dev saliente → ver §6.1. |
+| `origin` | `https://github.com/Iglesia-Vida-Real/Rock18.1.git` | **El fork de Vida Real.** Privado. Aquí se hace push. Organización `Iglesia-Vida-Real` (transferido desde `rodobriones/Rock15.5` el 2026-10-21; la URL vieja redirige). Rama por defecto: `hotfix-18.1`. |
 | `upstream` | `https://github.com/SparkDevNetwork/Rock.git` | Rock oficial. Solo lectura, para comparar y traer hotfixes. |
 
 ---
@@ -101,14 +101,13 @@ git switch -c feature/<tema>      # recomendado: ramas cortas y merge a hotfix-1
 
 ---
 
-## 6. Recomendaciones de limpieza (NO ejecutadas)
+## 6. Recomendaciones de limpieza (NO ejecutadas, salvo §6.1)
 
 ### 6.1 Propiedad del repositorio — prioridad alta
 
-- `origin` está en la **cuenta personal** `rodobriones`. Transferirlo a una organización de GitHub
-  de la iglesia (Settings → Transfer) o, como mínimo, agregar al dev entrante y a TI como admins
-  antes de que el dueño se vaya.
-- Cambiar la rama por defecto en GitHub de `develop` a `hotfix-18.1`.
+- **Hecho 2026-10-21:** el repo se transfirió a la organización `Iglesia-Vida-Real` como
+  `Rock18.1` y la rama por defecto ya es `hotfix-18.1`. En clones viejos:
+  `git remote set-url origin https://github.com/Iglesia-Vida-Real/Rock18.1.git`.
 
 ### 6.2 Secretos
 
