@@ -57,7 +57,7 @@ git remote add upstream https://github.com/SparkDevNetwork/Rock.git   # opcional
 |---|---|---|
 | Cadena de conexión | `RockWeb\web.ConnectionStrings.config` | Copiar `RockWeb\web.ConnectionStrings.config.example` y llenar (§5). |
 | Binarios del sitio | `RockWeb\Bin\*.dll` | Se generan al compilar (§6). |
-| DLLs de terceros del Rock Shop | `RockWeb\Bin\` | **No salen del build.** Copiarlas del ambiente origen (lista en `ONBOARDING.md` §2). Sin ellas el sitio puede no arrancar. |
+| DLLs de terceros del Rock Shop | `RockWeb\Bin\` | **No salen del build.** Vienen en el zip de traspaso (`dll-terceros\RockWeb-Bin\`, con `SHA256SUMS.txt`); si no, copiarlas de prod (lista en `ONBOARDING.md` §3.1). Sin ellas el sitio puede no arrancar. |
 | Bundles Obsidian | `RockWeb\Obsidian\` | Se generan al compilar (§6.3). |
 | `node_modules` | `Rock.JavaScript.Obsidian*\` | `npm ci` (§6.3). |
 | Media subida | `RockWeb\Content\` | Opcional; copiar del ambiente origen si se necesitan imágenes reales. |
@@ -206,7 +206,7 @@ bloquean Rock. No intentar arreglarlas salvo que se necesiten.
 | Síntoma | Causa | Arreglo |
 |---|---|---|
 | En `RockExceptions.csv` al arrancar: *"A configuration for type 'Rock.Model.AIAgentSessionAnchor' has already been added"* | Las entidades custom del core implementan `IRockEntity`; EF intenta re-registrar configs. Inofensivo (try/catch). | **Ignorar. No parchear `RockContext.cs`**: se probó y se revirtió a propósito para mantener el core igual a upstream. |
-| `BadImageFormatException` al arrancar | DLL corrupta en `RockWeb\Bin`, típicamente `com.bemaservices.WorkflowExtensions.dll` (terceros, no está en el repo). | Reemplazarla por una copia sana del ambiente origen. |
+| `BadImageFormatException` al arrancar | DLL corrupta en `RockWeb\Bin`, típicamente `com.bemaservices.WorkflowExtensions.dll` (terceros, no está en el repo). | Reemplazarla por la copia del zip de traspaso (`dll-terceros\`, verificar contra `SHA256SUMS.txt`) o por una de prod. |
 | Archivo "en blanco" con tamaño normal | Corrupción por apagón: rellenado con bytes nulos (incidente 2026-08-05 en `RockWeb\Plugins`). | `check-prereqs.ps1` lo detecta. Restaurar desde git o respaldo; **verificar bytes nulos después de copiar desde discos externos** (la copia también puede corromperse). |
 | Plugin no compila: no encuentra `Rock.dll` | Se compiló el plugin antes que el core. | Compilar `Rock.sln` primero. |
 | Página con bloque vacío o `TypeLoadException` / `MissingMethodException` sobre `Rock.ViewModels.Blocks.*` | DLLs del fork desparejadas (p.ej. `Rock.Blocks.dll` nuevo con `Rock.ViewModels.dll` viejo). | Copiar juntos `Rock.dll`, `Rock.Blocks.dll`, `Rock.ViewModels.dll`, `Rock.Rest.dll` del mismo build. |

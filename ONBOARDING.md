@@ -60,8 +60,8 @@ plugins de terceros. No restaurar la regla `*/*` en `RockWeb/Plugins/.gitignore`
 
 ### 3.1 DLLs de terceros que ningún build regenera
 
-Plugins del Rock Shop con DLL en `RockWeb\Bin`. Copiarlas del ambiente origen (prod o la máquina
-anterior):
+Plugins del Rock Shop con DLL en `RockWeb\Bin`. **Vienen en el zip de traspaso**
+(`dll-terceros/RockWeb-Bin/`, con `SHA256SUMS.txt`); si no lo tienes, copiarlas de prod:
 
 `com.bemaservices.MailChimp.dll`, `com.bemaservices.WorkflowExtensions.dll`,
 `com.blueboxmoon.AcmeCertificate.dll`, `com.blueboxmoon.DataToolkit.dll`,
