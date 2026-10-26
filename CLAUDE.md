@@ -19,6 +19,7 @@ menores sí procede); cero secretos en el repo.
 | Necesito… | Leer |
 |---|---|
 | Puerta de entrada | `ONBOARDING.md` |
+| Entender el proyecto (colaborador nuevo) | `docs/HANDOFF/GUIA_COLABORADORES.md` |
 | Montar el ambiente / compilar / correr | `docs/HANDOFF/SETUP_DESARROLLO.md` |
 | Desplegar a prod | `docs/HANDOFF/DEPLOY_PRODUCCION.md` (+ runbook del módulo) |
 | Estado git, ramas, pendientes | `docs/HANDOFF/ESTADO_REPO.md` |

@@ -15,6 +15,7 @@
 | # | Documento | Para qué |
 |---|---|---|
 | 1 | Este archivo | Qué es, qué no viene en el clon, dónde está todo. |
+| 1b | [`docs/HANDOFF/GUIA_COLABORADORES.md`](docs/HANDOFF/GUIA_COLABORADORES.md) | **Si eres nuevo en Rock:** cómo llega un cambio a producción, anatomía de un bloque y dónde vive cada módulo. |
 | 2 | [`docs/HANDOFF/SETUP_DESARROLLO.md`](docs/HANDOFF/SETUP_DESARROLLO.md) | Prerequisitos con versiones, clonar, BD de dev, compilar, correr, problemas típicos. |
 | 3 | [`docs/HANDOFF/ESTADO_REPO.md`](docs/HANDOFF/ESTADO_REPO.md) | Ramas (cuál es nuestra), commits y cambios pendientes, limpieza recomendada. |
 | 4 | [`docs/HANDOFF/DEPLOY_PRODUCCION.md`](docs/HANDOFF/DEPLOY_PRODUCCION.md) | Cómo se despliega, rollback, verificación, y **el último despliegue conocido** (todo en prod al 2026-10-15). |
