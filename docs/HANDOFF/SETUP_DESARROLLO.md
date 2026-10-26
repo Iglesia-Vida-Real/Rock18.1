@@ -35,6 +35,15 @@ powershell -ExecutionPolicy Bypass -File ".\Dev Tools\Build\check-prereqs.ps1"
 
 Sale con código 0 si no hay `[FAIL]`. Los `[WARN]` dicen qué falta copiar o compilar.
 
+Instalar Visual Studio con los componentes exactos desde la consola (verificado 2026-10-26):
+
+```powershell
+winget install --id Microsoft.VisualStudio.Community -e --accept-package-agreements --accept-source-agreements --override "--wait --passive --add Microsoft.VisualStudio.Workload.NetWeb --add Microsoft.Net.Component.4.7.2.TargetingPack --add Microsoft.VisualStudio.Component.IISExpress --includeRecommended"
+```
+
+Después cerrar y reabrir la terminal (o VS Code) para que tome el PATH nuevo. Node 24 / npm 11
+también funcionan (ver §8: npm 11 reescribe los `package-lock.json`).
+
 ---
 
 ## 2. Clonar
@@ -57,7 +66,7 @@ git remote add upstream https://github.com/SparkDevNetwork/Rock.git   # opcional
 |---|---|---|
 | Cadena de conexión | `RockWeb\web.ConnectionStrings.config` | Copiar `RockWeb\web.ConnectionStrings.config.example` y llenar (§5). |
 | Binarios del sitio | `RockWeb\Bin\*.dll` | Se generan al compilar (§6). |
-| DLLs de terceros del Rock Shop | `RockWeb\Bin\` | **No salen del build.** Vienen en el zip de traspaso (`dll-terceros\RockWeb-Bin\`, con `SHA256SUMS.txt`); si no, copiarlas de prod (lista en `ONBOARDING.md` §3.1). Sin ellas el sitio puede no arrancar. |
+| DLLs de terceros del Rock Shop | `RockWeb\Bin\` | **No salen del build.** Vienen en el zip de traspaso (`dll-terceros\RockWeb-Bin\`, con `SHA256SUMS.txt`); si no, copiarlas de prod (lista en `ONBOARDING.md` §3.1). Sin ellas `RockWeb.metaproj` no compila y el sitio puede no arrancar. |
 | Bundles Obsidian | `RockWeb\Obsidian\` | Se generan al compilar (§6.3). |
 | `node_modules` | `Rock.JavaScript.Obsidian*\` | `npm ci` (§6.3). |
 | Media subida | `RockWeb\Content\` | Opcional; copiar del ambiente origen si se necesitan imágenes reales. |
@@ -88,11 +97,33 @@ defined types y tablas `_com_vidareal_*` existentes. Se trabaja sobre una **copi
    -- RESTORE FILELISTONLY FROM DISK = N'...' para ver los nombres lógicos
    ```
 
+   **Alternativa con `.bacpac`** (SSMS → *Export Data-tier Application*). Se importa con
+   `SqlPackage`, que trae VS 2026; tarda unos minutos:
+
+   ```powershell
+   & "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\Extensions\Microsoft\SQLDB\DAC\SqlPackage.exe" /Action:Import /SourceFile:"C:\ruta\Rock18.bacpac" /TargetServerName:localhost /TargetDatabaseName:Rock18 /TargetTrustServerCertificate:True
+   ```
+
+   - El `.bacpac` tiene los mismos datos confidenciales que un `.bak`: misma regla, no sale de la
+     máquina de desarrollo y se borra cuando ya no se necesita.
+   - Exportar desde prod carga el servidor SQL: hacerlo fuera del horario de servicios,
+     nunca en domingo. Un `.bacpac` de una base en uso puede quedar inconsistente; si el import
+     falla por FKs, pedir a TI un `.bak` con `COPY_ONLY`.
+
 3. Crear un login SQL para el sitio (o usar autenticación integrada) con `db_owner` sobre
    `Rock18`. **El usuario/contraseña no van al repo.**
 4. **Aislar dev de prod — obligatorio antes de arrancar el sitio:**
    - Correr `Dev Tools\Sql\Enable_LocalhostDevTesting.sql` (apunta los Global Attributes de URL a
      `http://localhost:6229/` y el SMTP a localhost; usar [Papercut](https://github.com/ChangemakerStudios/Papercut-SMTP) para ver correos).
+   - Después correr `Dev Tools\Sql\Aislar_BD_Dev.sql`: desactiva jobs, pasarelas de pago y los
+     transportes SendGrid, Twilio, WhatsApp y OneSignal, y agrega `.test` a los correos. Va en una
+     transacción y se niega a correr contra un servidor SQL remoto:
+
+     ```powershell
+     sqlcmd -S localhost -d Rock18 -E -I -f 65001 -b -i "Dev Tools\Sql\Aislar_BD_Dev.sql"
+     ```
+
+     Los puntos siguientes quedan como verificación manual en la UI.
    - Revisar en *Admin Tools → Communications → Communication Transports* que **WhatsApp, SMS
      (Twilio) y SendGrid** no tengan credenciales de prod activas. Una copia de prod manda mensajes
      reales a miembros reales. Además, con la misma API key de SendGrid, dev marcaría aperturas en
@@ -112,13 +143,50 @@ defined types y tablas `_com_vidareal_*` existentes. Se trabaja sobre una **copi
 Copy-Item RockWeb\web.ConnectionStrings.config.example RockWeb\web.ConnectionStrings.config
 ```
 
-Editar y poner servidor (`localhost`), BD (`Rock18`), usuario y contraseña. El archivo está en
+Editar y poner servidor (`localhost`), BD (`Rock18`), usuario y contraseña (o, más simple,
+`Integrated Security=True` en lugar de `User Id`/`password`: IIS Express corre con tu usuario de
+Windows). El archivo está en
 `.gitignore`; **nunca** commitearlo. (Ver en `ESTADO_REPO.md` el aviso sobre una contraseña local
 que quedó en la historia de `hotfix-1.15.5`.)
 
 ---
 
 ## 6. Compilar
+
+### 6.0 Primer build en un clon limpio (una sola vez)
+
+`build-all.ps1` usa `msbuild -restore`, que **solo** restaura los proyectos con `PackageReference`.
+Quedan sin paquetes:
+
+- los proyectos con `packages.config` (p. ej. `SignNowSDK`): error `CS0246 'RestSharp'`;
+- el sitio `RockWeb` (Web Site Project): sus DLLs llegan por los `.refresh` de `RockWeb\Bin`, que
+  apuntan a `..\packages\`. Sin esa carpeta, `App_Code` falla con `CS0246`/`CS0234` (`Owin`,
+  `SignalR`, `QRCoder`, `Ical`, `Optimization`, `ILogger`…).
+
+Además `RockWeb.metaproj` necesita las DLLs de terceros (§3) y `com.vidareal.Translator.dll`, que
+`build-all.ps1` compila **después** de `Rock.sln`. Orden verificado el 2026-10-26:
+
+```powershell
+$msbuild = "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\amd64\MSBuild.exe"
+# 1. Paquetes packages.config de los proyectos (crea la carpeta packages\)
+& $msbuild Rock.sln -t:restore -p:RestorePackagesConfig=true -nologo -v:m
+# 2. Paquetes del sitio web (nuget.exe no viene con VS)
+Invoke-WebRequest https://dist.nuget.org/win-x86-commandline/latest/nuget.exe -OutFile "$env:TEMP\nuget.exe"
+& "$env:TEMP\nuget.exe" restore RockWeb\packages.config -PackagesDirectory packages
+# 3. Copiar las 10 DLLs de terceros del zip de traspaso (dll-terceros\RockWeb-Bin\) a
+#    RockWeb\Bin y verificarlas contra SHA256SUMS.txt
+# 4. Build: el primero falla en RockWeb.metaproj (falta el Translator) pero deja Rock.dll en Bin
+.\"Dev Tools\Build\build-all.ps1"
+.\"Dev Tools\Build\build-all.ps1" -SkipCore   # 8 plugins
+.\"Dev Tools\Build\build-all.ps1"             # completo: ahora pasa
+```
+
+`build-all.ps1` compila con `-v:m` y el error real queda enterrado entre cientos de líneas. Para
+ver solo los errores (la carpeta `App_Data\Logs` la ignora git):
+
+```powershell
+& $msbuild Rock.sln -restore -p:Configuration=Release -m -v:q -nologo "-flp:logfile=RockWeb\App_Data\Logs\build-errors.log;errorsonly"
+```
 
 ### 6.1 Script único (recomendado)
 
@@ -191,6 +259,8 @@ bloquean Rock. No intentar arreglarlas salvo que se necesiten.
 
 1. Abrir `Rock.sln` en Visual Studio, proyecto de inicio **`RockWeb`**, F5 (IIS Express,
    `http://localhost:6229`). Alternativa: sitio en IIS completo apuntando a `RockWeb\`.
+   Desde la consola, sin abrir Visual Studio (Ctrl+C para detenerlo):
+   `& "C:\Program Files\IIS Express\iisexpress.exe" /path:"<repo>\RockWeb" /port:6229 /clr:v4.0`
 2. **El primer arranque tarda varios minutos**: `Rock.WebStartup` corre las migraciones core y las
    `[PluginMigration]` de cada plugin. Copiar cualquier DLL a `RockWeb\Bin` reinicia el sitio y la
    primera carga vuelve a tardar 2+ minutos.
@@ -214,6 +284,12 @@ bloquean Rock. No intentar arreglarlas salvo que se necesiten.
 | Un texto en español sale distinto al del código ("Reportería" → "Reportes") o un botón Vue se queda congelado en "Procesando…" | El plugin Translator reemplaza nodos de texto del DOM. | Envolver texto dinámico en `<span class="notranslate">`. |
 | Un `.obs.js` no refleja tus cambios | `npm run build` devolvió 0 pero un tsconfig falló; o caché del navegador. | Revisar fecha/tamaño del bundle; recargar sin caché. El fingerprint se recalcula al reiniciar el sitio. |
 | Se mandaron correos/WhatsApp reales desde dev | BD copiada de prod sin aislar. | §4 paso 4, antes de arrancar. |
+| `CS0246 'RestSharp'` en `SignNowSDK` | Proyecto con `packages.config`; `-restore` no lo cubre. | §6.0 paso 1. |
+| `CS0246`/`CS0234` en `RockWeb\App_Code` (`Owin`, `SignalR`, `QRCoder`, `Ical`…) | Falta la carpeta `packages\` del sitio; los `.refresh` de `RockWeb\Bin` no encuentran nada. | §6.0 paso 2. |
+| `RockWeb.metaproj` falla por tipos del Translator o de MailChimp (BEMA) | Faltan `com.vidareal.Translator.dll` (se compila después) o las DLLs de terceros. | §6.0 pasos 3 y 4. |
+| `build-all.ps1` dice "Falló el core" sin mostrar el error | El error quedó arriba, entre cientos de líneas. | Log de solo errores (§6.0, al final). |
+| `git status` muestra los `package-lock.json` y `translatorDashboard.obs.js` modificados | npm 11 reescribe los lock (el repo se generó con npm 10); el build del Translator regenera su bundle. | No commitearlos: `git update-index --skip-worktree <archivos>`, o usar npm 10. |
+| Aviso `MSB3030` por `Microsoft.Extensions.Primitives.refresh` | `.refresh` viejo que apunta a la versión 2.0.0 (el correcto es el `.dll.refresh`). | Inofensivo. |
 
 ---
 
@@ -227,3 +303,15 @@ En la máquina del dev saliente (Windows 11 Pro, VS Community 2026 18.8, Node 22
 - `build-all.ps1 -SkipCore -NoCopy`: **los 8 plugins compilan en Release** (1 min 39 s).
 - **No** se corrió un build desde cero de `Rock.sln` en un clon limpio (falta de espacio en disco en
   esa máquina). El primer dev que lo haga: anotar aquí tiempo y resultado.
+
+### Primer build desde cero (2026-10-26)
+
+Windows 11 Home, VS Community 2026 18.11 (MSBuild 18.11.1), .NET SDK 10.0.403, Node 24.22.1 /
+npm 11.19.1, SQL Server 2022 Developer.
+
+- Clon limpio de `hotfix-18.1`: build completo OK **solo** siguiendo §6.0. Sin ese paso falla.
+- Los builds sumaron unos 4 min, sin contar el primero (que incluye `npm install` y restore).
+- BD: `.bacpac` de prod importado con `SqlPackage` en 3 min 52 s; aislada con
+  `Enable_LocalhostDevTesting.sql` + `Aislar_BD_Dev.sql`.
+- Primer arranque con IIS Express desde consola: HTTP 200 a los 95 s. En `RockExceptions.csv`
+  solo el error conocido `AIAgentSessionAnchor`.

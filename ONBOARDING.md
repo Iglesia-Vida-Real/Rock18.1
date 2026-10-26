@@ -35,7 +35,8 @@ cd C:\repos\Rock15.5
 git checkout hotfix-18.1                                              # rama viva (NO develop)
 powershell -ExecutionPolicy Bypass -File ".\Dev Tools\Build\check-prereqs.ps1"   # solo lectura
 Copy-Item RockWeb\web.ConnectionStrings.config.example RockWeb\web.ConnectionStrings.config   # y llenarlo
-# restaurar la BD de dev (copia de prod, pedirla a TI) y AISLARLA (SETUP §4)
+# restaurar la BD de dev (copia de prod, pedirla a TI) y AISLARLA con Aislar_BD_Dev.sql (SETUP §4)
+# clon limpio: restaurar packages.config + RockWeb y copiar antes las DLLs de terceros (SETUP §6.0)
 .\"Dev Tools\Build\build-all.ps1"                                     # Rock.sln + 8 plugins, Release
 # copiar a RockWeb\Bin las DLLs de terceros del Rock Shop (§3.1)
 # abrir Rock.sln en VS, proyecto de inicio RockWeb, F5 -> http://localhost:6229
