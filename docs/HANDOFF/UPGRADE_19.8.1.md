@@ -7,7 +7,7 @@
 > |---|---|
 > | 1. BD nueva aislada | ✅ 2026-11-19 |
 > | 2. Merge de código + build | ✅ commiteado (local, sin push); core + 8 plugins compilan; precompilación de `RockWeb` pendiente (Smart App Control) |
-> | 3. Arranque y migraciones | ⛔ bloqueada por Smart App Control (§9) |
+> | 3. Arranque y migraciones | ✅ migraciones aplicadas y sitio arriba (§5b); falta «Run Now» de los jobs post-actualización |
 > | 4. Pruebas de humo | ⏳ |
 
 ---
@@ -186,6 +186,79 @@ Registrado en `CHANGES.md` («Modificados del core por choque de nombres») y en
 
 ---
 
+## 5b. Fase 3 — Arranque y migraciones (2026-11-19, local)
+
+Preparación: Smart App Control desactivado por el responsable (`VerifiedAndReputablePolicyState = 0`),
+`%LOCALAPPDATA%\Temp\Temporary ASP.NET Files\` borrada (4 376 archivos, ~940 MB), connection string a
+`Rock19Test`, `RunJobsInIISContext=False`. IIS Express desde consola en `localhost:6229`.
+
+Estado antes: 707 migraciones core (última `202511121736124_CodeGenerated_20251112`), 341 `PluginMigration`,
+103 jobs (0 activos), `CommunicationRecipient` máx. Id 103426.
+
+**Tiempos medidos** (máquina de dev: 20 núcleos, SQL Server 2025 Developer, BD de 7.2 GB):
+
+| Tramo | Duración |
+|---|---|
+| IIS Express arriba → primera petición | 10 s |
+| Compilación en frío del sitio (sin migraciones) | ~59 s (11:30:00 → 11:30:59) |
+| **67 migraciones core** (`MigrationLog.csv`) | **46,4 s** de ejecución (11:30:59 → 11:31:45). Las más lentas: `UpdateExistingToCoreAzureBlobStorageProvider` 3,96 s, `AddMobileOutreachToolbox` 3,87 s, `AddConnectionsFeatures` 3,36 s |
+| **45 `PluginMigration` del ensamblado `Rock`** (hotfixes de la 19) | ~5 s (11:31:48 → 11:31:52) |
+| Primera petición completa | **HTTP 500 a los 120,9 s**: falló el arranque después de las migraciones (ver abajo) |
+| Tras el arreglo: arranque en frío, migraciones ya aplicadas | **HTTP 302 → login a los 72,5 s**; el login responde 200 en 10,6 s |
+
+Para producción, calcular: compilación en frío (~1–2 min) + ~1 min de migraciones (más si el servidor es
+más lento que esta máquina) + arranque. Reservar al menos 15 min con margen.
+
+**Falla de arranque y arreglo — `Rock.SignNow.dll` y `SignNowSDK.dll`.** Después de las migraciones, el arranque
+falló con `TypeLoadException: No se puede cargar el tipo 'Rock.Security.DigitalSignatureComponent'`. Upstream
+**eliminó SignNow** en la 19 (`a3276b724b`: proyectos `Rock.SignNow` y `SignNowSDK`, webhook
+`RockWeb/Webhooks/SignNow.ashx`), pero los DLLs del build de 18.1 seguían en `RockWeb\Bin`. No son del Rock
+Shop. Se **movieron** (no se borraron) a una carpeta de respaldo fuera de `Bin` y el sitio arrancó. En la BD no
+hay plantillas de firma con SignNow (EntityType 405, 0 `SignatureDocumentTemplate`).
+**Día real:** quitar `Rock.SignNow.dll`, `SignNowSDK.dll` (y `.pdb`) de `RockWeb\Bin` y `RockWeb\Webhooks\SignNow.ashx`
+de prod **antes** de arrancar. Son los únicos DLLs de proyectos que upstream eliminó entre 18.1.0 y 19.8.1.
+
+**Estado después:** 774 migraciones core (última `202605122315282_UpdateExistingToCoreAzureBlobStorageProvider`),
+386 `PluginMigration` (+45 de `Rock`; ninguna nueva de los plugins de Vida Real ni del Rock Shop),
+116 jobs, `CommunicationRecipient` sin cambios (máx. Id 103426): **no se envió nada**.
+
+**Excepciones después del arranque bueno** (`ExceptionLog`): solo las ya conocidas del 2026-11-06:
+`AIAgentSessionAnchor` (trampa 2), `/Blocks/Event/eventos.ascx.cs` y `/Blocks/QREVENT/TestCybersource.ascx` no
+existen, Apollos (`ApollosUser.ascx`, `ApollosAudit.ascx`), OpenID Connect sin https (esperado en dev). Ninguna
+de los plugins del Rock Shop (MailChimp/bema, AcmeCertificate y DataToolkit/blueboxmoon, MinePass, MinistryPass).
+
+**WhatsApp después de las migraciones:** EntityType 1362 `Rock.WhatsApp.Communication.Transport.WhatsAppTransport`
+con sus **13 atributos** presentes (los mismos que antes), `Active=False`, `AccessToken`/`AppSecret`/
+`PhoneNumberId`/`VerifyToken` vacíos (aislamiento intacto). No se reactivó ni se envió nada. Falta ver el
+componente en Admin > Communications > Transports (Fase 4).
+
+**Jobs que crearon o reactivaron las migraciones (14 activos).** Con `RunJobsInIISContext=False` no corren solos.
+Post-actualización (correr con «Run Now», en este orden sugerido):
+
+| Id | Job | Clase |
+|---|---|---|
+| 231 | Rock Update Helper v17.10 - Fix Transaction Image Mime Types | `PostV1710FixTransactionImageMimeTypes` |
+| 232 | Rock Update Helper v17.11 - Clean Social Media Account Values | `PostV1711CleanSocialMediaAccountValues` |
+| 233 | Rock Update Helper v17.11 - Fix Person Image Mime Types | `PostV1711FixPersonImageMimeTypes` |
+| 220 | Rock Update Helper v18.1 - Add FinancialBatch Index | `PostV181AddFinancialBatchIndex` |
+| 221 | Rock Update Helper v18.1 - Add Indexes For Communication Prep | `PostV181AddIndexesForCommunicationPrep` |
+| 228 | Rock Update Helper v18.3 - Fix Broken Achievement Types | `PostUpdateJobs.PostV183UpdateAchievementTypes` |
+| 225 | Rock Update Helper v19.0 - Add Index For Communication Unsubscribe Report | `PostV19AddCommunicationUnsubscribeReportIndex` |
+| 230 | Rock Update Helper v19.0 - Backfill Connection Request Connected DateTime | `PostV19BackfillConnectionRequestConnectedDateTime` |
+| 222 | Replace WebForms Blocks with Obsidian - Chop Block Types 19.0 (19.0.1) | `PostUpdateDataMigrationsReplaceWebFormsBlocksWithObsidianBlocks` |
+| 223 | Replace WebForms Blocks with Obsidian - (final) Registration Entry 19.0 | ídem |
+| 226 | Replace WebForms Blocks with Obsidian - (final) Service Metric Entry 19.0 | ídem |
+| 227 | Replace WebForms Blocks with Obsidian - (final) File Manager | ídem |
+
+Los jobs «Replace WebForms Blocks with Obsidian» **cambian páginas**: reemplazan los bloques WebForms por los
+Obsidian, incluida la inscripción nativa (Registration Entry). Probar la inscripción **después** de correrlos.
+Jobs normales que también quedaron activos (no son de post-actualización): 224 *Update Outreach Toolbox
+Touchpoints* y 229 *Update Analytics Source PostalCode v19*. En dev no corren (`RunJobsInIISContext=False`).
+
+«Run Now» necesita una sesión de administrador en el sitio: **lo hace el responsable** (nunca se piden contraseñas).
+
+---
+
 ## 6. Personalizaciones perdidas que hay que reaplicar en la 19
 
 | Qué | Dónde estaba (18.1) | Cómo reaplicar en la 19 |
@@ -206,14 +279,20 @@ El diff completo de lo perdido quedó en la carpeta temporal de la sesión; se p
    `web.config`, `web.ConnectionStrings.config`).
 2. Plugins del Rock Shop (MailChimp/bema, AcmeCertificate y DataToolkit/blueboxmoon, MinePass,
    MinistryPass): conseguir las versiones compatibles con 19.x **antes** del día. _(resultado local: §10)_
-3. `app_offline.htm` en `RockWeb` y detener el sitio (trampa 1: nada en caliente).
+3. `app_offline.htm` en `RockWeb` y detener el sitio (trampa 1: nada en caliente). Quitar de prod
+   `RockWeb\Bin\Rock.SignNow.dll`, `RockWeb\Bin\SignNowSDK.dll` (y `.pdb`) y `RockWeb\Webhooks\SignNow.ashx`:
+   upstream eliminó SignNow y, si se quedan, el arranque falla con `TypeLoadException` (§5b).
 4. Copiar **juntos** los artefactos del mismo build: **todo `RockWeb\Bin`** (no solo las DLLs del fork:
    122 DLLs de terceros cambian de versión, §4) + las DLLs de los 8 plugins + `RockWeb\Obsidian\`
    completo + los temas compilados (`RockWeb\Themes\` de `Rock.Frontend.Styles`) + `web.config` de la 19
    con las llaves de prod (`PasswordKey`, `DataEncryptionKey`…) fusionadas. Conservar en `Bin` las DLLs
    de terceros del Rock Shop solo si sus versiones nuevas lo indican.
-5. Quitar `app_offline.htm`, arrancar y esperar las migraciones. _(tiempo medido en local: pendiente)_
-6. Jobs post-actualización de la 19: _(lista pendiente, Fase 3)_
+5. Quitar `app_offline.htm`, arrancar y esperar las migraciones. Medido en local: ~1 min de compilación en
+   frío + 46 s de 67 migraciones core + 5 s de 45 hotfixes; segundo arranque 72 s. Vigilar
+   `App_Data\Logs\MigrationLog.csv`, `RockExceptions.csv` y la tabla `ExceptionLog`.
+6. Jobs post-actualización de la 19: los 12 de la tabla de §5b, con «Run Now». Si en prod
+   `RunJobsInIISContext` está activo corren solos con su cron (21:00 / 02:00); igual conviene lanzarlos a mano
+   en la ventana y vigilar que terminen (verificar ese valor en el `web.config` de prod antes del día).
 7. Verificación: pruebas de humo de §10.
 8. **Rollback:** detener el sitio, restaurar el `.bak` de la BD y la copia de `RockWeb`. Las migraciones
    de la 19 no tienen vuelta atrás en caliente: el rollback es **siempre** BD + archivos juntos.
@@ -233,7 +312,8 @@ no lo corrige. **No se arregla en este upgrade**: arreglo aparte (contador de in
 
 ## 9. Pendientes
 
-- **Fase 3 bloqueada por Smart App Control de Windows 11** en la máquina de desarrollo: CodeIntegrity
+- ~~Fase 3 bloqueada por Smart App Control~~ — **resuelto el 2026-11-19**: el responsable lo desactivó y la
+  Fase 3 corrió. Registro original: **Fase 3 bloqueada por Smart App Control de Windows 11** en la máquina de desarrollo: CodeIntegrity
   eventos 3033/3077 sobre los `App_Web_*.dll` / `App_Browsers.*.dll` que ASP.NET compila en
   `%LOCALAPPDATA%\Temp\Temporary ASP.NET Files\`. Impide la precompilación de `RockWeb` y el arranque con
   IIS Express. **No afecta a producción** (Windows Server no tiene Smart App Control). El responsable lo va a
