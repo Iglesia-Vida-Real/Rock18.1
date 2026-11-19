@@ -227,3 +227,114 @@ En la máquina del dev saliente (Windows 11 Pro, VS Community 2026 18.8, Node 22
 - `build-all.ps1 -SkipCore -NoCopy`: **los 8 plugins compilan en Release** (1 min 39 s).
 - **No** se corrió un build desde cero de `Rock.sln` en un clon limpio (falta de espacio en disco en
   esa máquina). El primer dev que lo haga: anotar aquí tiempo y resultado.
+
+### 9.1 Primer build desde clon limpio (2026-11-05)
+
+Máquina: Windows 11 Home, VS Community **2022** 17.14 (MSBuild 17.14), .NET SDK 9.0, Node 26.13,
+SQL Server **2025** Developer. `build-all.ps1` **no** sale limpio a la primera; hubo que hacer, en
+este orden:
+
+1. **Paquetes `packages.config` de la solución** (p. ej. `RestSharp` de `SignNowSDK`): `-restore`
+   de MSBuild solo restaura `PackageReference`. Correr una vez:
+   `& $msbuild Rock.sln -t:restore -p:RestorePackagesConfig=true`
+2. **Paquetes del sitio `RockWeb`** (`RockWeb\packages.config`, 93 paquetes: SignalR, Owin,
+   QRCoder, Ical.Net…): el Web Site Project no participa en ningún restore. Bajar `nuget.exe`
+   (dist.nuget.org) y correr `nuget restore RockWeb\packages.config -PackagesDirectory packages`.
+3. **DLLs netstandard2.0 que los `.refresh` no copian** (`Ical.Net`, `NodaTime`, `System.Text.Json`,
+   `Microsoft.Extensions.*`, `System.ValueTuple`…): MSBuild las rechaza (MSB3268/MSB3258) y no las
+   pone en `RockWeb\Bin`, y la precompilación falla en `GetPersonGroupScheduleFeed.cs`. Copiar a
+   `RockWeb\Bin` cada DLL que indica su `.refresh` si falta. El `.refresh` de upstream de
+   `Microsoft.Extensions.Primitives` apunta a `2.0.0` (no restaurado); usar la `8.0.0` de
+   `packages\Microsoft.Extensions.Primitives.8.0.0\lib\net462\`.
+4. Sin las **DLLs de terceros del Rock Shop** la precompilación de `RockWeb` falla en
+   `RockWeb\Plugins\com_bemaservices\MailChimp\*.ascx.cs` y `build-all.ps1` se detiene antes de los
+   plugins, aunque `Rock.dll`, `Rock.Blocks.dll`, etc. ya quedaron en `RockWeb\Bin`. Copiar las
+   DLLs del zip de traspaso antes de compilar, o correr luego `build-all.ps1 -SkipCore`.
+5. Un `npm run build-fast` dentro del build paralelo (`-m`) salió una vez con -1 tras imprimir `DONE`;
+   corrido solo salió con 0 y en el siguiente build no se repitió.
+
+Con eso: core + 8 plugins OK, 763 bundles `.obs.js`. Node 26 no dio problemas. Con las DLLs de
+terceros ya copiadas, `build-all.ps1` completo tardó 3 min 48 s (incremental) y `check-prereqs.ps1`
+dio 0 FAIL / 0 WARN.
+
+Ojo: cada build reescribe los finales de línea de
+`RockWeb/Plugins/com_vidareal/Translator/translatorDashboard.obs.js` (bundle versionado). No es un
+cambio funcional: revertirlo con `git checkout -- <archivo>` y no commitearlo.
+
+#### 9.1.1 SQL Server local
+
+Los instaladores de SQL Server **2022** que trae winget ya no los acepta Microsoft (*"Esta versión del
+instalador ya no es compatible"*). Se instaló **SQL Server 2025 Developer** así:
+
+1. `winget install Microsoft.SQLServer.2025.Developer` solo deja el bootstrapper
+   (`SQL2025-SSEI-StdDev.exe` en `%TEMP%\WinGet\...`); su modo `/QUIET` de instalación falla con el código 1009.
+2. Bajar los medios con el bootstrapper sin elevar:
+   `SQL2025-SSEI-StdDev.exe /ACTION=Download /MEDIAPATH=C:\SQLMedia /MEDIATYPE=CAB /QUIET`, y extraerlos:
+   `C:\SQLMedia\SQLServer2025-STDDEV-x64-ENU.exe /q /x:C:\SQLMedia\Setup`.
+3. Correr `C:\SQLMedia\Setup\setup.exe /ConfigurationFile=...` **elevado** (UAC) con un `.ini` mínimo:
+   `FEATURES=SQLENGINE`, `INSTANCENAME=MSSQLSERVER`, `SQLCOLLATION=SQL_Latin1_General_CP1_CI_AS`,
+   `SQLSYSADMINACCOUNTS=<DOMINIO\usuario de Windows>`, `TCPENABLED=1`, `IACCEPTSQLSERVERLICENSETERMS=True`.
+   Solo autenticación de Windows: no hace falta ninguna contraseña.
+
+Prod usa SQL Server **2022**: un respaldo hecho en el SQL 2025 de dev **no** se puede restaurar en prod.
+
+#### 9.1.2 Importar la BD desde un `.bacpac` (2026-11-05)
+
+El respaldo vino como `.bacpac` (exportado de prod, SQL 2022 Standard), no como `.bak`: se **importa**
+con SqlPackage, no con `RESTORE`.
+
+1. `winget install Microsoft.SqlPackage` (170.5.x). En la sesión donde se instala todavía no está en el
+   PATH: usar la ruta de `%LOCALAPPDATA%\Microsoft\WinGet\Packages\Microsoft.SqlPackage_*\sqlpackage.exe`.
+2. Verificar que la descarga esté completa antes de importar. Un `.bacpac` es un ZIP: si no abre, o si
+   todavía termina en `.crdownload`, la descarga está incompleta.
+3. Importar (la BD `Rock18` no debe existir):
+   `sqlpackage /a:Import /sf:"<ruta>\Rock18_<fecha>.bacpac" /tsn:localhost /tdn:Rock18 /ttsc:True`
+   Duración: **7 min 23 s** para un `.bacpac` de 880 MB (BD de 7.2 GB, compatibilidad 160).
+4. La BD trae usuarios SQL de BD sin login en la instancia local (huérfanos). Son inofensivos: **no**
+   crear logins. El acceso es con el usuario de Windows (sysadmin → `dbo`) e `Integrated Security=True`
+   en `web.ConnectionStrings.config`.
+5. Comprobar el estado antes de arrancar: la última fila de `__MigrationHistory` y la consulta de
+   `[PluginMigration]` de `CAMBIOS_VS_UPSTREAM.md` §E. Si las migraciones de los plugins coinciden con el
+   repo, al arrancar no corre ninguna nueva.
+
+#### 9.1.3 Aislar la copia de prod (2026-11-06)
+
+Se hizo con un script SQL único, **fuera del repo** (contiene la lógica, no credenciales), corrido con el
+sitio apagado. El script:
+
+- Es una sola transacción con `XACT_ABORT`.
+- Es idempotente: la segunda corrida debe dar 0 filas en todas las secciones.
+- Tiene una guarda que aborta si no corre en la máquina de dev contra `Rock18`, porque **la BD de prod
+  también se llama `Rock18`**.
+
+Antes de correrlo se guardó la lista de jobs activos (Id, nombre, clase, cron) para poder reactivarlos.
+Lo que hace:
+
+1. Lo mismo que `Dev Tools\Sql\Enable_LocalhostDevTesting.sql`: las URLs globales a
+   `http://localhost:6229/`, el servidor SMTP a `localhost` y la impresora del kiosco demo a null.
+2. Transportes: **SendGridHttp, Twilio, WhatsAppTransport y OneSignal** inactivos y con sus credenciales
+   vacías. **SMTP** activo y el medio Email apuntando a SMTP (→ [Papercut](https://github.com/ChangemakerStudios/Papercut-SMTP),
+   `winget install ChangemakerStudios.Papercut-SMTP`, escucha en `localhost:25`). OneSignal manda push a
+   teléfonos reales.
+3. Gateways: Epay VisaNet activo en Test (`Live=False`) y sin credenciales `Live*`; Pay Flow Pro (Legacy)
+   (estaba en `Mode=Live`) inactivo y sin credenciales.
+4. Odoo: las Global Attributes `OdooEventSale*` y `OdooNitApi*` (incluidas `OdooNitApiUrl1` y
+   `OdooNitApiBearerToken1`) vacías, más `OdooBaseUrl` y `OdooApiKey` de la acción `PostEventSaleToOdoo`.
+5. `AppleWalletPassP12` y su password vacíos: hay dispositivos reales registrados, y una actualización
+   de pase mandaría push por APNs. También `AzureApiKey` (Translator) y `AiApiKey` (DupDetect) vacías.
+6. **Todos** los `ServiceJob` inactivos (95 en esa copia), aunque `RunJobsInIISContext=false`.
+
+Para inventariar antes de cambiar nada, sin mostrar valores: los transportes son componentes con
+atributos `Attribute.EntityTypeId = <EntityType del transporte>` y `EntityTypeQualifierColumn` vacío.
+Los atributos de un gateway llevan `EntityTypeQualifierColumn='EntityTypeId'` y el valor se busca por
+`AttributeValue.EntityId = FinancialGateway.Id`. Al actualizar un `AttributeValue` por SQL en Rock 18,
+actualizar también las columnas `Persisted*` y marcar `IsPersistedValueDirty=1`.
+
+#### 9.1.4 Primer arranque (2026-11-06)
+
+`"C:\Program Files\IIS Express\iisexpress.exe" /path:<repo>\RockWeb /port:6229 /clr:v4.0` (o F5 en VS).
+La primera petición tardó **4 min 6 s** y cargó el login. Resultado:
+
+- `RockExceptions.csv`: solo el error esperado de `AIAgentSessionAnchor` (§8).
+- La tabla `ExceptionLog` registra además errores que **no** van al CSV: revisarla también.
+- No corrió ninguna `PluginMigration` y no se tocó ningún `CommunicationRecipient`.
