@@ -1,7 +1,7 @@
 <template>
     <Modal v-model="isCheckoutAllModalVisible"
-           title="Mark All as Checked-Out"
-           saveText="Confirm"
+           title="Confirmar"
+           saveText="Registrar Salida"
            @closeModal="onCloseModal"
            @save="onSaveClick">
         <p>Which scheduled times would you like to mark everyone as checked-out?</p>

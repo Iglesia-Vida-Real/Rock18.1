@@ -210,12 +210,17 @@ Para cada paso: hacerlo **primero en 6230 y luego en 6229**, y comparar. Anotar 
 | C7 | Success | Confirmar | Mensaje de éxito (`SuccessLavaTemplate`), código de seguridad de 3 caracteres, globos/sonido | |
 | C8 | Etiquetas | (las captura el listener) | Avisar a Claude: compara `9100_*.zpl` vs `9101_*.zpl` (contenido, campos, códigos; se ignoran código de seguridad y hora) | |
 | C9 | Repetir C3–C7 con Delta | Intentar check-in de nuevo | **Bloqueo de doble check-in** (personalización nuestra): mismo mensaje en las dos | |
-| C10 | Check-in Manager `/checkinmanager` | Elegir campus/área de Ilumina; ver las 3 salas | Roster: los 3 niños en su sala. **18.1 en español; 19 Obsidian en inglés** (personalización perdida, ver propuesta en UPGRADE §14.6) | |
+| C10 | Check-in Manager `/checkinmanager` | Elegir campus/área de Ilumina; ver las 3 salas | Roster: los 3 niños en su sala. Roster Obsidian en la 19: los 3 modales en español como en 18.1 (UPGRADE §14.6); el resto de textos del Roster en inglés en ambas. Comparar también el tema (`RockManager` vs `RockManagerNextGen`) en PC y móvil (UPGRADE §14.9b) | |
 | C11 | Check-in Manager > persona | Abrir a Delta | Perfil (PersonLeft), botón WhatsApp visible (**no enviar**), historial | |
 | C12 | Check-in Manager > Live Metrics | Abrir | Conteos por sala | |
 | C13 | Checkout desde el kiosco | `/checkin` → buscar `99001919` → acción «Check Out» → Eco | Pantallas de check-out (Action Select, Check Out Person Select, Check Out Success) | |
-| C14 | Checkout desde el Manager | Roster → check-out de Foxtrot | Funciona; en la 19 los modales del Roster en inglés | |
+| C14 | Checkout desde el Manager | Roster → check-out de Foxtrot | Funciona; modal con título «Confirmar» y botón «Registrar Salida» en las dos; el nombre del niño se ve completo | |
 | C15 | Página 852 «Checkin Pendientes» (interno) | Abrir | Lista de presentes (CheckInOutView, bloque nuestro) igual en ambas | |
+| C16 | Alta de familia desde el kiosco (validación nueva de textos de la 19, UPGRADE §14.5) | Modo supervisor (PIN) → buscar `PruebaTildes` (sin resultados) → «Agregar familia». Adulta: nombre **Begoña**, apellido **Peña O'Connor**, móvil `99002020`. Niños: **Iñaki** (nacido hace ~5 años) y **Zoë María-José** (~9 años), mismo apellido | Se guarda en las dos; los nombres se ven igual (tildes, ñ, ü, apóstrofo y guion) en la familia, en la selección de personas y en el Roster | |
+| C17 | Editar esa familia desde el kiosco | Cambiar el apellido a **D'Ávila Ñúñez** y guardar | Se guarda en las dos | |
+| C18 | Check-in de Iñaki y Zoë | Flujo C3–C7 con `99002020` | Etiqueta capturada con los nombres bien escritos (comparar `9100_*` vs `9101_*`: acentos en UTF-8) | |
+| C19 | (Negativo, opcional) Alta con nombre **Prueba&lt;b&gt;** o **{{ Prueba }}** | Intentar guardar | **Esperado distinto:** la 18.1 lo acepta; la 19 lo rechaza (validación nueva, por diseño). Anotar el mensaje que muestra la 19 | |
+| C20 | PIN de supervisor (UPGRADE §14.8) | Teclear un PIN equivocado 2–3 veces y luego el correcto | Entra con el correcto en las dos. **No** llegar a 10 fallos (bloquearía el PIN 10 min en esa versión) | |
 
 Al terminar: avisar a Claude para comparar las etiquetas y revisar el `ExceptionLog` de **las dos** BDs
 (líneas base: Rock18Base `ExceptionLog.Id` = 1630266 antes del primer arranque; Rock19Test = 1630350 antes del

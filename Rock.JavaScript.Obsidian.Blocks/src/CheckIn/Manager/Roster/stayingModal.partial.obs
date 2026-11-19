@@ -1,10 +1,10 @@
 <template>
     <Modal v-model="isModalVisible"
-           title="Stay for Service"
-           saveText="Check In"
+           title="Confirmar"
+           saveText="Registrar Entrada"
            @closeModal="onCloseModal"
            @save="onSaveClick">
-        <p>Which scheduled time would you like {{ row!.attendee.fullName }} to stay for?</p>
+        <p>Which scheduled time would you like <span class="notranslate">{{ row!.attendee.fullName }}</span> to stay for?</p>
 
         <RadioButtonList v-model="selectedSchedule"
                          label="Schedule"

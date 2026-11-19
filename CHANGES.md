@@ -520,6 +520,7 @@ Numerosos bloques WebForms del sistema CheckIn de Rock fueron modificados. Los c
 | `Manager/PersonLeft.ascx.cs` | Cambios en logica de "persona se fue" (122 lineas modificadas) |
 | `EditFamily.ascx` | Ajustes al formulario de edicion familiar en check-in |
 | Muchos otros | Cambios menores de estilos, textos y comportamiento |
+| `Manager/Roster.ascx` | **Borrado por upstream en la 19** (el Roster ahora es Obsidian). La traduccion de sus 3 modales («Confirmar», «Registrar Entrada», «Registrar Salida») se repitio el 2026-11-19 en `Rock.JavaScript.Obsidian.Blocks/src/CheckIn/Manager/Roster/{stayingModal,checkoutAllModal,checkoutModal}.partial.obs` (ver `Rock.JavaScript.Obsidian.Blocks/CHANGES.md`) |
 
 **Riesgo de merge:** Alto. El modulo CheckIn de Rock recibe actualizaciones frecuentes upstream.
 

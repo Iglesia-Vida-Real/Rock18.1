@@ -135,6 +135,7 @@ Ademas de los modulos nuevos, se modificaron bloques del core de Rock para adapt
 | `Communication/CommunicationEntry/` | `communicationMediumEmail`, `Sms`, `PushNotification` | Ajustes al editor de comunicaciones |
 | `Finance/financialAccountDetail.obs` | 1 archivo | Ajuste menor a detalle de cuenta financiera |
 | `Engagement/achievementTypeDetail.obs` | 1 archivo | Ajuste menor |
+| `CheckIn/Manager/Roster/` | `stayingModal.partial.obs`, `checkoutAllModal.partial.obs`, `checkoutModal.partial.obs` | **Upgrade 19.8.1 (2026-11-19).** El Roster del Check-in Manager pasó de WebForms (`Roster.ascx`, borrado en la 19) a Obsidian. Se repiten los mismos 6 textos que traducíamos en la 18.1: títulos de los 3 modales → «Confirmar»; botón del modal *Staying* → «Registrar Entrada»; botones de *Checkout* y *Checkout All* → «Registrar Salida». El nombre de la persona en el texto del modal va en `<span class="notranslate">` (dato dinámico, trampa 4). Sin cambios de lógica. Bundle: `RockWeb/Obsidian/Blocks/CheckIn/Manager/roster.obs.js` (los partials van dentro); no cambia `Rock.Blocks.dll` |
 
 ---
 

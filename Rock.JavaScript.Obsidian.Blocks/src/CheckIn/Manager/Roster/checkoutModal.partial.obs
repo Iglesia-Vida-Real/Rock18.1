@@ -1,10 +1,10 @@
 <template>
     <Modal v-model="isModalVisible"
-           title="Mark as Checked-Out"
-           saveText="Confirm"
+           title="Confirmar"
+           saveText="Registrar Salida"
            @closeModal="onCloseModal"
            @save="onSaveClick">
-        <p>Which scheduled time would you like to mark {{ rows[0].attendee.fullName }} as checked-out?</p>
+        <p>Which scheduled time would you like to mark <span class="notranslate">{{ rows[0].attendee.fullName }}</span> as checked-out?</p>
 
         <CheckBoxList v-model="selectedSchedules"
                       label="Schedules"

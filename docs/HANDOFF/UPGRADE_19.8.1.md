@@ -288,7 +288,7 @@ Tres cosas que se ven rotas en local y **no** son fallas del upgrade:
 |---|---|---|
 | Color primario `--base-primary: #073642` (upstream `#FF791D`) | `RockWeb/Themes/RockNextGen/Styles/theme.css`, bloque «CSS Overrides Bottom» | Editor de temas de la 19 (Admin > CMS > Themes > RockNextGen), o variables en `Rock.Frontend.Styles/src/themes/RockNextGen/Styles/` |
 | Logo de Vida Real en la esquina del navbar: `.navbar-brand-corner.no-logo:after { background-image: url('/Content/ExternalSite/Icons/icon-ipad-retina-vr.png'); background-size: 42px 42px; 80×80 }` (todo `!important`) | ídem | ídem (CSS overrides del tema) |
-| Roster del Check-in Manager en español: títulos `Confirmar`, botones `Registrar Entrada` / `Registrar Salida` (3 modales) | `RockWeb/Blocks/CheckIn/Manager/Roster.ascx` (borrado en la 19) | El Roster ahora es Obsidian: traducir en el bloque nuevo o con el Traductor; revisar en las pruebas de check-in |
+| Roster del Check-in Manager en español: títulos `Confirmar`, botones `Registrar Entrada` / `Registrar Salida` (3 modales) | `RockWeb/Blocks/CheckIn/Manager/Roster.ascx` (borrado en la 19) | **Reaplicado** el 2026-11-19 en los 3 modales del Roster Obsidian (mismos 6 textos), §14.6 |
 | Página «Room Settings» del Check-in Manager | La migración `UpdateCheckinManagerToNextGen` la borra (y «Room Manager» pasa a ser el Roster) | La traducción de `RoomSettings.ascx` queda sin uso; nada que reaplicar |
 
 El diff completo de lo perdido quedó en la carpeta temporal de la sesión; se puede regenerar con
@@ -367,6 +367,9 @@ vacía `RockWeb`: tiene carpetas y archivos que solo existen en el servidor (§5
 7. Jobs post-actualización con «Run Now», en el orden de §11.3, más el job propuesto para los 2 bloques huérfanos
    (§11.4, `Dev Tools\Upgrade\19.8.1_job_reemplazo_bloques_huerfanos.sql`).
 8. Pruebas: `PLAN_PRUEBAS_19.8.1.md`, columna P.
+   Avisar a los supervisores de check-in de cada sede, antes del primer domingo, del límite nuevo de la 19: tras
+   **10 PIN fallidos en 10 min desde la misma red**, el PIN de supervisor queda bloqueado hasta 10 min, incluso el
+   correcto (§14.8). Que cada supervisor confirme su PIN antes del servicio.
 9. Si todo está bien: devolver `RunJobsInIISContext` a su valor original (reinicia el sitio).
 
 **Rollback:** detener el sitio, restaurar el `.bak` y la copia completa de `RockWeb`. Las migraciones de la 19 no
@@ -402,7 +405,11 @@ no lo corrige. **No se arregla en este upgrade**: arreglo aparte (contador de in
   Job propuesto listo, **no aplicado** (decisión del responsable).
 - **Tema `VidAventuracheckin` no recompila en la 19 (§12):** falta `_css-overrides.less`. Arreglo propuesto
   (crear el archivo vacío en el repo), **no aplicado**.
-- **Check-in Manager:** Roster en inglés (personalización perdida, §6); pasa al tema `RockManagerNextGen`.
+- **Check-in Manager:** Roster: modales traducidos de nuevo (§14.6, verificar en la comparación); pasa al tema
+  `RockManagerNextGen` (propuesta en §14.9b, según la comparación visual).
+- **CSS del kiosco:** propuesta B (§14.9a), pendiente de la comparación visual y de probarla con dotless.
+- **Límite de PIN (§14.8):** no configurable; avisar a supervisores antes del primer domingo.
+- **Defectos que ya existen en 18.1 (§14.5):** solo documentados, no se tocan (decisión del responsable).
 - **Comparación servidor vs repo (§13):** correr el script en prod y revisar el resultado antes de fijar fecha.
 - **Rock Shop:** confirmar versiones para la 19 en *Installed Plugins* de prod (`INVENTARIO_DESARROLLOS_VR.md` §3).
 - **`RunJobsInIISContext` de prod:** pedir el valor a TI (§11.5).
@@ -702,7 +709,7 @@ idénticas. Ninguna migración de la 19 toca el sitio de check-in, su WorkflowTy
 | `Manager/Person*.ascx.cs`: reimpresión solo de la persona | 17a3c96917 | — | C11 |
 | `Schedule`: texto «Once on …» para horarios de una fecha; tabla `ScheduleDate` | ee7fa962e3, 202603232352001 | Solo si una etiqueta usa el texto del horario | C8 |
 | Utilidades CSS fuera de `_helpers.less` | aea467741b | §14.3: margen del «Count: N» | C5 |
-| `UpdateCheckinManagerToNextGen` | migración | Check-in Manager con `RockManagerNextGen`: nuestro `RockManager/Layouts/Blank.aspx` responsivo deja de aplicarse a ese sitio | C10 en el móvil |
+| `UpdateCheckinManagerToNextGen` | migración | Check-in Manager con `RockManagerNextGen` (tema nuevo). Nota: sus páginas usan `FullWidth`/`LeftSidebar`, no `Blank.aspx` (§14.9b) | C10 en el móvil |
 
 **Etiquetas [V]:** el contenido (merge por regex `(?<=\^FD)KEY(?=\^FS)` sobre `KioskLabel.FileContent`) y el
 transporte (`Rock.Utility.ZebraPrint.OpenSocket`, UTF-8, una conexión por impresora, acepta `ip:puerto` con IP
@@ -720,30 +727,103 @@ agrega un header CSP `sandbox` (no debería afectar a una descarga nativa [I]; s
 4. El tema propio no importa los íconos Tabler (upstream sí lo hizo en sus temas, `1291dc2dd2`): los íconos `ti`
    salen vacíos (ya pasaba en 18.1).
 
-### 14.6 Roster del Check-in Manager en español: propuesta (no aplicada)
+### 14.6 Roster del Check-in Manager en español (aplicado en local el 2026-11-19)
 
 En la 19 el Roster es Obsidian (`Rock.Blocks/CheckIn/Manager/Roster.cs` + `src/CheckIn/Manager/`), conserva el
 BlockTypeGuid (`EA5C2CF9…`) y sus valores; pierde el atributo `EnableGroupColumn`; **no tiene atributos de texto**.
 Hay ~60 textos visibles en inglés en 14 archivos (+~9 mensajes del servidor). En 18.1 traducíamos solo 3 modales
-(«Confirmar», «Registrar Entrada», «Registrar Salida»).
+de `Roster.ascx` (`git diff 18.1.0 hotfix-18.1 -- RockWeb/Blocks/CheckIn/Manager/Roster.ascx`).
 
-| Opción | Pros | Contras |
+Opciones evaluadas: (i) traducir el `.obs`; (ii) el Traductor (descartado: excluye `.grid-row/.grid-cell` y congela
+textos de Vue, trampa 4); (iii) volver a montar el `Roster.ascx` viejo (pierde el tiempo real de la 19).
+**Aprobado por el responsable: (i), cambio mínimo, solo los mismos textos que en 18.1.**
+
+| Modal (19) | Título | Botón |
 |---|---|---|
-| **(i) Traducir el `.obs` como hicimos con RegistrationEntry** | Control total, sin red; mismo patrón del fork | Archivo upstream modificado (re-aplicar en cada upgrade); `roster.obs.js` + `Rock.Blocks.dll` van juntos (trampas 8 y 9). Mínimo: 6 textos de 3 modales; completo: ~70 líneas |
-| (ii) Traductor (`Plugin.VidaRealTranslator`) | Sin tocar código | Excluye `.grid-row/.grid-cell` (botones y estados del roster seguirían en inglés); congela textos de Vue (trampa 4); y **mandaría a Azure OpenAI frases con nombres de niños** («…mark {nombre} as checked-out?»): **choca con la política de menores** |
-| (iii) Volver a montar el `Roster.ascx` viejo como bloque propio | Idéntico a hoy | Pierde el tiempo real de la 19; deuda permanente |
+| `stayingModal.partial.obs` | «Stay for Service» → «Confirmar» | «Check In» → «Registrar Entrada» |
+| `checkoutAllModal.partial.obs` | «Mark All as Checked-Out» → «Confirmar» | «Confirm» → «Registrar Salida» |
+| `checkoutModal.partial.obs` | «Mark as Checked-Out» → «Confirmar» | «Confirm» → «Registrar Salida» |
 
-**Recomendación: (i)**, empezando por la paridad (los 3 modales) y luego el resto de textos visibles. Requiere
-aprobación (es código).
+- El nombre de la persona dentro del texto del modal quedó en `<span class="notranslate">` (dato dinámico). El resto
+  de los textos del cuerpo sigue en inglés, igual que en 18.1.
+- Auditoría del diff antes de compilar: 8 líneas, solo atributos de texto y los dos `<span>`; sin cambios de lógica,
+  `v-if`, flags ni timers. El texto «Checked-Out» del filtro de `rosterMenu.partial.obs` no se tocó (en 18.1 tampoco
+  estaba traducido).
+- `npm run build` (Rock.JavaScript.Obsidian.Blocks): «DONE»; `RockWeb/Obsidian/Blocks/CheckIn/Manager/roster.obs.js`
+  regenerado (14:58, 104 942 bytes) con «Registrar Entrada» ×1 y «Registrar Salida» ×2, sin los títulos en inglés.
+  No cambia `Rock.Blocks.dll`. En local (`compilation debug="true"`) Rock recalcula la huella de Obsidian solo: basta
+  recargar.
+- Registrado en `CHANGES.md` (sección CheckIn), `Rock.JavaScript.Obsidian.Blocks/CHANGES.md` y
+  `docs/HANDOFF/core-files-modified.txt`. **Despliegue:** `roster.obs.js` en el kit (`Obsidian\` completo).
 
-### 14.7 Hallazgo de política (no es del upgrade; afecta a prod HOY)
+### 14.7 Traductor
 
-En la copia de prod, el Traductor está **activo** (en→es, `gpt-4.1-mini` en Azure) y se inyecta en **todos** los
-sitios salvo «Vida Real» y «QR»: incluidos **«Rock Check-in»** (kiosco de VidAventura), **«Rock Check-in Manager»**
-y **«Next-gen Check-in»**; `ExcludedSites` está vacío. El filtro `translatable()` de `translator.js` no excluye
-nombres de personas, y los textos que no están en caché se envían a Azure OpenAI (`TranslatorController.Resolve` →
-`TranslateBatch`). Por lo tanto, los nombres que se muestran en el kiosco y en el Check-in Manager (niños incluidos)
-**pueden estar enviándose hoy a un servicio de IA**, contra la política de uso de IA (menores). No se revisó el caché
-de traducciones para confirmarlo (contendría esos datos). **Mitigación propuesta (configuración de prod, decisión del
-responsable):** poner los sitios 2, 5 y 10 en *Excluded Sites* del Traductor. En las BDs de prueba la clave de Azure
-está vacía (aislamiento): en local no sale nada.
+Fuera del alcance de este documento (lo ve otra persona). Verificado el 2026-11-19: en Rock18Base y Rock19Test la
+clave de Azure del Traductor (`AzureApiKey`) está **vacía**, así que en las pruebas locales no sale nada.
+
+### 14.8 Límite de PIN fallidos del kiosco (nuevo en la 19)
+
+- Código: `Rock/CheckIn/PinAttemptLimiter.cs` (usado por `RockWeb/Blocks/CheckIn/Welcome.ascx.cs:1108-1186` y por
+  `CheckInDirector` del check-in next-gen). **No es configurable**: `MaxFailuresPerIpAddress = 10` y
+  `Window = 10 min` son constantes; no hay atributo de bloque, de sitio ni global. Cambiarlo es modificar el core.
+- Cómo cuenta: por **IP del cliente** (`RockPage.GetClientIpAddress()`), en memoria de cada servidor web. Cada PIN
+  cuenta como fallo antes de validarse; un PIN correcto **reinicia** el contador. Al llegar a 10, también el PIN
+  correcto se rechaza («Too many failed PIN attempts…») hasta que pasa la ventana (empieza con el primer intento y
+  no se reinicia). Reiniciar el sitio lo limpia (no recomendado en domingo).
+- Solo afecta al **PIN de supervisor** (Admin/override del kiosco, Check-in Manager legacy). El check-in de las
+  familias no usa PIN.
+- Datos de la copia de prod (sitio «Rock Check-in», 20-ago → 18-nov, solo conteos): 1 046 intentos, 313 fallidos;
+  PIN exitosos desde 25 IPs distintas (cada sede sale con su IP; no hay un proxy que las junte). **En 2 días** una
+  misma IP llegó a ≥ 10 fallos en 10 min (máximo 14, sábado 6-sep a las 14:40): con la 19, ese día el PIN de esa sede
+  habría quedado bloqueado hasta 10 min.
+- **Recomendación:** dejar el valor de upstream (10/10 min; protege contra adivinar PINs, que son la credencial
+  completa) y **no** modificar el core. Mitigación operativa en el runbook: avisar a los supervisores de cada sede
+  antes del primer domingo que, tras 10 PIN fallidos, hay que **esperar 10 minutos** (o entrar desde otra sede/red); y
+  que cada supervisor confirme su PIN antes del servicio. Si después se ve que molesta, la alternativa sería un
+  cambio en el core para leer el límite de un atributo global (requiere aprobación).
+
+### 14.9 Propuestas para que el kiosco y el Check-in Manager se vean igual que en 18.1 (no aplicadas)
+
+**a) Clases perdidas en el CSS del kiosco (§14.3).** Se midió compilando el tema fuera del repo con `less.js` 4.4.2
+(calibrado: produce exactamente las mismas clases que el `checkin-theme.css` 18.1 del repo):
+
+| Variante | Clases que faltan vs 18.1 | Clases extra |
+|---|---|---|
+| 19 sin arreglo | 1 419 | 106 (nuevas de la 19, igual con cualquier arreglo) |
+| A: `@import "../../../Styles/_helpers-rock.less";` | 20 | 196 (+90 de colores/espaciado/texto propios de la 19) |
+| **B: solo las utilidades que la 18.1 tenía en `_helpers.less`** | **20** | **106** |
+
+Las 20 que faltan con B son de componentes que upstream borró (`.card-schedule`, `.panel-worksurface`, `.tox`,
+`.ant-select-*`…). La única que usamos, `btn-square`, está en `RapidAttendanceEntry`/`AttendanceAnalytics`, que no
+van en el kiosco. **Propuesta: B**, en un archivo nuevo del tema (sin tocar archivos de upstream):
+
+`RockWeb/Themes/VidAventuracheckin/Styles/_utilidades-18.less` (nuevo) importado en `checkin-theme.less` justo antes de
+`@import "_css-overrides.less";`:
+
+```less
+// [VidaReal] Upgrade 19.x: upstream sacó estas utilidades de Styles/_helpers.less (commit aea467741b) y ahora solo
+// las importan los temas principales (_rock-core.less -> _helpers-rock.less). Se repiten aquí para que el kiosco
+// conserve las mismas clases que en 18.1 (d-*, flex-*, m*-*, p*-*, grid, ratios, text-align).
+@import "../../../Styles/rock-utilities/_cssgrid.less";
+@import "../../../Styles/rock-utilities/_ratios.less";
+.util-mix-display(); .util-mix-css-grid(); .util-mix-flex(); .util-mix-order(); .util-mix-ratios(); .util-mix-spacing(); .util-mix-text-align();
+@media (min-width: @screen-sm-min) { .util-mix-display("sm"); .util-mix-css-grid("sm"); .util-mix-flex("sm"); .util-mix-order("sm"); .util-mix-ratios("sm"); .util-mix-spacing("sm"); .util-mix-text-align("sm"); }
+@media (min-width: @screen-md-min) { .util-mix-display("md"); .util-mix-css-grid("md"); .util-mix-flex("md"); .util-mix-order("md"); .util-mix-ratios("md"); .util-mix-spacing("md"); .util-mix-text-align("md"); }
+@media (min-width: @screen-lg-min) { .util-mix-display("lg"); .util-mix-css-grid("lg"); .util-mix-flex("lg"); .util-mix-order("lg"); .util-mix-ratios("lg"); .util-mix-spacing("lg"); .util-mix-text-align("lg"); }
+@media print { .util-mix-display("print"); }
+```
+
+Pendiente antes de aplicarlo: (1) la comparación visual del responsable; (2) confirmar que compila con **dotless**
+(el compilador de Rock), no solo con less.js; (3) solo surte efecto si el tema llega a compilar, es decir, si existe
+`_css-overrides.less` (§12, riesgo 1). Si prod no lo tiene, en prod queda el `.css` viejo, que ya trae todas las
+clases.
+
+**b) Check-in Manager.** Corrección a la auditoría (§14.5): el Check-in Manager **no usa `Blank.aspx`** ni en 18.1 ni
+en la 19 (sus páginas usan `FullWidth` 13–15 y `LeftSidebar` 2), así que nuestro `Blank.aspx` responsivo nunca le
+aplicó. El `<meta name="viewport">` es idéntico en `RockManager/Layouts/Site.Master` (18.1) y en
+`RockManagerNextGen` (19). La diferencia visual viene del **tema nuevo** que pone la migración
+`UpdateCheckinManagerToNextGen`. Propuesta, según lo que muestre la comparación:
+- Si la 19 se ve aceptable (también en el móvil): no hacer nada.
+- Si hay que dejarlo igual que en 18.1: volver el sitio 5 al tema `RockManager` (configuración del sitio, sin
+  código; reversible) y probar que el Roster Obsidian y el `CheckInContextSetter` nuevos se vean bien con ese tema,
+  porque upstream los diseñó para `RockManagerNextGen`. Probarlo en local antes de decidir.

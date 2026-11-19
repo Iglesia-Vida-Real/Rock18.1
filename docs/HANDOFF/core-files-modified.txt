@@ -5,6 +5,9 @@ Rock.Blocks/Rock.Blocks.csproj
 Rock.Blocks/Security/Login.cs
 Rock.JavaScript.Obsidian.Blocks/package-lock.json
 Rock.JavaScript.Obsidian.Blocks/package.json
+Rock.JavaScript.Obsidian.Blocks/src/CheckIn/Manager/Roster/checkoutAllModal.partial.obs
+Rock.JavaScript.Obsidian.Blocks/src/CheckIn/Manager/Roster/checkoutModal.partial.obs
+Rock.JavaScript.Obsidian.Blocks/src/CheckIn/Manager/Roster/stayingModal.partial.obs
 Rock.JavaScript.Obsidian.Blocks/src/Communication/CommunicationEntry/communicationMediumEmail.partial.obs
 Rock.JavaScript.Obsidian.Blocks/src/Communication/CommunicationEntry/communicationMediumPushNotification.partial.obs
 Rock.JavaScript.Obsidian.Blocks/src/Communication/CommunicationEntry/communicationMediumSms.partial.obs
