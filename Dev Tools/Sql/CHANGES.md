@@ -10,6 +10,21 @@ Los scripts con prefijo `QREVENT_` o `SundayService_` son especificos de VidaRea
 
 ---
 
+## Aislar_BD_Dev.sql
+
+> **Nuevo, 2026-10-26.** Solo para la BD de desarrollo; **nunca** se corre en producción.
+
+Aísla una copia de prod restaurada en `localhost` antes del primer arranque del sitio: desactiva
+todos los jobs (y los lista antes), las pasarelas de pago y los transportes SendGrid, Twilio,
+WhatsApp y OneSignal (atributo `Active`), y agrega `.test` a los correos de `Person` que no son de
+sistema. Va en una transacción con `XACT_ABORT ON`, es idempotente y se niega a correr si
+`SERVERPROPERTY('MachineName') <> HOST_NAME()` (servidor SQL remoto). Correr después de
+`Enable_LocalhostDevTesting.sql`. Ver `docs/HANDOFF/SETUP_DESARROLLO.md` §4.
+
+Verificado el 2026-10-26 sobre una copia de Rock18 (el estado final quedó en 0 / False).
+
+---
+
 ## QREVENT_SundayService_Hardening.sql
 
 > **v2 — APLICADO a `Rock_Nueva` el 2026-07-04.** Fuente canonica de los 5 SPs

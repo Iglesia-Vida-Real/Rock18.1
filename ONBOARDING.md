@@ -15,6 +15,7 @@
 | # | Documento | Para qué |
 |---|---|---|
 | 1 | Este archivo | Qué es, qué no viene en el clon, dónde está todo. |
+| 1b | [`docs/HANDOFF/GUIA_COLABORADORES.md`](docs/HANDOFF/GUIA_COLABORADORES.md) | **Si eres nuevo en Rock:** cómo llega un cambio a producción, anatomía de un bloque y dónde vive cada módulo. |
 | 2 | [`docs/HANDOFF/SETUP_DESARROLLO.md`](docs/HANDOFF/SETUP_DESARROLLO.md) | Prerequisitos con versiones, clonar, BD de dev, compilar, correr, problemas típicos. |
 | 3 | [`docs/HANDOFF/ESTADO_REPO.md`](docs/HANDOFF/ESTADO_REPO.md) | Ramas (cuál es nuestra), commits y cambios pendientes, limpieza recomendada. |
 | 4 | [`docs/HANDOFF/DEPLOY_PRODUCCION.md`](docs/HANDOFF/DEPLOY_PRODUCCION.md) | Cómo se despliega, rollback, verificación, y **el último despliegue conocido** (todo en prod al 2026-10-15). |
@@ -35,7 +36,8 @@ cd C:\repos\Rock15.5
 git checkout hotfix-18.1                                              # rama viva (NO develop)
 powershell -ExecutionPolicy Bypass -File ".\Dev Tools\Build\check-prereqs.ps1"   # solo lectura
 Copy-Item RockWeb\web.ConnectionStrings.config.example RockWeb\web.ConnectionStrings.config   # y llenarlo
-# restaurar la BD de dev (copia de prod, pedirla a TI) y AISLARLA (SETUP §4)
+# restaurar la BD de dev (copia de prod, pedirla a TI) y AISLARLA con Aislar_BD_Dev.sql (SETUP §4)
+# clon limpio: restaurar packages.config + RockWeb y copiar antes las DLLs de terceros (SETUP §6.0)
 .\"Dev Tools\Build\build-all.ps1"                                     # Rock.sln + 8 plugins, Release
 # copiar a RockWeb\Bin las DLLs de terceros del Rock Shop (§3.1)
 # abrir Rock.sln en VS, proyecto de inicio RockWeb, F5 -> http://localhost:6229
