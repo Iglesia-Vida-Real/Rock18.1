@@ -365,7 +365,10 @@ vacía `RockWeb`: tiene carpetas y archivos que solo existen en el servidor (§5
    `App_Data\Logs\MigrationLog.csv`, `RockExceptions.csv` y `ExceptionLog`. Anotar el `ExceptionLog.Id` máximo
    como línea base para las pruebas.
 7. Jobs post-actualización con «Run Now», en el orden de §11.3, más el job propuesto para los 2 bloques huérfanos
-   (§11.4, `Dev Tools\Upgrade\19.8.1_job_reemplazo_bloques_huerfanos.sql`).
+   (§11.4, `Dev Tools\Upgrade\19.8.1_job_reemplazo_bloques_huerfanos.sql`). **Ojo:** los jobs «Replace WebForms
+   Blocks» (incluido el nuestro) **se autoeliminan al terminar bien** y no dejan historial; que desaparezcan de la
+   lista es la señal de éxito. Verificar el resultado en las páginas (File Manager 433, Weekly Metrics 451, System
+   Phone Numbers 327, Experience Administration 740). Si uno falla, queda en la lista con el error.
 8. Pruebas: `PLAN_PRUEBAS_19.8.1.md`, columna P.
    Avisar a los supervisores de check-in de cada sede, antes del primer domingo, del límite nuevo de la 19: tras
    **10 PIN fallidos en 10 min desde la misma red**, el PIN de supervisor queda bloqueado hasta 10 min, incluso el
@@ -510,7 +513,19 @@ y en la BD, 2026-11-19):**
   1 job, 2 valores). Si el job ya corrió, los BlockTypes viejos ya no existen y el script se detiene sin hacer nada.
 
 **Estado en Rock19Test:** SQL aplicado el 2026-11-19 → **job 234** creado (activo; con `RunJobsInIISContext=False`
-solo corre con «Run Now»). Falta el «Run Now» del responsable y verificar las páginas 327 y 740.
+solo corre con «Run Now»). El responsable le dio «Run Now» el 2026-11-19. Resultado verificado por SQL:
+- Página 327: bloque **2231** «System Phone Number List» (`Rock.Blocks.Communication.SystemPhoneNumberList`), zona
+  Main, orden 2 (igual que el viejo 1325); `SystemPhoneNumberDetailPage` copiado con el mismo valor.
+- Página 740: bloque **2232** «Interactive Experience List»
+  (`Rock.Blocks.Event.InteractiveExperiences.InteractiveExperienceList`), Main, orden 0 (igual que el viejo 1209);
+  `DetailPage` y `OccurrenceChooserPage` copiados con los mismos valores.
+- BlockTypes viejos 788 y 768: borrados; bloques 1325 y 1209: borrados (cascada). Bundles
+  `systemPhoneNumberList.obs.js` e `interactiveExperienceList.obs.js` presentes.
+- `ExceptionLog`: **ninguna excepción nueva** después del job (ni de esas páginas en ningún momento).
+- **El job se autoelimina al terminar bien** (`DeleteJob()`), igual que los «Replace WebForms Blocks» de upstream: no
+  queda en la lista de jobs ni deja historial. Para confirmar que corrió, mirar las páginas (o
+  `SELECT … FROM Block WHERE PageId IN (327,740)`), no la lista de jobs. Si falla, **no** se borra: queda como
+  no-sistema con el error en «Last Status Message».
 
 ### 11.5 Si en prod `RunJobsInIISContext` es True
 

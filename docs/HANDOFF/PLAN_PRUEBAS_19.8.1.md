@@ -144,8 +144,8 @@ marcadas ⏸ y se prueban después de correrlos.
 |---|---|---|---|---|---|
 | 13.1 | Páginas MailChimp, Acme Certificates, Data Toolkit (export/import), Lava Tester, Ministry Pass | Abrir cada una | Cargan sin error | | |
 | 13.2 | Admin > Rock Shop > Installed Plugins | Revisar | Anotar si hay actualizaciones para la 19 | | |
-| 13.3 | Página 327 «System Phone Numbers» | Abrir | **Hoy falla** (bloque huérfano, UPGRADE §11.4) hasta correr el job propuesto | | |
-| 13.4 | Página 740 «Experience Administration» | Abrir | **Hoy falla** (ídem) | | |
+| 13.3 | Página 327 «System Phone Numbers» | Abrir | Lista de números del sistema (bloque Obsidian 2231 en Rock19Test, tras el job de UPGRADE §11.4). En prod: después de crear y correr ese job | | |
+| 13.4 | Página 740 «Experience Administration» | Abrir | Lista de experiencias interactivas (bloque Obsidian 2232 en Rock19Test). En prod: ídem 13.3 | | |
 | 13.5 | ⏸ Página 433 «File Manager» | Abrir después de los jobs 222/227 | File Asset Manager (Obsidian) | | |
 | 13.6 | ⏸ Página 451 «Weekly Metrics» | Abrir después del job 226 | Service Metrics Entry Obsidian | | |
 | 13.7 | Admin > Finance > Gateways | Abrir ePay y Cybersource | Configuración carga (no activar en local) | | |
