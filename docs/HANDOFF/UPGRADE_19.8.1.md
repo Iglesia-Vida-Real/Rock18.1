@@ -6,10 +6,78 @@
 > | Fase | Estado |
 > |---|---|
 > | 1. BD nueva aislada | ✅ 2026-11-19 |
-> | 2. Merge de código + build | ✅ commiteado (local, sin push); core + 8 plugins compilan; precompilación de `RockWeb` pendiente (Smart App Control) |
-> | 3. Arranque y migraciones | ✅ migraciones aplicadas y sitio arriba (§5b). Respaldo `.bak` de Rock19Test migrada **antes de jobs** (§11.1). Jobs post-actualización: analizados, **sin correr** (§11) |
+> | 2. Merge de código + build | ✅ commiteado (local, sin push); core + 8 plugins compilan; precompilación completa de `RockWeb` sin errores (§14.2) |
+> | 3. Arranque y migraciones | ✅ migraciones aplicadas y sitio arriba (§5b). Respaldo `.bak` de Rock19Test migrada **antes de jobs** (§11.1). Jobs post-actualización de upstream: analizados, **sin correr** (§11); job propio 234 (bloques huérfanos) corrido el 2026-11-19 (§11.4) |
 > | 3b. Análisis previo a las pruebas | ✅ 2026-11-19: diagnósticos locales (§5c), inventario (`INVENTARIO_DESARROLLOS_VR.md`), jobs (§11), check-in (§12), comparación servidor vs repo preparada (§13) |
+> | 3c. Prueba comparativa de check-in 18.1 vs 19 | ⏳ entorno listo (§14); Roster en español aplicado (§14.6); **falta el recorrido** |
 > | 4. Pruebas de humo | ⏳ checklist lista: `PLAN_PRUEBAS_19.8.1.md` |
+
+---
+
+## 0. Cómo retomar (cierre del 2026-11-19)
+
+**Estado actual**
+- Todo es **local** (`DESKTOP-PB412F9`). Nada en producción. **Nada de esto está en GitHub**:
+  `origin/Test_Update_18.1_a_18.8` sigue en `81ed172522` (2026-10-21, igual que `hotfix-18.1`) y la rama local va
+  «ahead 3027» (el merge de upstream + los commits del día); ningún commit del día está en una rama remota.
+- BDs locales (se dejaron como están):
+  - `Rock19Test`: bacpac de prod del 18-nov, aislada, **migrada a 19.8.1**; job 234 ya corrido (páginas 327 y 740
+    con bloques Obsidian); preparación de la prueba de check-in aplicada (§14.4).
+  - `Rock18Base`: mismo bacpac, aislada, **sin migrar** (18.1); misma preparación de check-in.
+  - Respaldo: `Rock19Test_migrada_sin_jobs_2026-11-19.bak` (carpeta Backup de SQL Server; antes del job 234).
+- Worktree 18.1 compilado: `Documents\GitHub\Rock18Base-wt` (desacoplado en `hotfix-18.1`; sus `package-lock.json`
+  cambiados por npm no se commitean; se descarta con `git worktree remove`).
+- Fuera del repo (no es repo git): `Documents\GitHub\dev-isolation\` con `aislar_dev_Rock19Test.sql`,
+  `aislar_dev_Rock18Base.sql`, `preparar_prueba_checkin_vidaventura.sql`, `impresora_falsa_zpl.ps1` y
+  `etiquetas_capturadas\` (vacía).
+- Sin versionar a propósito: `RockWeb/Themes/VidAventuracheckin/Styles/_css-overrides.less` (vacío, excluido con
+  `.git/info/exclude`, solo para la prueba; §12).
+- Servidores **detenidos** (6229, 6230 e impresora falsa).
+
+**Commits del día** (rama `Test_Update_18.1_a_18.8`, solo locales):
+
+| Commit | Qué |
+|---|---|
+| `b61a80a019` | Merge `origin/Rock_RMS_Rama_Fredy` (guía de colaboradores, aislamiento de BD dev) |
+| `43177d0e3e` | Merge del tag 19.8.1 de upstream |
+| `f2c736e48d` | Docs: Fase 3 (migraciones medidas, SignNow, jobs) |
+| `9ea5e52f2b` | Docs: inventario, jobs, check-in, runbook; scripts de `Dev Tools/Upgrade` |
+| `079976f92b` | Docs: prueba comparativa de check-in 18.1 vs 19 |
+| `4b42dd6521` | Código: modales del Roster Obsidian en español (+ docs de PIN, CSS, checklist con tildes) |
+| `51f2581c6f` | Docs: job 234 corrido; los jobs de reemplazo se autoeliminan |
+
+**Qué falta**
+1. Recorrido de la checklist comparativa `PLAN_PRUEBAS_19.8.1.md` §15 (C1–C20), 6230 vs 6229. El horario de prueba
+   solo abre check-in **lunes a viernes de 09:00 a 21:00**.
+2. Después del recorrido (Claude): comparar las etiquetas `etiquetas_capturadas\9100_*.zpl` (18.1) vs `9101_*.zpl`
+   (19) y revisar el `ExceptionLog` de las dos BDs (líneas base: Rock18Base > 1630266; Rock19Test > 1630379).
+3. Abrir `http://localhost:6229/page/327` y `/page/740` con sesión de administrador (el render no se pudo verificar
+   sin sesión; en BD y `ExceptionLog` está todo bien, §11.4).
+4. Según la comparación visual: aplicar la propuesta B de CSS del kiosco (§14.9a, probar con dotless) y decidir el
+   tema del Check-in Manager (§14.9b).
+5. Script del servidor (§13): lo corre el responsable en prod y trae los 3 archivos + `_css-overrides.less` y
+   `checkin-theme.css` del tema del kiosco.
+6. `RunJobsInIISContext` de prod: lo revisa el responsable (§11.5).
+7. Jobs post-actualización de upstream (§11.3): siguen sin correr en Rock19Test.
+
+**Comandos para volver a levantar** (cada uno en su propia consola de PowerShell; SQL Server local debe estar arriba):
+
+```powershell
+# 19.8.1 en http://localhost:6229 (BD Rock19Test; ver Initial Catalog en RockWeb\web.ConnectionStrings.config)
+& "C:\Program Files\IIS Express\iisexpress.exe" /path:"C:\Users\Servr local Rock RMS\Documents\GitHub\Rock18.1\RockWeb" /port:6229 /clr:v4.0
+
+# 18.1 en http://localhost:6230 (BD Rock18Base; connection string en el worktree)
+& "C:\Program Files\IIS Express\iisexpress.exe" /path:"C:\Users\Servr local Rock RMS\Documents\GitHub\Rock18Base-wt\RockWeb" /port:6230 /clr:v4.0
+
+# Impresora falsa (escucha solo en 127.0.0.1:9100 y :9101; guarda el ZPL en dev-isolation\etiquetas_capturadas)
+powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Users\Servr local Rock RMS\Documents\GitHub\dev-isolation\impresora_falsa_zpl.ps1"
+```
+
+- Primera carga: ~70 s (6229) y ~100 s (6230). Entrar por `/checkin` y `/checkinmanager`.
+- Al arrancar 6229, Rock **vuelve a recompilar** `VidAventuracheckin/Styles/checkin-theme.css` (porque existe el
+  `_css-overrides.less` local): git lo mostrará modificado. **No commitearlo**; al terminar:
+  `git checkout -- RockWeb/Themes/VidAventuracheckin/Styles/checkin-theme.css`.
+- Verificación rápida antes de probar: `sqlcmd -S localhost -E -C -Q "SELECT name FROM sys.databases WHERE name IN ('Rock19Test','Rock18Base')"`.
 
 ---
 
