@@ -23,12 +23,12 @@ using System.Linq;
 using System.Web;
 
 using Rock.Attribute;
-using Rock.Communication.Chat;
 using Rock.Configuration;
 using Rock.Data;
 using Rock.Lava;
 using Rock.Model;
 using Rock.Utility;
+using Rock.Web;
 using Rock.Web.Cache;
 
 namespace Rock.Net
@@ -232,6 +232,12 @@ namespace Rock.Net
         internal PageCache Page => _pageCache;
 
         /// <summary>
+        /// Gets the <see cref="PageReference"/> that represents this page and
+        /// how it was originally loaded, such as the route used.
+        /// </summary>
+        internal PageReference PageReference { get; private set; }
+
+        /// <summary>
         /// <para>
         /// The unique identifier of the interaction related to the original
         /// page request. For block actions, this will be the interaction of
@@ -250,6 +256,21 @@ namespace Rock.Net
         /// </summary>
         internal Guid SessionGuid { get; set; } = Guid.NewGuid();
 
+        /// <summary>
+        /// <para>
+        /// Gets or sets the URL the client should navigate to once the current
+        /// request completes. This is set by the PageRedirect Lava filter when
+        /// it executes during a block action, because a server-side redirect of
+        /// a block action response cannot navigate the browser.
+        /// </para>
+        /// <para>
+        /// Blocks that resolve Lava templates inside a block action should check
+        /// this value after rendering and, when set, return it to the client so
+        /// the client can perform the navigation.
+        /// </para>
+        /// </summary>
+        internal string RedirectUrl { get; set; }
+
         #endregion
 
         #region Constructors
@@ -258,6 +279,15 @@ namespace Rock.Net
         /// Initializes an empty instance of the <see cref="RockRequestContext"/> class.
         /// </summary>
         internal RockRequestContext()
+            : this( new NullRockResponseContext() )
+        {
+        }
+
+        /// <summary>
+        /// Initializes an empty instance of the <see cref="RockRequestContext"/> class.
+        /// </summary>
+        /// <param name="response">The response object to use for this request.</param>
+        internal RockRequestContext( IRockResponseContext response )
         {
             PageParameters = new Dictionary<string, string>( StringComparer.InvariantCultureIgnoreCase );
             SiteContextEntities = new Dictionary<Type, Lazy<IEntity>>();
@@ -269,6 +299,7 @@ namespace Rock.Net
             RootUrlPath = string.Empty;
             HttpMethod = null;
             Form = new NameValueCollection( StringComparer.OrdinalIgnoreCase );
+            Response = response;
         }
 
         /// <summary>
@@ -370,6 +401,11 @@ namespace Rock.Net
                 PageParameters.AddOrReplace( key, request.QueryString[key] );
             }
 
+            foreach ( var kvp in request.RouteData )
+            {
+                PageParameters.AddOrReplace( kvp.Key, kvp.Value.ToStringSafe() );
+            }
+
             // Setup the headers.
             Headers = request.Headers.AllKeys
                 .Select( k => new KeyValuePair<string, IEnumerable<string>>( k, request.Headers.GetValues( k ) ) )
@@ -404,10 +440,14 @@ namespace Rock.Net
         /// example block actions or loading of the main page HTML.
         /// </summary>
         /// <param name="page">The page being loaded.</param>
-        internal void PrepareRequestForPage( PageCache page )
+        /// <param name="pageReference">The reference that identifies how this page was originally loaded.</param>
+        internal void PrepareRequestForPage( PageCache page, PageReference pageReference = null )
         {
             _pageCache = page ?? throw new ArgumentNullException( nameof( page ) );
             _siteCache = SiteCache.Get( page.SiteId );
+
+            PageReference = pageReference
+                ?? new PageReference( page.Id, 0, PageParameters as Dictionary<string, string>, QueryString );
 
             if ( _siteCache?.EnablePersonalization == true )
             {
@@ -640,6 +680,13 @@ namespace Rock.Net
                 {
                     // Load from IdKey.
                     entity = Reflection.GetIEntityForEntityType( type, entityKey );
+                }
+
+                // Don't provide a context entity the current person isn't
+                // allowed to view.
+                if ( entity is Rock.Security.ISecured securedEntity && !securedEntity.IsAuthorized( Rock.Security.Authorization.VIEW, CurrentPerson ) )
+                {
+                    return null;
                 }
 
                 if ( entity != null && entity is IHasAttributes attributedEntity )
@@ -1014,8 +1061,8 @@ namespace Rock.Net
             }
 
             mergeFields.Add( "Geolocation", ClientInformation?.Geolocation );
-            mergeFields.Add( "IsChatEnabled", ChatHelper.IsChatEnabled );
-            mergeFields.Add( $"{LavaHelper.InternalMergeFieldPrefix}RockRequestContext", this );
+            mergeFields.Add( "ExperienceMode", Rock.Web.SystemSettings.GetValue( SystemKey.SystemSetting.TRAILBLAZER_MODE ).AsBoolean() ? "Trailblazer" : "Essentials" );
+            mergeFields.Add( $"{LavaRenderContextBase.InternalMergeFieldPrefix}RockRequestContext", this );
 
             return mergeFields;
         }

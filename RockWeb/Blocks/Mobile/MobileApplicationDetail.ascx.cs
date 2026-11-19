@@ -75,6 +75,18 @@ namespace RockWeb.Blocks.Mobile
             public const string DeepLinkDetail = "DeepLinkDetail";
         }
 
+        private static class PageParameterKey
+        {
+            /// <summary>
+            /// Key for SiteId
+            /// </summary>
+            public const string SiteId = "SiteId";
+            /// <summary>
+            /// Key for which tab to show
+            /// </summary>
+            public const string Tab = "Tab";
+        }
+
         #region Private Fields
 
         private const string _defaultLayoutXaml = @"<?xml version=""1.0"" encoding=""utf-8"" ?>
@@ -139,8 +151,8 @@ namespace RockWeb.Blocks.Mobile
             {
                 ConfigureControls();
 
-                var siteId = PageParameter( "SiteId" ).AsInteger();
-                hfCurrentTab.Value = PageParameter( "Tab" ) ?? Tabs.Application.ConvertToString();
+                var siteId = PageParameter( PageParameterKey.SiteId ).AsInteger();
+                hfCurrentTab.Value = PageParameter( PageParameterKey.Tab ) ?? Tabs.Application.ConvertToString();
 
                 if ( siteId != 0 )
                 {
@@ -169,7 +181,7 @@ namespace RockWeb.Blocks.Mobile
         {
             var breadCrumbs = new List<BreadCrumb>();
 
-            int? siteId = PageParameter( pageReference, "SiteId" ).AsIntegerOrNull();
+            int? siteId = PageParameter( pageReference, PageParameterKey.SiteId ).AsIntegerOrNull();
             if ( siteId != null )
             {
                 var site = new SiteService( new RockContext() ).Get( siteId.Value );
@@ -498,6 +510,7 @@ namespace RockWeb.Blocks.Mobile
             dvpAuth0ConnectionStatus.SelectedDefinedValueId = additionalSettings.Auth0ConnectionStatusValueId ?? DefinedValueCache.Get( Rock.SystemGuid.DefinedValue.PERSON_CONNECTION_STATUS_VISITOR.AsGuid() ).Id;
             dvpAuth0RecordStatus.DefinedTypeId = DefinedTypeCache.Get( Rock.SystemGuid.DefinedType.PERSON_RECORD_STATUS ).Id;
             dvpAuth0RecordStatus.SelectedDefinedValueId = additionalSettings.Auth0RecordStatusValueId ?? DefinedValueCache.Get( Rock.SystemGuid.DefinedValue.PERSON_RECORD_STATUS_PENDING.AsGuid() ).Id;
+            cbAuth0RequireVerifiedEmail.Checked = additionalSettings.Auth0RequireVerifiedEmail;
 
             tbEntraClientId.Text = additionalSettings.EntraClientId;
             tbEntraTenantId.Text = additionalSettings.EntraTenantId;
@@ -521,6 +534,7 @@ namespace RockWeb.Blocks.Mobile
             ppEditProfilePage.SetValue( additionalSettings.ProfilePageId );
             ppEditInteractiveExperiencePage.SetValue( additionalSettings.InteractiveExperiencePageId );
             ppEditChatPage.SetValue( additionalSettings.ChatPageId );
+            ppEditOutreachToolboxTouchpointPage.SetValue( additionalSettings.OutreachToolboxTouchpointPageId );
 
             ppCommunicationViewPage.SetValue( additionalSettings.CommunicationViewPageId );
             ppEditSmsConversationPage.SetValue( additionalSettings.SmsConversationPageId );
@@ -787,7 +801,7 @@ namespace RockWeb.Blocks.Mobile
                     p.Id,
                     p.InternalName,
                     LayoutName = p.Layout.Name,
-                    DisplayInNavWhen = p.DisplayInNavWhen.GetDescription() ?? p.DisplayInNavWhen.ToStringSafe()
+                    DisplayInNavWhen = p.DisplayInNavWhen.GetDisplayName()
                 } )
                 .ToList();
 
@@ -911,7 +925,7 @@ namespace RockWeb.Blocks.Mobile
         /// <param name="e">The <see cref="EventArgs"/> instance containing the event data.</param>
         protected void lbEditCancel_Click( object sender, EventArgs e )
         {
-            var siteId = PageParameter( "SiteId" ).AsInteger();
+            var siteId = PageParameter( PageParameterKey.SiteId ).AsInteger();
 
             if ( siteId == 0 )
             {
@@ -947,7 +961,7 @@ namespace RockWeb.Blocks.Mobile
             var userLoginService = new UserLoginService( rockContext );
 
             // Find the site or if we are creating a new one, bootstrap it.
-            var site = siteService.Get( PageParameter( "SiteId" ).AsInteger() );
+            var site = siteService.Get( PageParameter( PageParameterKey.SiteId ).AsInteger() );
             if ( site == null )
             {
                 site = new Site
@@ -1013,6 +1027,7 @@ namespace RockWeb.Blocks.Mobile
             additionalSettings.InteractiveExperiencePageId = ppEditInteractiveExperiencePage.PageId;
             additionalSettings.CommunicationViewPageId = ppCommunicationViewPage.PageId;
             additionalSettings.SmsConversationPageId = ppEditSmsConversationPage.PageId;
+            additionalSettings.OutreachToolboxTouchpointPageId = ppEditOutreachToolboxTouchpointPage.PageId;
             additionalSettings.EnableNotificationsAutomatically = cbEnableNotificationsAutomatically.Checked;
             additionalSettings.FlyoutXaml = ceEditFlyoutXaml.Text;
             additionalSettings.IsDeepLinkingEnabled = cbEnableDeepLinking.Checked;
@@ -1027,6 +1042,7 @@ namespace RockWeb.Blocks.Mobile
             additionalSettings.Auth0Domain = tbAuth0ClientDomain.Text;
             additionalSettings.Auth0ConnectionStatusValueId = dvpAuth0ConnectionStatus.SelectedDefinedValueId;
             additionalSettings.Auth0RecordStatusValueId = dvpAuth0RecordStatus.SelectedDefinedValueId;
+            additionalSettings.Auth0RequireVerifiedEmail = cbAuth0RequireVerifiedEmail.Checked;
             additionalSettings.EntraClientId = tbEntraClientId.Text;
             additionalSettings.EntraTenantId = tbEntraTenantId.Text;
 
@@ -1035,8 +1051,11 @@ namespace RockWeb.Blocks.Mobile
                 additionalSettings.EntraAuthenticationComponent = compEntraAuthComponent.SelectedValueAsGuid().Value;
             }
 
-            // Save the image.
-            site.ThumbnailBinaryFileId = imgEditPreviewThumbnail.BinaryFileId;
+            // Save the image. Only accept the site's current file or a new upload, otherwise keep the current file.
+            if ( binaryFileService.IsUploadedBinaryFileAllowedForPerson( imgEditPreviewThumbnail.BinaryFileId, site.ThumbnailBinaryFileId, CurrentPerson ) )
+            {
+                site.ThumbnailBinaryFileId = imgEditPreviewThumbnail.BinaryFileId;
+            }
 
             // Ensure the images are persisted.
             if ( site.SiteLogoBinaryFileId.HasValue )
@@ -1046,6 +1065,11 @@ namespace RockWeb.Blocks.Mobile
             if ( site.ThumbnailBinaryFileId.HasValue )
             {
                 binaryFileService.Get( site.ThumbnailBinaryFileId.Value ).IsTemporary = false;
+            }
+
+            if (additionalSettings.DarkFavIconBinaryFileId.HasValue )
+            {
+                binaryFileService.Get( additionalSettings.DarkFavIconBinaryFileId.Value ).IsTemporary = false;
             }
 
             // This is a new site.
@@ -1151,12 +1175,19 @@ namespace RockWeb.Blocks.Mobile
                 var siteService = new SiteService( rockContext );
                 var binaryFileService = new BinaryFileService( rockContext );
 
-                var site = siteService.Get( PageParameter( "SiteId" ).AsInteger() );
+                var site = siteService.Get( PageParameter( PageParameterKey.SiteId ).AsInteger() );
                 var additionalSettings = site.AdditionalSettings.FromJsonOrNull<AdditionalSiteSettings>() ?? new AdditionalSiteSettings();
 
-                site.FavIconBinaryFileId = imgEditHeaderImage.BinaryFileId;
+                // Only accept the site's current files or new uploads, otherwise keep the current files.
+                if ( binaryFileService.IsUploadedBinaryFileAllowedForPerson( imgEditHeaderImage.BinaryFileId, site.FavIconBinaryFileId, CurrentPerson ) )
+                {
+                    site.FavIconBinaryFileId = imgEditHeaderImage.BinaryFileId;
+                }
 
-                additionalSettings.DarkFavIconBinaryFileId = imgEditHeaderDarkImage.BinaryFileId;
+                if ( binaryFileService.IsUploadedBinaryFileAllowedForPerson( imgEditHeaderDarkImage.BinaryFileId, additionalSettings.DarkFavIconBinaryFileId, CurrentPerson ) )
+                {
+                    additionalSettings.DarkFavIconBinaryFileId = imgEditHeaderDarkImage.BinaryFileId;
+                }
                 additionalSettings.BarBackgroundColor = cpBarBackgroundColor.Value;
                 additionalSettings.IOSEnableBarTransparency = cbNavbarTransclucent.Checked;
                 additionalSettings.IOSBarBlurStyle = ddlNavbarBlurStyle.SelectedValueAsEnumOrNull<IOSBlurStyle>() ?? IOSBlurStyle.None;
@@ -1223,6 +1254,11 @@ namespace RockWeb.Blocks.Mobile
                 if ( site.FavIconBinaryFileId.HasValue )
                 {
                     binaryFileService.Get( site.FavIconBinaryFileId.Value ).IsTemporary = false;
+                }
+
+                if ( additionalSettings.DarkFavIconBinaryFileId.HasValue )
+                {
+                    binaryFileService.Get( additionalSettings.DarkFavIconBinaryFileId.Value ).IsTemporary = false;
                 }
 
                 rockContext.SaveChanges();
@@ -1306,7 +1342,7 @@ namespace RockWeb.Blocks.Mobile
         /// <param name="e">The <see cref="EventArgs"/> instance containing the event data.</param>
         protected async void lbDeploy_Click( object sender, EventArgs e )
         {
-            var applicationId = PageParameter( "SiteId" ).AsInteger();
+            var applicationId = PageParameter( PageParameterKey.SiteId ).AsInteger();
 
             using ( var rockContext = new RockContext() )
             {
@@ -1546,11 +1582,18 @@ namespace RockWeb.Blocks.Mobile
         /// <param name="e">The <see cref="RowEventArgs"/> instance containing the event data.</param>
         protected void gDeepLinks_RowSelected( object sender, RowEventArgs e )
         {
-            NavigateToLinkedPage( AttributeKey.DeepLinkDetail, new Dictionary<string, string>
+            var queryParameters = new Dictionary<string, string>
             {
-                {"SiteId", hfSiteId.Value },
+                {PageParameterKey.SiteId, hfSiteId.Value },
                 {"DeepLinkRouteGuid", e.RowKeyValue.ToString() }
-            } );
+            };
+
+            if ( IsUserAuthorized( Authorization.EDIT ) )
+            {
+                queryParameters.Add( "AutoEdit", "true" );
+            }
+
+            NavigateToLinkedPage( AttributeKey.DeepLinkDetail, queryParameters );
         }
 
         /// <summary>

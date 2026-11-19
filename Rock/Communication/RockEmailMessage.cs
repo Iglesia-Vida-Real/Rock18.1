@@ -225,7 +225,7 @@ namespace Rock.Communication
             this.FromEmail = systemCommunication.From;
             this.FromName = systemCommunication.FromName;
 
-            var recipients = systemCommunication.To.SplitDelimitedValues().ToList().Select( a => RockEmailMessageRecipient.CreateAnonymous( a, null ) ).ToList();
+            var recipients = systemCommunication.To.SplitDelimitedValues().ToList().Select( a => CreateTemplateRecipient( a ) ).ToList();
             this.SetRecipients( recipients );
 
             this.CCEmails = systemCommunication.Cc.SplitDelimitedValues().ToList();
@@ -248,42 +248,16 @@ namespace Rock.Communication
             this.Recipients.AddRange( recipients );
         }
 
-        #region Obsolete
-
         /// <summary>
-        /// Initializes a new instance of the <see cref="RockEmailMessage"/> class.
-        /// This method would be removed in future along with the obsoleted <see cref="SystemEmail"/> Model.
+        /// Creates an anonymous recipient whose address is an admin-authored Lava template.
         /// </summary>
-        /// <param name="systemEmail">The system email.</param>
-        [Obsolete( "Use constructor RockEmailMessage( SystemCommunication ) instead.", true )]
-        [RockObsolete( "1.10")]
-        public RockEmailMessage( SystemEmail systemEmail ) : this()
+        /// <param name="to">The To value from a System Communication or System Email.</param>
+        /// <returns>A recipient that the transport renders as Lava before sending.</returns>
+        private static RockEmailMessageRecipient CreateTemplateRecipient( string to )
         {
-            InitEmailMessage( systemEmail );
+            var recipient = RockEmailMessageRecipient.CreateAnonymous( to, null );
+            recipient.IsToLavaTemplate = true;
+            return recipient;
         }
-
-        /// <summary>
-        /// Initializes the email message.
-        /// This method would be removed in future along with the obsoleted <see cref="SystemEmail"/> Model.
-        /// </summary>
-        /// <param name="systemEmail">The system email.</param>
-        [Obsolete("", true)]
-        [RockObsolete( "1.10" )]
-        private void InitEmailMessage( SystemEmail systemEmail )
-        {
-            if ( systemEmail != null )
-            {
-                this.FromEmail = systemEmail.From;
-                this.FromName = systemEmail.FromName;
-                var recipients = systemEmail.To.SplitDelimitedValues().ToList().Select( a => RockEmailMessageRecipient.CreateAnonymous( a, null ) ).ToList();
-                this.SetRecipients( recipients );
-                this.CCEmails = systemEmail.Cc.SplitDelimitedValues().ToList();
-                this.BCCEmails = systemEmail.Bcc.SplitDelimitedValues().ToList();
-                this.Subject = systemEmail.Subject;
-                this.Message = systemEmail.Body;
-            }
-        }
-
-        #endregion
     }
 }

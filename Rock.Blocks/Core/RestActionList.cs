@@ -95,6 +95,7 @@ namespace Rock.Blocks.Core
             if ( controller != null )
             {
                 options.ControllerName = controller.Name.SplitCase();
+#if NET472_OR_GREATER
                 var controllerType = Reflection.FindTypes( typeof( Rock.Rest.ApiControllerBase ) )
                     .Where( a => a.Key.Equals( controller.ClassName ) ).Select( a => a.Value ).FirstOrDefault();
 
@@ -106,6 +107,7 @@ namespace Rock.Blocks.Core
                         options.ObsoleteWarning = $"Obsolete: {obsoleteAttribute.Message}";
                     }
                 }
+#endif
             }
 
             return options;
@@ -173,6 +175,12 @@ namespace Rock.Blocks.Core
             var restAction = new RestActionService( RockContext ).Get( model.ControllerActionId );
 
             if ( restAction == null )
+            {
+                return ActionBadRequest( "REST action not found." );
+            }
+
+            // Only allow editing actions that are shown in the list.
+            if ( !GetListQueryable( RockContext ).Any( a => a.Id == restAction.Id ) )
             {
                 return ActionBadRequest( "REST action not found." );
             }

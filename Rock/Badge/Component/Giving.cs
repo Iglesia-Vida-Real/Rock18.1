@@ -38,8 +38,22 @@ namespace Rock.Badge.Component
     [AccountsField( "Accounts", "The accounts to limit this to, or leave blank to include all accounts", false, order: 1 )]
     [DecimalField( "Minimum Amount", "The minimum contribution amount", required: false, order: 2 )]
     [SlidingDateRangeField( "Date Range", "The date range in which the contributions were made.", defaultValue: "Last|6|Month||", required: false, order: 3 )]
-    [CodeEditorField( "Lava Template", "The lava template to use for the badge display", CodeEditorMode.Lava, CodeEditorTheme.Rock, 200, order: 4, defaultValue:
-        @"
+
+    /*
+        10/14/2026 - MSE
+
+        The default template puts the tooltip in an HTML attribute, which the browser
+        decodes once, and badge tooltips are then rendered as HTML (BadgeControl sets
+        html: true). A person can set their own name (for example through a public
+        signup form), so the tooltip is escaped twice to still be encoded when it is
+        rendered.
+
+        Reason: Prevent stored XSS through a person's name in the badge tooltip.
+    */
+    [CodeEditorField( "Lava Template",
+        Description = "The lava template to use for the badge display",
+        EditorMode = CodeEditorMode.Lava,
+        DefaultValue = @"
 {% if DateRange and DateRange.Summary != '' %}
   {% capture dateRangeText %} in the {{ DateRange.Summary | Downcase }}{% endcapture %}
 {% else %}
@@ -54,10 +68,13 @@ namespace Rock.Badge.Component
   {% capture tooltipText %}{{ Person.NickName }} has not contributed{{ dateRangeText }}.{% endcapture %}
 {% endif %}
 
-<div class='rockbadge rockbadge-giving rockbadge-id-{{Badge.Id}}' data-toggle='tooltip' data-original-title='{{ tooltipText }}'>
+<div class='rockbadge rockbadge-giving rockbadge-id-{{Badge.Id}}' data-toggle='tooltip' data-original-title='{{ tooltipText | Escape | Escape }}'>
   <i class='badge-icon ti ti-heartbeat' style='color: {{ iconColor }}'></i>
 </div>
-" )]
+",
+        Order = 4
+        )]
+
     [Rock.SystemGuid.EntityTypeGuid( "2F3E57EC-D126-4F0D-B1E5-C78E220C2060")]
     public class Giving : BadgeComponent
     {

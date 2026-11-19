@@ -24,6 +24,7 @@ using System.Threading.Tasks;
 using Rock.Data;
 using Rock.Enums.Security;
 using Rock.Model;
+using Rock.Net;
 using Rock.Observability;
 using Rock.RealTime;
 using Rock.RealTime.Topics;
@@ -387,13 +388,14 @@ namespace Rock.CheckIn.v2
         }
 
         /// <summary>
-        /// Gets the current attendance query for the date specified. This
-        /// includes pending attendance records.
+        /// Gets the attendance query for the date specified. This includes
+        /// all attendance records related to check-in, including pending and
+        /// previous service records.
         /// </summary>
         /// <param name="startDateTime">Attendance records must start on this date.</param>
         /// <param name="rockContext">The database context to execute the query on.</param>
         /// <returns>A queryable of <see cref="Attendance"/> records.</returns>
-        public static IQueryable<Attendance> GetCurrentAttendanceQuery( DateTime startDateTime, RockContext rockContext )
+        public static IQueryable<Attendance> GetDailyAttendanceQuery( DateTime startDateTime, RockContext rockContext )
         {
             var attendanceService = new AttendanceService( rockContext );
 
@@ -405,8 +407,7 @@ namespace Rock.CheckIn.v2
                     && a.Occurrence.ScheduleId.HasValue
                     && a.PersonAliasId.HasValue
                     && a.DidAttend.HasValue
-                    && a.DidAttend.Value == true
-                    && !a.EndDateTime.HasValue );
+                    && a.DidAttend.Value == true );
         }
 
         /// <summary>
@@ -419,11 +420,39 @@ namespace Rock.CheckIn.v2
         /// <returns>A collection of <see cref="RecentAttendance"/> records.</returns>
         public static List<RecentAttendance> GetCurrentAttendance( DateTime startDateTime, IReadOnlyList<int> locationIds, RockContext rockContext )
         {
-            var personAttendanceQuery = GetCurrentAttendanceQuery( startDateTime, rockContext );
+            var personAttendanceQuery = GetDailyAttendanceQuery( startDateTime, rockContext );
 
             personAttendanceQuery = WhereContains( personAttendanceQuery, locationIds, a => a.Occurrence.Location.Id );
 
-            return GetRecentAttendanceFromQuery( personAttendanceQuery );
+            var attendance = GetRecentAttendanceFromQuery( personAttendanceQuery );
+
+            return FilterToCurrentlyCheckedIn( attendance, rockContext ).ToList();
+        }
+
+        /// <summary>
+        /// Filters a set of recent attendance records to return only those which
+        /// are currently checked in based on the schedule and the attendance
+        /// status. Specifically, this will filter out records if they have been
+        /// marked as checked out or if their schedule has already ended.
+        /// </summary>
+        /// <param name="attendances">The records to filter.</param>
+        /// <param name="rockContext">The context to use when reading information from the database.</param>
+        /// <returns>A set of recent attendance records that have been filtered to just those that are currently checked in.</returns>
+        public static IEnumerable<RecentAttendance> FilterToCurrentlyCheckedIn( IEnumerable<RecentAttendance> attendances, RockContext rockContext )
+        {
+            return attendances
+                .Where( a => a.Status != Enums.Event.CheckInStatus.CheckedOut
+                    && !a.EndDateTime.HasValue )
+                .GroupBy( a => new { a.ScheduleId, a.CampusId } )
+                .SelectMany( grp =>
+                {
+                    // The vast majority of attendance records for a single
+                    // location should have the same schedule and campus.
+                    var scheduleCache = NamedScheduleCache.GetByIdKey( grp.Key.ScheduleId, rockContext );
+                    var campusCache = CampusCache.GetByIdKey( grp.Key.CampusId, rockContext );
+
+                    return grp.Where( a => Attendance.CalculateIsCurrentlyCheckedIn( a.StartDateTime, a.EndDateTime, campusCache, scheduleCache ) );
+                } );
         }
 
         /// <summary>
@@ -608,7 +637,17 @@ namespace Rock.CheckIn.v2
             // A local function to centralize the saving of a history login record.
             void SaveHistoryLoginIfNeeded( LoginFailureReason? reason = null, string message = null )
             {
-                if ( !saveHistoryLogin )
+                /*
+                    10/15/2026 - MSE
+
+                    Failed attempts are always saved so that PIN guessing leaves a
+                    trace in login history. Successful attempts are still only saved
+                    when requested, since the supervisor actions send the PIN again
+                    on every call.
+
+                    Reason: Record every failed check-in PIN attempt.
+                */
+                if ( !saveHistoryLogin && !reason.HasValue )
                 {
                     return;
                 }
@@ -626,6 +665,27 @@ namespace Rock.CheckIn.v2
                 SaveHistoryLoginIfNeeded( LoginFailureReason.Other, $"{pinAuthProviderName} is not active." );
 
                 errorMessage = "Sorry, we couldn't find an account matching that PIN.";
+                return false;
+            }
+
+            /*
+                10/15/2026 - MSE
+
+                Count the attempt before the PIN is looked up so that a correct
+                guess made after too many wrong ones is still refused. The check
+                and the count happen in one step so parallel requests cannot go
+                over the limit. Attempts that turn out not to be wrong guesses
+                are given back below.
+
+                Reason: Prevent check-in PINs from being guessed by brute force.
+            */
+            var clientIpAddress = RockRequestContextAccessor.Current?.ClientInformation?.IpAddress ?? string.Empty;
+
+            if ( !PinAttemptLimiter.TryReserveAttempt( clientIpAddress ) )
+            {
+                SaveHistoryLoginIfNeeded( LoginFailureReason.LockedOut, "Too many failed PIN attempts." );
+
+                errorMessage = "Too many failed PIN attempts. Please wait a few minutes and try again.";
                 return false;
             }
 
@@ -668,6 +728,9 @@ namespace Rock.CheckIn.v2
 
             if ( !( userLogin.IsConfirmed ?? true ) )
             {
+                // The PIN matched a real login, so this is not a wrong guess.
+                PinAttemptLimiter.ReleaseAttempt( clientIpAddress );
+
                 SaveHistoryLoginIfNeeded( LoginFailureReason.UserNotConfirmed );
 
                 errorMessage = "Sorry, account needs to be confirmed.";
@@ -675,6 +738,9 @@ namespace Rock.CheckIn.v2
             }
             else if ( userLogin.IsLockedOut ?? false )
             {
+                // The PIN matched a real login, so this is not a wrong guess.
+                PinAttemptLimiter.ReleaseAttempt( clientIpAddress );
+
                 SaveHistoryLoginIfNeeded( LoginFailureReason.LockedOut );
 
                 errorMessage = "Sorry, account is locked-out.";
@@ -682,6 +748,8 @@ namespace Rock.CheckIn.v2
             }
             else
             {
+                PinAttemptLimiter.Reset( clientIpAddress );
+
                 SaveHistoryLoginIfNeeded();
 
                 errorMessage = string.Empty;

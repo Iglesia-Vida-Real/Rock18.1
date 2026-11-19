@@ -43,7 +43,6 @@ namespace Rock.Blocks.Security
     [CodeEditorField( "Confirmed Caption",
         Key = AttributeKey.ConfirmedCaption,
         EditorMode = Rock.Web.UI.Controls.CodeEditorMode.Html,
-        EditorTheme = Rock.Web.UI.Controls.CodeEditorTheme.Rock,
         EditorHeight = 200,
         IsRequired = false,
         DefaultValue = "{0}, your account has been confirmed. Thank you for creating the account.",
@@ -53,7 +52,6 @@ namespace Rock.Blocks.Security
     [CodeEditorField( "Reset Password Caption",
         Key = AttributeKey.ResetPasswordCaption,
         EditorMode = Rock.Web.UI.Controls.CodeEditorMode.Html,
-        EditorTheme = Rock.Web.UI.Controls.CodeEditorTheme.Rock,
         EditorHeight = 200,
         IsRequired = false,
         DefaultValue = "{0}, enter a new password for your '{1}' account.",
@@ -63,7 +61,6 @@ namespace Rock.Blocks.Security
     [CodeEditorField( "Password Reset Caption",
         Key = AttributeKey.PasswordResetCaption,
         EditorMode = Rock.Web.UI.Controls.CodeEditorMode.Html,
-        EditorTheme = Rock.Web.UI.Controls.CodeEditorTheme.Rock,
         EditorHeight = 200,
         IsRequired = false,
         DefaultValue = "{0}, the password for your '{1}' account has been changed.",
@@ -73,7 +70,6 @@ namespace Rock.Blocks.Security
     [CodeEditorField( "Delete Caption",
         Key = AttributeKey.DeleteCaption,
         EditorMode = Rock.Web.UI.Controls.CodeEditorMode.Html,
-        EditorTheme = Rock.Web.UI.Controls.CodeEditorTheme.Rock,
         EditorHeight = 200,
         IsRequired = false,
         DefaultValue = "Are you sure you want to delete the '{0}' account?",
@@ -83,7 +79,6 @@ namespace Rock.Blocks.Security
     [CodeEditorField( "Deleted Caption",
         Key = AttributeKey.DeletedCaption,
         EditorMode = Rock.Web.UI.Controls.CodeEditorMode.Html,
-        EditorTheme = Rock.Web.UI.Controls.CodeEditorTheme.Rock,
         EditorHeight = 200,
         IsRequired = false,
         DefaultValue = "The account has been deleted.",
@@ -93,7 +88,6 @@ namespace Rock.Blocks.Security
     [CodeEditorField( "Invalid Caption",
         Key = AttributeKey.InvalidCaption,
         EditorMode = Rock.Web.UI.Controls.CodeEditorMode.Html,
-        EditorTheme = Rock.Web.UI.Controls.CodeEditorTheme.Rock,
         EditorHeight = 200,
         IsRequired = false,
         DefaultValue = "The confirmation code you've entered is not valid.  Please enter a valid confirmation code or <a href='{0}'>create a new account</a>.",
@@ -103,7 +97,6 @@ namespace Rock.Blocks.Security
     [CodeEditorField( "Password Reset Unavailable Caption",
         Key = AttributeKey.PasswordResetUnavailableCaption,
         EditorMode = Rock.Web.UI.Controls.CodeEditorMode.Html,
-        EditorTheme = Rock.Web.UI.Controls.CodeEditorTheme.Rock,
         EditorHeight = 200,
         IsRequired = false,
         DefaultValue = "This type of account does not allow passwords to be changed.  Please contact your system administrator for assistance changing your password.",
@@ -435,9 +428,17 @@ namespace Rock.Blocks.Security
         {
             var caption = this.AccountConfirmedCaptionTemplate;
 
+            /*
+                10/19/2026 - MSE
+
+                The caption template is admin authored HTML and stays HTML. The first name and
+                user name formatted into it are stored data a person can set, so they are encoded.
+
+                Reason: Prevent stored XSS through a person's name in Confirm Account.
+            */
             if ( caption.Contains( "{0}" ) )
             {
-                caption = string.Format( caption, user.Person.FirstName );
+                caption = string.Format( caption, user.Person.FirstName.EncodeHtml() );
             }
 
             return caption;
@@ -527,13 +528,21 @@ namespace Rock.Blocks.Security
         private string GetChangePasswordCaption( UserLogin user )
         {
             var caption = this.ChangePasswordCaptionTemplate;
+            /*
+                10/19/2026 - MSE
+
+                The caption template is admin authored HTML and stays HTML. The first name and
+                user name formatted into it are stored data a person can set, so they are encoded.
+
+                Reason: Prevent stored XSS through a person's name in Confirm Account.
+            */
             if ( caption.Contains( "{1}" ) )
             {
-                caption = string.Format( caption, user.Person.FirstName, user.UserName );
+                caption = string.Format( caption, user.Person.FirstName.EncodeHtml(), user.UserName.EncodeHtml() );
             }
             else if ( caption.Contains( "{0}" ) )
             {
-                caption = string.Format( caption, user.Person.FirstName );
+                caption = string.Format( caption, user.Person.FirstName.EncodeHtml() );
             }
             return caption;
         }
@@ -547,9 +556,17 @@ namespace Rock.Blocks.Security
         {
             var caption = this.DeleteConfirmationCaptionTemplate;
 
+            /*
+                10/19/2026 - MSE
+
+                The caption template is admin authored HTML and stays HTML. The first name and
+                user name formatted into it are stored data a person can set, so they are encoded.
+
+                Reason: Prevent stored XSS through a person's name in Confirm Account.
+            */
             if ( caption.Contains( "{0}" ) )
             {
-                caption = string.Format( caption, user.UserName );
+                caption = string.Format( caption, user.UserName.EncodeHtml() );
             }
 
             return caption;
@@ -586,13 +603,21 @@ namespace Rock.Blocks.Security
         {
             var caption = this.PasswordChangedCaptionTemplate;
 
+            /*
+                10/19/2026 - MSE
+
+                The caption template is admin authored HTML and stays HTML. The first name and
+                user name formatted into it are stored data a person can set, so they are encoded.
+
+                Reason: Prevent stored XSS through a person's name in Confirm Account.
+            */
             if ( caption.Contains( "{1}" ) )
             {
-                caption = string.Format( caption, user.Person.FirstName, user.UserName );
+                caption = string.Format( caption, user.Person.FirstName.EncodeHtml(), user.UserName.EncodeHtml() );
             }
             else if ( caption.Contains( "{0}" ) )
             {
-                caption = string.Format( caption, user.Person.FirstName );
+                caption = string.Format( caption, user.Person.FirstName.EncodeHtml() );
             }
 
             return caption;

@@ -17,7 +17,6 @@
     background-color: var(--color-interface-softer);
     padding-left: 0;
     padding-right: 0;
-    overflow: hidden;
 }
 
 /* HEADER */
@@ -56,12 +55,25 @@
     pointer-events: auto;
 }
 
+.contentsection-header-title-and-description {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
 .contentsection-header-title {
     display: flex;
     align-items: center;
     gap: var(--spacing-tiny);
     color: var(--color-interface-strong);
     margin: 0;
+}
+
+.contentsection-header-description {
+    color: var(--color-interface-medium);
+    font-size: var(--font-size-xsmall);
+    line-height: var(--line-height-tight);
+    margin-top: var(--spacing-tiny);
 }
 
 .contentsection .contentsection-header-actions .ti-chevron-up {
@@ -80,7 +92,15 @@
     padding: var(--spacing-large);
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-xlarge);
+    gap: var(--spacing-large);
+
+    /* Body Collapse - This is needed in order to make the spacing of the ContentStacks work correctly when conditionally rendering stacks... wrapped within a TransitionVerticalCollapse */
+    .contentsection-body-collapse {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-large);
+    }
+
 }
 
 .contentsection-header + div > .contentsection-body {
@@ -96,6 +116,7 @@
 
 .contentsection-body-overflow-toggle {
     margin-bottom: var(--spacing-small);
+    padding-left: var(--spacing-xsmall);
 }
 
 .contentsection-body-overflow-toggle .btn {
@@ -261,7 +282,7 @@
     z-index: 10;
 }
 
-.contentsection-nav > .contentsection-nav-header {
+.contentsection-nav .contentsection-nav-header {
     width: 100%;
     display: flex;
     justify-content: space-between;
@@ -270,13 +291,13 @@
     margin-bottom: var(--spacing-tiny);
 }
 
-.contentsection-nav > .contentsection-nav-header-title {
+.contentsection-nav .contentsection-nav-header-title {
     color: var(--color-interface-medium);
     font-size: var(--font-size-small);
     padding-left: var(--spacing-small);
 }
 
-.contentsection-nav > .contentsection-nav-link {
+.contentsection-nav .contentsection-nav-link {
     border: none;
     border-radius: var(--rounded-small);
     background-color: transparent;
@@ -289,24 +310,24 @@
     margin-bottom: var(--spacing-tiny);
 }
 
-.contentsection-nav > .list-group-item i.ti {
+.contentsection-nav .list-group-item i.ti {
     font-size: var(--font-size-regular);
     margin-right: var(--spacing-xsmall);
     color: var(--color-interface-strong);
     align-self: center;
 }
 
-.contentsection-nav > .list-group-item:hover {
+.contentsection-nav .list-group-item:hover {
     background-color: var(--color-interface-softest);
 }
 
-.contentsection-nav > .list-group-item.active {
+.contentsection-nav .list-group-item.active {
     background-color: var(--color-interface-softest);
     font-weight: var(--font-weight-semibold);
     color: var(--color-interface-strong);
 }
 
-.contentsection-nav > .list-group-item.active i.ti {
+.contentsection-nav .list-group-item.active i.ti {
     color: var(--color-interface-strong);
 }
 
@@ -324,10 +345,10 @@
 }
 
 .contentsection-container > .contentsection-nav {
-    height: 100%;
     flex: 0 0 20%;
     position: sticky;
     top: 0;
+    overflow-y: auto;
 }
 
 .contentsection-list {
@@ -336,8 +357,8 @@
     flex: 1 1 80%;
     gap: var(--spacing-xlarge);
     height: auto;
-    overflow-y: auto;
     scroll-behavior: smooth;
+    width: 100%;
 }
 
 .contentsection-container.contentsection-nav-left {
@@ -364,3 +385,22 @@
 }
 
 // ======================== END MOBILE ADJUSTMENTS =======================
+
+// ======================== PRINT ========================
+
+/*
+    7/30/26 - CLAUDE
+
+    The nav has nothing to act on once printed. It was already absent by
+    accident, since the print page box (~740px) falls under the mobile
+    breakpoint above. Mirrors the styles-v2 copy of this component; keep in sync.
+
+    Reason: Hide the section nav when printing, deliberately.
+*/
+@media print {
+    .contentsection-nav {
+        display: none;
+    }
+}
+
+// ======================== END PRINT ========================

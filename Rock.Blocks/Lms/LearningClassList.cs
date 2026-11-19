@@ -212,7 +212,7 @@ namespace Rock.Blocks.Lms
         protected override IQueryable<LearningClass> GetListQueryable( RockContext rockContext )
         {
             // Eagerly load the LearningProgram in case it needs to be checked for VIEW authorization.
-            var baseQuery = new LearningClassService( rockContext )
+            IQueryable<LearningClass> baseQuery = new LearningClassService( rockContext )
                 .Queryable()
                 .Include( c => c.LearningCourse )
                 .Include( c => c.LearningCourse.LearningProgram )
@@ -309,7 +309,21 @@ namespace Rock.Blocks.Lms
             }
 
             var learningClassService = new LearningClassService( RockContext );
-            var copiedEntity = learningClassService.Copy( key );
+
+            // Make sure the class exists and the person can edit it.
+            var entity = learningClassService.Get( key, !PageCache.Layout.Site.DisablePredictableIds );
+
+            if ( entity == null )
+            {
+                return ActionNotFound();
+            }
+
+            if ( !entity.IsAuthorized( Authorization.EDIT, RequestContext.CurrentPerson ) )
+            {
+                return ActionBadRequest( $"Not authorized to copy {LearningClass.FriendlyTypeName}." );
+            }
+
+            var copiedEntity = learningClassService.Copy( entity );
             var currentPageParams = new Dictionary<string, string>
             {
                 [PageParameterKey.LearningProgramId] = PageParameter( PageParameterKey.LearningProgramId )

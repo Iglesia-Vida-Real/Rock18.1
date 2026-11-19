@@ -23,6 +23,7 @@
 <script setup lang="ts">
     import { standardAsyncPickerProps, useStandardAsyncPickerProps, useStandardRockFormFieldProps, useVModelPassthrough } from "@Obsidian/Utility/component";
     import { useHttp } from "@Obsidian/Utility/http";
+    import { useSecurityGrantToken } from "@Obsidian/Utility/block";
     import { ListItemBag } from "@Obsidian/ViewModels/Utility/listItemBag";
     import { PropType, computed, ref, watch } from "vue";
     import BaseAsyncPicker from "./baseAsyncPicker.obs";
@@ -31,7 +32,6 @@
     import { PickerDisplayStyle } from "@Obsidian/Enums/Controls/pickerDisplayStyle";
     import { areEqual, emptyGuid, toGuidOrNull } from "@Obsidian/Utility/guid";
     import { GroupAndRolePickerGetRolesOptionsBag } from "@Obsidian/ViewModels/Rest/Controls/groupAndRolePickerGetRolesOptionsBag";
-    import { normalizeRules } from "@Obsidian/ValidationRules";
 
     const props = defineProps({
         /** V-model for the role */
@@ -77,6 +77,7 @@
     const standardProps = useStandardAsyncPickerProps(props);
     const fieldProps = useStandardRockFormFieldProps(props);
     const http = useHttp();
+    const securityGrantToken = useSecurityGrantToken();
 
     const internalTypeValue = useVModelPassthrough(props, "groupType", emit);
     const internalGroupValue = useVModelPassthrough(props, "group", emit);
@@ -104,15 +105,6 @@
         return loadedRoleItems.value || loadRoleItems;
     });
 
-    /** Rules pass to the GroupTypeGroup Picker */
-    const typeGroupPickerRules = computed(() => {
-        const rules = normalizeRules(props.rules);
-        if (rules.includes("required")) {
-            return "required";
-        }
-        return "";
-    });
-
     // #endregion
 
     // #region Functions
@@ -126,7 +118,8 @@
         }
 
         const options: GroupAndRolePickerGetRolesOptionsBag = {
-            groupTypeGuid
+            groupTypeGuid,
+            securityGrantToken: securityGrantToken.value
         };
 
         const result = await http.post<ListItemBag[]>("/api/v2/Controls/GroupAndRolePickerGetRoles", null, options);

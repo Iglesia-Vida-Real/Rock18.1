@@ -21,7 +21,9 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo( "Rock.Blocks" )]
 [assembly: InternalsVisibleTo( "Rock.CodeGeneration" )]
 [assembly: InternalsVisibleTo( "Rock.Migrations" )]
+[assembly: InternalsVisibleTo( "Rock.Oidc" )]
 [assembly: InternalsVisibleTo( "Rock.RealTime.Dynamic" )]
+[assembly: InternalsVisibleTo( "Rock.Security.Authentication.Auth0" )]
 [assembly: InternalsVisibleTo( "Rock.Rest" )]
 [assembly: InternalsVisibleTo( "Rock.Tests.Shared" )]
 [assembly: InternalsVisibleTo( "Rock.Tests" )]
@@ -42,6 +44,7 @@ using System.Runtime.CompilerServices;
 [assembly: Rock.Logging.RockLoggingCategory( "Rock.Financial" )]
 [assembly: Rock.Logging.RockLoggingCategory( "Rock.Lava" )]
 [assembly: Rock.Logging.RockLoggingCategory( "Rock.Model" )]
+[assembly: Rock.Logging.RockLoggingCategory( "Rock.Oidc" )]
 [assembly: Rock.Logging.RockLoggingCategory( "Rock.Transactions" )]
 [assembly: Rock.Logging.RockLoggingCategory( "Rock.Transactions.RockQueue" )]
 [assembly: Rock.Logging.RockLoggingCategory( "Rock.Web" )]
@@ -156,3 +159,15 @@ using System.Runtime.CompilerServices;
 
 // The following type forwardings were setup in Rock 17.1
 [assembly: TypeForwardedTo( typeof(Rock.Media.MediaElementQuality ) )]
+
+// The following type forwardings were setup in Rock 19.0.4
+[assembly: TypeForwardedTo( typeof( Rock.Model.GroupLocationPickerMode ) )]
+[assembly: TypeForwardedTo( typeof( Rock.Model.GroupMemberWorkflowTriggerType ) )]
+[assembly: TypeForwardedTo( typeof( Rock.Model.ScheduleType ) )]
+
+// The following type forwardings were setup in Rock 19.0.5
+[assembly: TypeForwardedTo( typeof( Rock.Model.ConnectionState ) )]
+
+// The following type forwardings were setup in Rock 19.0.6
+[assembly: TypeForwardedTo( typeof( Rock.Utility.FamilyLimits ) )]
+[assembly: TypeForwardedTo( typeof( Rock.Utility.CreateConnectionRequestOptions ) )]

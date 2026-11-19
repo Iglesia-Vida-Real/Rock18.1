@@ -80,7 +80,41 @@ namespace Rock.Rest.Controllers
         {
             var errorMessage = string.Empty;
 
+            /*
+                10/23/2026 - MSE
+
+                Finance callers may charge on behalf of donors, but disabling payment
+                safeguards requires Administrate permission on this REST action.
+
+                Reason: Keep payment protection overrides limited to trusted callers.
+            */
+            if ( !enableDuplicateChecking || !enableScheduleAdherenceProtection )
+            {
+                var restAction = RestActionCache.Get( new Guid( "D9027A44-BAF1-4D6F-9681-9E461ED9D071" ) );
+                if ( restAction?.IsAuthorized( Rock.Security.Authorization.ADMINISTRATE, GetPerson() ) != true )
+                {
+                    throw new HttpResponseException( ControllerContext.Request.CreateErrorResponse( HttpStatusCode.Unauthorized, "Turning off duplicate or schedule protection requires Administrate permission on this endpoint." ) );
+                }
+            }
+
             var rockContext = Service.Context as RockContext;
+
+            /*
+                10/23/2026 - MSE
+
+                This endpoint also accepts a schedule in its payment arguments, so it
+                must reject inactive schedules just like the scheduled Process endpoint.
+
+                Reason: Do not bypass inactive schedule protection through this endpoint.
+            */
+            if ( automatedPaymentArgs?.ScheduledTransactionId.HasValue == true &&
+                new FinancialScheduledTransactionService( rockContext ).Queryable()
+                    .Any( s => s.Id == automatedPaymentArgs.ScheduledTransactionId.Value && !s.IsActive ) )
+            {
+                var errorResponse = ControllerContext.Request.CreateErrorResponse( HttpStatusCode.Conflict, "The scheduled transaction is not active." );
+                throw new HttpResponseException( errorResponse );
+            }
+
             var automatedPaymentProcessor = new AutomatedPaymentProcessor( GetPersonAliasId( rockContext ), automatedPaymentArgs, rockContext, enableDuplicateChecking, enableScheduleAdherenceProtection );
 
             if ( !automatedPaymentProcessor.AreArgsValid( out errorMessage ) )
@@ -176,11 +210,27 @@ namespace Rock.Rest.Controllers
             return base.Post( value );
         }
 
+        /// <inheritdoc/>
+        protected override bool IsRelatedEntityCollectionAllowed( string propertyName )
+        {
+            /*
+                10/15/2026 - MSE
+
+                The Check Scanner posts a new transaction with its TransactionDetails in one
+                request. A detail takes its permissions from its transaction, which the POST
+                has already authorized, so these may still be inserted with the transaction.
+
+                Reason: Keep Check Scanner uploads working.
+            */
+            return propertyName == nameof( FinancialTransaction.TransactionDetails );
+        }
+
         /// <summary>
         /// Returns true if a transaction with the same MICR track data is already in the database
         /// </summary>
         /// <param name="scannedCheckMicr">The scanned check micr track data</param>
         /// <returns></returns>
+        [Authenticate, Secured]
         [HttpPost]
         [System.Web.Http.Route( "api/FinancialTransactions/AlreadyScanned" )]
         [Rock.SystemGuid.RestActionGuid( "001C7C76-F70D-4A5A-8462-C9CE35FECF46" )]
@@ -303,7 +353,7 @@ namespace Rock.Rest.Controllers
         /// </summary>
         /// <param name="personAliasId">The person alias identifier.</param>
         /// <param name="year">Defaults to the current year.</param>
-        /// <param name="includeGivingGroup">Should transactions belonging to anyone in the person's giving group be included</param>
+        /// <param name="includeGivingGroup">Should transactions belonging to anyone in the person's giving group be included. (Default is true)</param>
         /// <param name="transactionTypeGuid">The guid of the defined value of the transaction type to include. If omitted, all transaction types will be included</param>
         /// <param name="excludedStatus">Transactions of this status will be excluded. If omitted, all transaction statuses will be included</param>
         /// <param name="excludedSourceTypeGuid">The unique identifier of a <see cref="FinancialTransaction.SourceTypeValue"/> to exclude from the results</param>
@@ -332,21 +382,67 @@ namespace Rock.Rest.Controllers
             var rockContext = new RockContext();
             var transactionService = new FinancialTransactionService( rockContext );
 
+            // Filter by a half-open date range instead of comparing the year part of the
+            // transaction date. The original "TransactionDateTime.Value.Year == yearFilter"
+            // translates to "WHERE DATEPART( year, [TransactionDateTime] ) = @year", which
+            // is a filter on a computed expression and prevents SQL Server from seeking
+            // the TransactionDateTime indexes. The half-open range below is sargable so
+            // the optimizer can seek the index directly. The result set is unchanged
+            // (Jan 1 00:00:00 inclusive through next year's Jan 1 00:00:00 exclusive).
+            var startOfYear = new DateTime( yearFilter, 1, 1 );
+            var startOfNextYear = startOfYear.AddYears( 1 );
+
             var query = transactionService.Queryable( "FinancialPaymentDetail, TransactionDetails.Account" ).AsNoTracking().Where( t =>
                 t.AuthorizedPersonAliasId.HasValue &&
                 t.TransactionDateTime.HasValue &&
-                t.TransactionDateTime.Value.Year == yearFilter );
+                t.TransactionDateTime >= startOfYear &&
+                t.TransactionDateTime < startOfNextYear );
 
-            // If we include the giving group, then query for everyone in it, otherwise just the id sent
-            if ( includeGivingGroup )
+            // Resolve the requested person's PersonId and GivingGroupId once up front.
+            // This is a single PK seek on PersonAlias plus a join to Person, so it is
+            // sub-millisecond. Doing this lookup once lets the giving-group filter below
+            // be a simple scalar comparison on the main query, instead of the per-row
+            // correlated subquery (against PersonAlias and Person) that the previous
+            // implementation generated. That subquery was the main reason the original
+            // SQL was slow.
+            var requestedPerson = new PersonAliasService( rockContext ).Queryable().AsNoTracking()
+                .Where( pa => pa.Id == personAliasId )
+                .Select( pa => new { pa.PersonId, pa.Person.GivingGroupId } )
+                .FirstOrDefault();
+
+            if ( requestedPerson == null )
             {
-                query = query.Where( t =>
-                    t.AuthorizedPersonAliasId == personAliasId ||
-                    t.AuthorizedPersonAlias.Person.GivingGroup.Members.Any( m => m.Person.Aliases.Any( a => a.Id == personAliasId ) ) );
+                // The supplied PersonAliasId did not resolve to a person, so there are no
+                // transactions to return. Returning an empty list (rather than throwing)
+                // matches the behavior of the original implementation: its inner
+                // "Aliases.Any( ... )" check would have matched zero rows for the same
+                // input.
+                return new List<Gift>();
+            }
+
+            if ( includeGivingGroup && requestedPerson.GivingGroupId.HasValue )
+            {
+                // Combined giving (aka "family giving") is in effect when the persons's
+                // Person.GivingGroupId is not NULL. Include every transaction whose
+                // authorized person belongs to the same giving group.
+                //
+                // Note that "Person.GivingGroupId == NULL" is Rock's way of saying "this
+                // person has opted out of combined giving", so the family match is only
+                // applied when the requested person has opted in.
+                var givingGroupId = requestedPerson.GivingGroupId.Value;
+                query = query.Where( t => t.AuthorizedPersonAlias.Person.GivingGroupId == givingGroupId );
             }
             else
             {
-                query = query.Where( t => t.AuthorizedPersonAliasId == personAliasId );
+                // Either the caller asked for the person's transactions only (includeGivingGroup is false),
+                // or the person has opted out of combined giving. Match by PersonId rather
+                // than the specific PersonAliasId so that all of the person's aliases
+                // are covered (a Person can have several PersonAlias rows, for example
+                // after a person merge).
+                // NOTE: EF6 emits one INNER JOIN to PersonAlias for
+                // the AuthorizedPersonAlias.PersonId reference; PK lookup, plan-cacheable.
+                var personId = requestedPerson.PersonId;
+                query = query.Where( t => t.AuthorizedPersonAlias.PersonId == personId );
             }
 
             // If there is an excluded status param, then exclude those statuses from the results

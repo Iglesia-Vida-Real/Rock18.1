@@ -17,11 +17,14 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http.Headers;
+using System.Net;
 using System.Reflection;
 using System.Web.Http;
 using Rock.Data;
 using Rock.Model;
 using Rock.Rest.Filters;
+using System.Net.Http;
 
 namespace Rock.Rest.Controllers
 {
@@ -31,7 +34,9 @@ namespace Rock.Rest.Controllers
     public partial class RestControllersController
     {
         /// <summary>
-        /// Ensures that rest controllers have been registered to the Rock Database
+        /// Ensures that rest controllers have been registered to the Rock Database.
+        /// RestController records are automatically registered on Rock start, so
+        /// just return whether or not Rock has started.
         /// </summary>
         [Authenticate, Secured]
         [HttpGet]
@@ -39,7 +44,18 @@ namespace Rock.Rest.Controllers
         [Rock.SystemGuid.RestActionGuid( "4D3BBFFD-292C-415A-BED2-2A8F8F9FC469" )]
         public bool EnsureRestControllers()
         {
-            RestControllerService.RegisterControllers();
+            if ( !RestControllerService.IsRegisterControllersFinished )
+            {
+                var response = Request.CreateErrorResponse(
+                    HttpStatusCode.ServiceUnavailable,
+                    "REST controller registration is still in progress. Please try again shortly."
+                );
+
+                // Optional but helpful for well-behaved clients.
+                response.Headers.RetryAfter = new RetryConditionHeaderValue( TimeSpan.FromSeconds( 30 ) );
+
+                throw new HttpResponseException( response );
+            }
 
             return true;
         }
@@ -113,6 +129,28 @@ namespace Rock.Rest.Controllers
                 }
 
                 return controllerNames;
+            }
+        }
+
+        /// <inheritdoc/>
+        protected override void CheckCanEdit( RestController entity )
+        {
+            base.CheckCanEdit( entity );
+
+            /*
+                10/16/2026 - MSE
+
+                RestController rows anchor v1 REST security, so creating, renaming or deleting
+                one changes which rules secure an endpoint. Staff hold EDIT on every controller
+                through the seeded entity type rule, so require ADMINISTRATE on the controller.
+                For PUT, PATCH and DELETE the entity is the stored row; for POST it is the new
+                row, which resolves ADMINISTRATE from the RestController entity type.
+
+                Reason: REST security records are administrator settings.
+            */
+            if ( entity == null || !entity.IsAuthorized( Rock.Security.Authorization.ADMINISTRATE, GetPerson() ) )
+            {
+                throw new HttpResponseException( HttpStatusCode.Unauthorized );
             }
         }
     }

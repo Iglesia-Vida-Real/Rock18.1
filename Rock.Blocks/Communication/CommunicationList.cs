@@ -84,7 +84,7 @@ namespace Rock.Blocks.Communication
 
         private static class PageParameterKey
         {
-            public const string Communication = "Communication";
+            public const string CommunicationId = "CommunicationId";
         }
 
         private static class PersonPreferenceKey
@@ -489,6 +489,12 @@ WHERE (@RecipientCountLower IS NULL OR counts.[RecipientCount] >= @RecipientCoun
                 return ActionBadRequest( $"{Rock.Model.Communication.FriendlyTypeName} not found." );
             }
 
+            // Only allow deleting communications that the list would show.
+            if ( !IsCommunicationListed( communication ) )
+            {
+                return ActionBadRequest( $"Not authorized to delete {Rock.Model.Communication.FriendlyTypeName}." );
+            }
+
             if ( !communicationService.CanDelete( communication, out var errorMessage ) )
             {
                 return ActionBadRequest( errorMessage );
@@ -503,6 +509,35 @@ WHERE (@RecipientCountLower IS NULL OR counts.[RecipientCount] >= @RecipientCoun
         #endregion
 
         #region Private Methods
+
+        /// <summary>
+        /// Determines whether the communication would be included in the list
+        /// for the current person, using the same rules as <see cref="GetGridData"/>.
+        /// </summary>
+        /// <param name="communication">The communication.</param>
+        /// <returns><c>true</c> if the communication would be listed; otherwise <c>false</c>.</returns>
+        private bool IsCommunicationListed( Rock.Model.Communication communication )
+        {
+            var currentPerson = GetCurrentPerson();
+
+            // Only approvers can see communications sent by other people.
+            if ( !CanApprove && ( currentPerson == null || communication.SenderPersonAlias?.PersonId != currentPerson.Id ) )
+            {
+                return false;
+            }
+
+            if ( communication.CommunicationTemplate != null && !communication.CommunicationTemplate.IsAuthorized( Authorization.VIEW, currentPerson ) )
+            {
+                return false;
+            }
+
+            if ( communication.SystemCommunication != null && !communication.SystemCommunication.IsAuthorized( Authorization.VIEW, currentPerson ) )
+            {
+                return false;
+            }
+
+            return true;
+        }
 
         /// <summary>
         /// Gets the box options required for the component to render the list.
@@ -536,11 +571,11 @@ WHERE (@RecipientCountLower IS NULL OR counts.[RecipientCount] >= @RecipientCoun
         {
             return new Dictionary<string, string>
             {
-                [NavigationUrlKey.DetailPage] = this.GetLinkedPageUrl( AttributeKey.DetailPage, PageParameterKey.Communication, "((Key))" ),
+                [NavigationUrlKey.DetailPage] = this.GetLinkedPageUrl( AttributeKey.DetailPage, PageParameterKey.CommunicationId, "((Key))" ),
                 // Remove this in v19.0 when the legacy detail page is removed.
                 [NavigationUrlKey.LegacyDetailPage] = GetLegacyCommunicationUrl( new Dictionary<string, string>()
                 {
-                    [PageParameterKey.Communication] = "((Key))"
+                    [PageParameterKey.CommunicationId] = "((Key))"
                 } )
             };
         }

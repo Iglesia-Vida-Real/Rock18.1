@@ -10,7 +10,6 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Rock.Data;
 using Rock.Model;
 using Rock.Security.ExternalAuthentication;
-using Rock.Tests.Shared;
 using Rock.Tests.Shared.TestFramework;
 using Rock.Web.Cache;
 
@@ -31,6 +30,7 @@ namespace Rock.Tests.Integration.Security
                 {
                     new Claim(JwtClaimTypes.Subject, userId),
                     new Claim(JwtClaimTypes.Email, expectedPerson.Email),
+                    new Claim(JwtClaimTypes.EmailVerified, "true", ClaimValueTypes.Boolean),
                     new Claim(JwtClaimTypes.GivenName, expectedPerson.FirstName),
                     new Claim(JwtClaimTypes.FamilyName, expectedPerson.LastName)
                 } ),
@@ -44,10 +44,78 @@ namespace Rock.Tests.Integration.Security
             var userLoginService = new UserLoginService( new RockContext() );
             var actualUserLogin = userLoginService.Queryable().Where( ul => ul.UserName == userName ).FirstOrDefault();
 
-            Assert.That.IsNotNull( actualUserLogin );
-            Assert.That.AreEqual( expectedPerson.Email, actualUserLogin.Person.Email );
-            Assert.That.AreEqual( expectedPerson.FirstName, actualUserLogin.Person.FirstName );
-            Assert.That.AreEqual( expectedPerson.LastName, actualUserLogin.Person.LastName );
+            Assert.IsNotNull( actualUserLogin );
+            Assert.AreEqual( expectedPerson.Id, actualUserLogin.PersonId );
+            Assert.AreEqual( expectedPerson.Email, actualUserLogin.Person.Email );
+            Assert.AreEqual( expectedPerson.FirstName, actualUserLogin.Person.FirstName );
+            Assert.AreEqual( expectedPerson.LastName, actualUserLogin.Person.LastName );
+        }
+
+        [TestMethod]
+        public void HandleOidcUserAddUpdate_UnverifiedEmailCreatesNewPerson()
+        {
+            var testPerson = AddTestPerson();
+            var userId = System.Guid.NewGuid().ToString( "N" );
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var tokenDescriptor = new SecurityTokenDescriptor
+            {
+                Subject = new ClaimsIdentity( new[]
+                {
+                    new Claim(JwtClaimTypes.Subject, userId),
+                    new Claim(JwtClaimTypes.Email, testPerson.Email),
+                    new Claim(JwtClaimTypes.GivenName, testPerson.FirstName),
+                    new Claim(JwtClaimTypes.FamilyName, testPerson.LastName)
+                } ),
+            };
+
+            var token = ( JwtSecurityToken ) tokenHandler.CreateToken( tokenDescriptor );
+
+            var oidcClient = new OidcClient();
+            var userName = oidcClient.HandleOidcUserAddUpdate( token, "test" );
+
+            AssertLoginIsNotLinkedToPerson( userName, testPerson );
+        }
+
+        [TestMethod]
+        public void HandleOidcUserAddUpdate_FalseEmailVerifiedCreatesNewPerson()
+        {
+            var testPerson = AddTestPerson();
+            var userId = System.Guid.NewGuid().ToString( "N" );
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var tokenDescriptor = new SecurityTokenDescriptor
+            {
+                Subject = new ClaimsIdentity( new[]
+                {
+                    new Claim(JwtClaimTypes.Subject, userId),
+                    new Claim(JwtClaimTypes.Email, testPerson.Email),
+                    new Claim(JwtClaimTypes.EmailVerified, "false", ClaimValueTypes.Boolean),
+                    new Claim(JwtClaimTypes.GivenName, testPerson.FirstName),
+                    new Claim(JwtClaimTypes.FamilyName, testPerson.LastName)
+                } ),
+            };
+
+            var token = ( JwtSecurityToken ) tokenHandler.CreateToken( tokenDescriptor );
+
+            var oidcClient = new OidcClient();
+            var userName = oidcClient.HandleOidcUserAddUpdate( token, "test" );
+
+            AssertLoginIsNotLinkedToPerson( userName, testPerson );
+        }
+
+        /// <summary>
+        /// Asserts that the login was created on a different person and that
+        /// the test person still has no login.
+        /// </summary>
+        /// <param name="userName">The user name returned by the OIDC client.</param>
+        /// <param name="testPerson">The existing test person that must not be linked.</param>
+        private static void AssertLoginIsNotLinkedToPerson( string userName, Person testPerson )
+        {
+            var userLoginService = new UserLoginService( new RockContext() );
+            var actualUserLogin = userLoginService.Queryable().Where( ul => ul.UserName == userName ).FirstOrDefault();
+
+            Assert.IsNotNull( actualUserLogin );
+            Assert.AreNotEqual( testPerson.Id, actualUserLogin.PersonId );
+            Assert.AreEqual( 0, userLoginService.Queryable().Count( ul => ul.PersonId == testPerson.Id ) );
         }
 
         [TestMethod]
@@ -81,11 +149,11 @@ namespace Rock.Tests.Integration.Security
             var userLoginService = new UserLoginService( new RockContext() );
             var actualUserLogin = userLoginService.Queryable().Where( ul => ul.UserName == userName ).FirstOrDefault();
 
-            Assert.That.IsNotNull( actualUserLogin );
-            Assert.That.AreEqual( expectedUserLogin.UserName, actualUserLogin.UserName );
-            Assert.That.AreEqual( expectedPerson.Email, actualUserLogin.Person.Email );
-            Assert.That.AreEqual( expectedPerson.FirstName, actualUserLogin.Person.FirstName );
-            Assert.That.AreEqual( expectedPerson.LastName, actualUserLogin.Person.LastName );
+            Assert.IsNotNull( actualUserLogin );
+            Assert.AreEqual( expectedUserLogin.UserName, actualUserLogin.UserName );
+            Assert.AreEqual( expectedPerson.Email, actualUserLogin.Person.Email );
+            Assert.AreEqual( expectedPerson.FirstName, actualUserLogin.Person.FirstName );
+            Assert.AreEqual( expectedPerson.LastName, actualUserLogin.Person.LastName );
         }
 
         [TestMethod]
@@ -120,13 +188,13 @@ namespace Rock.Tests.Integration.Security
             var userLoginService = new UserLoginService( new RockContext() );
             var actualUserLogin = userLoginService.Queryable().Where( ul => ul.UserName == userName ).FirstOrDefault();
 
-            Assert.That.IsNotNull( actualUserLogin );
-            Assert.That.AreEqual( "OIDC_" + userId, actualUserLogin.UserName );
-            Assert.That.AreEqual( expectedEmailAddress.ToLower(), actualUserLogin.Person.Email.ToLower() );
-            Assert.That.AreEqual( expectedFirstName.ToLower(), actualUserLogin.Person.FirstName.ToLower() );
-            Assert.That.AreEqual( expectedMiddleName.ToLower(), actualUserLogin.Person.MiddleName.ToLower() );
-            Assert.That.AreEqual( expectedLastName.ToLower(), actualUserLogin.Person.LastName.ToLower() );
-            Assert.That.AreEqual( expectedNickName.ToLower(), actualUserLogin.Person.NickName.ToLower() );
+            Assert.IsNotNull( actualUserLogin );
+            Assert.AreEqual( "OIDC_" + userId, actualUserLogin.UserName );
+            Assert.AreEqual( expectedEmailAddress.ToLower(), actualUserLogin.Person.Email.ToLower() );
+            Assert.AreEqual( expectedFirstName.ToLower(), actualUserLogin.Person.FirstName.ToLower() );
+            Assert.AreEqual( expectedMiddleName.ToLower(), actualUserLogin.Person.MiddleName.ToLower() );
+            Assert.AreEqual( expectedLastName.ToLower(), actualUserLogin.Person.LastName.ToLower() );
+            Assert.AreEqual( expectedNickName.ToLower(), actualUserLogin.Person.NickName.ToLower() );
         }
 
         [TestMethod]
@@ -170,25 +238,25 @@ namespace Rock.Tests.Integration.Security
             var userLoginService = new UserLoginService( new RockContext() );
             var actualUserLogin = userLoginService.Queryable().Where( ul => ul.UserName == userName ).FirstOrDefault();
 
-            Assert.That.IsNotNull( actualUserLogin );
-            Assert.That.AreEqual( "OIDC_" + userId, actualUserLogin.UserName );
-            Assert.That.AreEqual( expectedEmailAddress.ToLower(), actualUserLogin.Person.Email.ToLower() );
-            Assert.That.AreEqual( expectedFirstName.ToLower(), actualUserLogin.Person.FirstName.ToLower() );
-            Assert.That.AreEqual( expectedLastName.ToLower(), actualUserLogin.Person.LastName.ToLower() );
+            Assert.IsNotNull( actualUserLogin );
+            Assert.AreEqual( "OIDC_" + userId, actualUserLogin.UserName );
+            Assert.AreEqual( expectedEmailAddress.ToLower(), actualUserLogin.Person.Email.ToLower() );
+            Assert.AreEqual( expectedFirstName.ToLower(), actualUserLogin.Person.FirstName.ToLower() );
+            Assert.AreEqual( expectedLastName.ToLower(), actualUserLogin.Person.LastName.ToLower() );
 
             var defaultPhoneNumberType = DefinedValueCache.Get( Rock.SystemGuid.DefinedValue.PERSON_PHONE_TYPE_HOME );
             var actualPhoneNumber = actualUserLogin.Person.PhoneNumbers.Where( ph => ph.NumberTypeValueId == defaultPhoneNumberType.Id ).FirstOrDefault();
 
             if ( phoneNumber.IsNullOrWhiteSpace() )
             {
-                Assert.That.IsNull( actualPhoneNumber );
+                Assert.IsNull( actualPhoneNumber );
                 return;
             }
 
-            Assert.That.IsNotNull( actualPhoneNumber );
-            Assert.That.AreEqual( expectedCountryCode, actualPhoneNumber.CountryCode );
-            Assert.That.AreEqual( expectedPhoneNumber, actualPhoneNumber.Number );
-            Assert.That.AreEqual( expectedExtension, actualPhoneNumber.Extension );
+            Assert.IsNotNull( actualPhoneNumber );
+            Assert.AreEqual( expectedCountryCode, actualPhoneNumber.CountryCode );
+            Assert.AreEqual( expectedPhoneNumber, actualPhoneNumber.Number );
+            Assert.AreEqual( expectedExtension, actualPhoneNumber.Extension );
         }
 
         [TestMethod]
@@ -205,10 +273,10 @@ namespace Rock.Tests.Integration.Security
         [DataRow( "", "", "", "", "85003", "" )]
         public void HandleOidcUserAddUpdate_NewUserAddressIsCreatedCorrectly( string street1, string street2, string city, string state, string postalCode, string country )
         {
-            var countryProperty = country.IsNullOrWhiteSpace() ? string.Empty : $"\"country\":\"{ country }\",";
-            var postalCodeProperty = postalCode.IsNullOrWhiteSpace() ? string.Empty : $"\"postal_code\":\"{ postalCode }\",";
-            var stateProperty = state.IsNullOrWhiteSpace() ? string.Empty : $"\"region\":\"{ state }\",";
-            var cityProperty = city.IsNullOrWhiteSpace() ? string.Empty : $"\"locality\":\"{ city }\",";
+            var countryProperty = country.IsNullOrWhiteSpace() ? string.Empty : $"\"country\":\"{country}\",";
+            var postalCodeProperty = postalCode.IsNullOrWhiteSpace() ? string.Empty : $"\"postal_code\":\"{postalCode}\",";
+            var stateProperty = state.IsNullOrWhiteSpace() ? string.Empty : $"\"region\":\"{state}\",";
+            var cityProperty = city.IsNullOrWhiteSpace() ? string.Empty : $"\"locality\":\"{city}\",";
             var streetCodeProperty = street1.IsNullOrWhiteSpace() ? string.Empty : $@"""street_address"":""{street1 + ( street2.IsNotNullOrWhiteSpace() ? "\r\n" + street2 : "" )}"",";
 
             var addressJson = $@"{{
@@ -245,22 +313,22 @@ namespace Rock.Tests.Integration.Security
             var userLoginService = new UserLoginService( new RockContext() );
             var actualUserLogin = userLoginService.Queryable().Where( ul => ul.UserName == userName ).FirstOrDefault();
 
-            Assert.That.IsNotNull( actualUserLogin );
-            Assert.That.AreEqual( "OIDC_" + userId, actualUserLogin.UserName );
-            Assert.That.AreEqual( expectedEmailAddress.ToLower(), actualUserLogin.Person.Email.ToLower() );
-            Assert.That.AreEqual( expectedFirstName.ToLower(), actualUserLogin.Person.FirstName.ToLower() );
-            Assert.That.AreEqual( expectedLastName.ToLower(), actualUserLogin.Person.LastName.ToLower() );
+            Assert.IsNotNull( actualUserLogin );
+            Assert.AreEqual( "OIDC_" + userId, actualUserLogin.UserName );
+            Assert.AreEqual( expectedEmailAddress.ToLower(), actualUserLogin.Person.Email.ToLower() );
+            Assert.AreEqual( expectedFirstName.ToLower(), actualUserLogin.Person.FirstName.ToLower() );
+            Assert.AreEqual( expectedLastName.ToLower(), actualUserLogin.Person.LastName.ToLower() );
 
             var homeAddressDv = DefinedValueCache.Get( Rock.SystemGuid.DefinedValue.GROUP_LOCATION_TYPE_HOME );
             var actualAddress = actualUserLogin.Person.PrimaryFamily.GroupLocations.Where( gl => gl.GroupLocationTypeValueId == homeAddressDv.Id ).FirstOrDefault();
 
-            Assert.That.IsNotNull( actualAddress );
-            Assert.That.AreEqual( street1, actualAddress.Location.Street1.ToStringSafe() );
-            Assert.That.AreEqual( street2, actualAddress.Location.Street2.ToStringSafe() );
-            Assert.That.AreEqual( city, actualAddress.Location.City.ToStringSafe() );
-            Assert.That.AreEqual( state, actualAddress.Location.State.ToStringSafe() );
-            Assert.That.AreEqual( postalCode, actualAddress.Location.PostalCode.ToStringSafe() );
-            Assert.That.AreEqual( country, actualAddress.Location.Country.ToStringSafe() );
+            Assert.IsNotNull( actualAddress );
+            Assert.AreEqual( street1, actualAddress.Location.Street1.ToStringSafe() );
+            Assert.AreEqual( street2, actualAddress.Location.Street2.ToStringSafe() );
+            Assert.AreEqual( city, actualAddress.Location.City.ToStringSafe() );
+            Assert.AreEqual( state, actualAddress.Location.State.ToStringSafe() );
+            Assert.AreEqual( postalCode, actualAddress.Location.PostalCode.ToStringSafe() );
+            Assert.AreEqual( country, actualAddress.Location.Country.ToStringSafe() );
         }
 
         private Person AddTestPerson()
@@ -320,12 +388,12 @@ namespace Rock.Tests.Integration.Security
             var userLoginService = new UserLoginService( new RockContext() );
             var actualUserLogin = userLoginService.Queryable().Where( ul => ul.UserName == userName ).FirstOrDefault();
 
-            Assert.That.IsNotNull( actualUserLogin );
-            Assert.That.AreEqual( "OIDC_" + userId, actualUserLogin.UserName );
-            Assert.That.AreEqual( expectedEmailAddress.ToLower(), actualUserLogin.Person.Email.ToLower() );
-            Assert.That.AreEqual( expectedFirstName.ToLower(), actualUserLogin.Person.FirstName.ToLower() );
-            Assert.That.AreEqual( expectedLastName.ToLower(), actualUserLogin.Person.LastName.ToLower() );
-            Assert.That.AreEqual( expectedGender, actualUserLogin.Person.Gender.ToString() );
+            Assert.IsNotNull( actualUserLogin );
+            Assert.AreEqual( "OIDC_" + userId, actualUserLogin.UserName );
+            Assert.AreEqual( expectedEmailAddress.ToLower(), actualUserLogin.Person.Email.ToLower() );
+            Assert.AreEqual( expectedFirstName.ToLower(), actualUserLogin.Person.FirstName.ToLower() );
+            Assert.AreEqual( expectedLastName.ToLower(), actualUserLogin.Person.LastName.ToLower() );
+            Assert.AreEqual( expectedGender, actualUserLogin.Person.Gender.ToString() );
         }
 
         [TestMethod]
@@ -367,14 +435,14 @@ namespace Rock.Tests.Integration.Security
             var userLoginService = new UserLoginService( new RockContext() );
             var actualUserLogin = userLoginService.Queryable().Where( ul => ul.UserName == userName ).FirstOrDefault();
 
-            Assert.That.IsNotNull( actualUserLogin );
-            Assert.That.AreEqual( "OIDC_" + userId, actualUserLogin.UserName );
-            Assert.That.AreEqual( expectedEmailAddress.ToLower(), actualUserLogin.Person.Email.ToLower() );
-            Assert.That.AreEqual( expectedFirstName.ToLower(), actualUserLogin.Person.FirstName.ToLower() );
-            Assert.That.AreEqual( expectedLastName.ToLower(), actualUserLogin.Person.LastName.ToLower() );
-            Assert.That.AreEqual( expectedYear, actualUserLogin.Person.BirthYear.ToString() );
-            Assert.That.AreEqual( expectedMonth, actualUserLogin.Person.BirthMonth.ToString() );
-            Assert.That.AreEqual( expectedDay, actualUserLogin.Person.BirthDay.ToString() );
+            Assert.IsNotNull( actualUserLogin );
+            Assert.AreEqual( "OIDC_" + userId, actualUserLogin.UserName );
+            Assert.AreEqual( expectedEmailAddress.ToLower(), actualUserLogin.Person.Email.ToLower() );
+            Assert.AreEqual( expectedFirstName.ToLower(), actualUserLogin.Person.FirstName.ToLower() );
+            Assert.AreEqual( expectedLastName.ToLower(), actualUserLogin.Person.LastName.ToLower() );
+            Assert.AreEqual( expectedYear, actualUserLogin.Person.BirthYear.ToString() );
+            Assert.AreEqual( expectedMonth, actualUserLogin.Person.BirthMonth.ToString() );
+            Assert.AreEqual( expectedDay, actualUserLogin.Person.BirthDay.ToString() );
         }
     }
 }

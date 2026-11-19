@@ -124,6 +124,12 @@ namespace Rock.Blocks.AI
         }
 
         /// <inheritdoc/>
+        protected override IQueryable<AIAgent> GetOrderedListQueryable( IQueryable<AIAgent> queryable, RockContext rockContext )
+        {
+            return queryable.OrderBy( a => a.Name );
+        }
+
+        /// <inheritdoc/>
         protected override GridBuilder<AIAgent> GetGridBuilder()
         {
             return new GridBuilder<AIAgent>()
@@ -132,8 +138,8 @@ namespace Rock.Blocks.AI
                 .AddTextField( "name", a => a.Name )
                 .AddTextField( "description", a => a.Description )
                 .AddTextField( "role", a => a.AgentType == AgentType.Chat ? a.GetAdditionalSettings<ChatAgentSettings>().Role.ToString() : string.Empty )
-                .AddTextField( "type", a => a.AgentType.GetDescription() ?? a.AgentType.ConvertToString() )
-                .AddTextField( "audience", a => a.AudienceType.GetDescription() ?? a.AudienceType.ConvertToString() )
+                .AddTextField( "type", a => a.AgentType.GetDisplayName() )
+                .AddTextField( "audience", a => a.AudienceType.GetDisplayName() )
                 .AddField( "isSecurityDisabled", a => !a.IsAuthorized( Authorization.ADMINISTRATE, RequestContext.CurrentPerson ) );
         }
 

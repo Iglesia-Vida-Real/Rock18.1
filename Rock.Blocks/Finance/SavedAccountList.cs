@@ -114,7 +114,6 @@ namespace Rock.Blocks.Finance
             var builder = GetGridBuilder();
 
             box.IsAddEnabled = false;
-            box.IsDeleteEnabled = BlockCache.IsAuthorized( Authorization.EDIT, RequestContext.CurrentPerson );
             box.ExpectedRowCount = null;
             box.Options = GetBoxOptions();
             box.GridDefinition = builder.BuildDefinition();
@@ -133,12 +132,33 @@ namespace Rock.Blocks.Finance
             return options;
         }
 
+        /// <summary>
+        /// Gets the person whose saved accounts the current person is allowed to view.
+        /// The context person is only honored when it is the current person or the current person
+        /// is authorized to edit the block; otherwise the current person is used.
+        /// </summary>
+        /// <returns>The authorized owning person, or <c>null</c> if there is no current person.</returns>
+        private Person GetAuthorizedPerson()
+        {
+            var currentPerson = GetCurrentPerson();
+            if ( currentPerson == null )
+            {
+                return null;
+            }
+
+            var contextPerson = GetContextEntity() as Person;
+            if ( contextPerson == null || contextPerson.Id == currentPerson.Id )
+            {
+                return currentPerson;
+            }
+
+            return BlockCache.IsAuthorized( Authorization.EDIT, currentPerson ) ? contextPerson : currentPerson;
+        }
+
         /// <inheritdoc/>
         protected override IQueryable<FinancialPersonSavedAccount> GetListQueryable( RockContext rockContext )
         {
-            var currentPerson = GetCurrentPerson();
-            var contextEntity = GetContextEntity() as Person;
-            var personId = contextEntity?.Id ?? currentPerson?.Id;
+            var personId = GetAuthorizedPerson()?.Id;
             IEnumerable<FinancialPersonSavedAccount> savedAccounts = new List<FinancialPersonSavedAccount>();
 
             if ( personId.HasValue )
@@ -189,6 +209,12 @@ namespace Rock.Blocks.Finance
         [BlockAction]
         public BlockActionResult Delete( string key )
         {
+            var currentPerson = GetCurrentPerson();
+            if ( currentPerson == null )
+            {
+                return ActionBadRequest( $"Not authorized to delete {FinancialPersonSavedAccount.FriendlyTypeName}." );
+            }
+
             var entityService = new FinancialPersonSavedAccountService( RockContext );
             var entity = entityService.Get( key, !PageCache.Layout.Site.DisablePredictableIds );
 
@@ -197,9 +223,13 @@ namespace Rock.Blocks.Finance
                 return ActionBadRequest( $"{FinancialPersonSavedAccount.FriendlyTypeName} not found." );
             }
 
-            if ( !BlockCache.IsAuthorized( Authorization.EDIT, RequestContext.CurrentPerson ) )
+            // Only the owner of the saved account, or someone authorized to edit
+            // the saved account itself, may delete it.
+            var isOwner = entity.PersonAlias?.PersonId == currentPerson.Id;
+
+            if ( !isOwner && !entity.IsAuthorized( Authorization.EDIT, currentPerson ) )
             {
-                return ActionBadRequest( $"Not authorized to delete {FinancialPersonSavedAccount.FriendlyTypeName}." );
+                return ActionForbidden( "You are not authorized to delete this saved account." );
             }
 
             if ( !entityService.CanDelete( entity, out var errorMessage ) )

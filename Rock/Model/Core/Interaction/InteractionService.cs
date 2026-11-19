@@ -604,6 +604,17 @@ namespace Rock.Model
         /// <returns></returns>
         private int GetInteractionSessionId( Guid browserSessionId, string ipAddress, int? interactionDeviceTypeId, int? interactionDateKey = null, int? interactionSessionLocationId = null )
         {
+            // Guid.Empty is not a valid browser session identifier. This typically
+            // occurs when a RockPage falls through to the Guid.Empty fallback before
+            // embedding the session GUID in the client-side script (see RockPage.cs).
+            // Using Guid.Empty would cause every interaction without a real session
+            // identifier to be linked to the same InteractionSession row, making
+            // unrelated people's interactions appear to share a session.
+            if ( browserSessionId == Guid.Empty )
+            {
+                browserSessionId = Guid.NewGuid();
+            }
+
             object deviceTypeId = DBNull.Value;
             if ( interactionDeviceTypeId != null )
             {
@@ -722,14 +733,9 @@ namespace Rock.Model
             // Get the interaction channel and component for a page interaction.
             var dvWebsiteChannelType = DefinedValueCache.Get( SystemGuid.DefinedValue.INTERACTIONCHANNELTYPE_WEBSITE );
 
-            // Use the Page Title as the InteractionSummary.
-            var title = page.BrowserTitle ?? page.PageTitle ?? string.Empty;
-
-            if ( title.Contains( "|" ) )
-            {
-                // Remove the site name.
-                title = title.Substring( 0, title.LastIndexOf( '|' ) ).Trim();
-            }
+            // Use the Page Title as the InteractionSummary, without the site name and
+            // stored as plain text, the same as a page view recorded by the page itself.
+            var title = InteractionTransactionInfo.GetInteractionSummaryFromPageTitle( page.BrowserTitle ?? page.PageTitle ?? string.Empty );
 
             // Create the interaction transaction.
             var interactionTransactionInfo = new InteractionTransactionInfo

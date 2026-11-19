@@ -20,6 +20,7 @@ using System.Data.Entity;
 using System.Linq;
 using System.Runtime.Serialization;
 
+using Rock.Configuration;
 using Rock.Data;
 using Rock.Model;
 
@@ -276,7 +277,7 @@ namespace Rock.Web.Cache
                     {
                         if ( _activityTypeIds == null )
                         {
-                            using ( var rockContext = new RockContext() )
+                            using ( var rockContext = RockApp.Current.CreateRockContext() )
                             {
                                 _activityTypeIds = new WorkflowActivityTypeService( rockContext )
                                     .Queryable().AsNoTracking()
@@ -313,6 +314,24 @@ namespace Rock.Web.Cache
         public string Slug { get; private set; }
 
         #endregion
+
+        #region ISecured
+
+        /*
+             8/7/2026 - NA
+
+             ⚠ SECURITY NOTICE ⚠
+
+             If the model implements custom ISecured behavior, the corresponding
+             {Entity}Cache class MUST implement the same security logic.
+
+             Reason: Prevent security mismatches between model entities and cache objects.
+        */
+
+        /// <inheritdoc cref="Rock.Model.WorkflowType.ParentAuthority"/>
+        public override Security.ISecured ParentAuthority => Category ?? base.ParentAuthority;
+
+        #endregion ISecured
 
         #region Public Methods
 

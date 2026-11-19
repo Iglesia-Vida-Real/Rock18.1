@@ -32,7 +32,8 @@ export const enum Step {
     RegistrationEndForm = "registrationEndForm",
     Review = "review",
     Payment = "payment",
-    Success = "success"
+    Success = "success",
+    CapacityFullFailure = "capacityFullFailure"
 }
 
 export type RegistrantBasicInfo = {
@@ -93,6 +94,7 @@ export type RegistrationEntryState = {
     nitName: string;
     /** Vida Real: dirección devuelta por SAT (solo lectura/UX). */
     nitAddress: string;
+    isCapacityFull: boolean;
 };
 
 export type PaymentPlanConfiguration = {

@@ -127,7 +127,7 @@ namespace RockWeb.Blocks.Administration
                 gPageBlocks.GridReorder += gPageBlocks_GridReorder;
                 gPageBlocks.GridRebind += gPageBlocks_GridRebind;
 
-                LoadBlockTypes( !Page.IsPostBack, _Page.Layout.Site.SiteType );
+                LoadBlockTypes( _Page.Layout.Site.SiteType );
 
                 string script = string.Format(
                     @"Sys.Application.add_load(function () {{
@@ -475,6 +475,16 @@ namespace RockWeb.Blocks.Administration
                 if ( blockId != 0 )
                 {
                     block = blockService.Get( blockId );
+
+                    // Only allow editing a block that is listed in one of this block's grids.
+                    if ( block == null || !IsBlockInZone( block ) )
+                    {
+                        BindGrids();
+
+                        pnlDetails.Visible = false;
+                        pnlLists.Visible = true;
+                        return;
+                    }
                 }
 
                 if ( block == null )
@@ -588,6 +598,7 @@ namespace RockWeb.Blocks.Administration
                     {
                         b.Id,
                         b.Name,
+                        b.IsSystem,
                         EntityTypeId = b.BlockType.EntityTypeId ?? 0,
                         BlockTypeName = b.BlockType.Name,
                         BlockTypePath = b.BlockType.Path,
@@ -599,6 +610,7 @@ namespace RockWeb.Blocks.Administration
                 {
                     b.Id,
                     b.Name,
+                    b.IsSystem,
                     BlockTypeName = AddIconIfObsidianBlock( b.EntityTypeId, b.BlockTypeName ),
                     b.BlockTypePath,
                     b.BlockTypeCategory
@@ -612,6 +624,7 @@ namespace RockWeb.Blocks.Administration
                     {
                         b.Id,
                         b.Name,
+                        b.IsSystem,
                         EntityTypeId = b.BlockType.EntityTypeId ?? 0,
                         BlockTypeName = b.BlockType.Name,
                         BlockTypePath = b.BlockType.Path,
@@ -623,6 +636,7 @@ namespace RockWeb.Blocks.Administration
                 {
                     b.Id,
                     b.Name,
+                    b.IsSystem,
                     BlockTypeName = AddIconIfObsidianBlock( b.EntityTypeId, b.BlockTypeName ),
                     b.BlockTypePath,
                     b.BlockTypeCategory
@@ -636,6 +650,7 @@ namespace RockWeb.Blocks.Administration
                     {
                         b.Id,
                         b.Name,
+                        b.IsSystem,
                         EntityTypeId = b.BlockType.EntityTypeId ?? 0,
                         BlockTypeName = b.BlockType.Name,
                         BlockTypePath = b.BlockType.Path,
@@ -647,6 +662,7 @@ namespace RockWeb.Blocks.Administration
                 {
                     b.Id,
                     b.Name,
+                    b.IsSystem,
                     BlockTypeName = AddIconIfObsidianBlock( b.EntityTypeId, b.BlockTypeName ),
                     b.BlockTypePath,
                     b.BlockTypeCategory
@@ -655,6 +671,24 @@ namespace RockWeb.Blocks.Administration
 
                 gPageBlocks.DataBind();
             }
+        }
+
+        /// <summary>
+        /// Determines whether the block is in the zone being edited on the page, layout
+        /// or site of the page being edited. These are the blocks shown in the grids.
+        /// </summary>
+        /// <param name="block">The block.</param>
+        /// <returns><c>true</c> if the block is in the zone being edited; otherwise, <c>false</c>.</returns>
+        private bool IsBlockInZone( Rock.Model.Block block )
+        {
+            if ( !string.Equals( block.Zone, _ZoneName, StringComparison.OrdinalIgnoreCase ) )
+            {
+                return false;
+            }
+
+            return ( block.PageId.HasValue && block.PageId.Value == _Page.Id )
+                || ( block.LayoutId.HasValue && block.LayoutId.Value == _Page.LayoutId )
+                || ( block.SiteId.HasValue && block.SiteId.Value == _Page.SiteId );
         }
 
         /// <summary>
@@ -685,25 +719,9 @@ namespace RockWeb.Blocks.Administration
         /// <summary>
         /// Loads the block types.
         /// </summary>
-        /// <param name="registerBlockTypes">If <c>true</c> then a search for unregistered blocks will be performed.</param>
         /// <param name="siteType">The type of site the to use when filtering supported block types.</param>
-        private void LoadBlockTypes( bool registerBlockTypes, SiteType siteType )
+        private void LoadBlockTypes( SiteType siteType )
         {
-            if ( registerBlockTypes )
-            {
-                // Add any unregistered blocks
-                try
-                {
-                    BlockTypeService.RegisterBlockTypes( Request.MapPath( "~" ) );
-                }
-                catch ( Exception ex )
-                {
-                    nbMessage.Text = "Error registering one or more block types";
-                    nbMessage.Details = ex.Message + "<code>" + HttpUtility.HtmlEncode( ex.StackTrace ) + "</code>";
-                    nbMessage.Visible = true;
-                }
-            }
-
             // Show all the Web blocks and even ones with SiteTypeFlags set to None.
             List<BlockTypeCache> blockTypesToDisplay = BlockTypeService.BlockTypesToDisplay( siteType, true );
 

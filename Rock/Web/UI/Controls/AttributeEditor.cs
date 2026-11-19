@@ -177,9 +177,21 @@ namespace Rock.Web.UI.Controls
         protected DynamicPlaceholder _phQualifiers;
 
         /// <summary>
+        /// Displayed when a configuration error is detected, this is typically
+        /// triggered by an exception when creating the default value edit
+        /// control.
+        /// </summary>
+        protected Literal _ltConfigurationError;
+
+        /// <summary>
         /// Default value control
         /// </summary>
         protected DynamicPlaceholder _phDefaultValue;
+
+        /// <summary>
+        /// The value format expected in the raw value.
+        /// </summary>
+        protected RockLiteral _lValueFormat;
 
         /// <summary>
         /// The advanced panel widget
@@ -1097,6 +1109,7 @@ namespace Rock.Web.UI.Controls
             _hfReadOnlyFieldTypeId.Value = fieldTypeId.ToString();
             _lFieldType.Text = FieldTypeCache.Get( fieldTypeId )?.Name;
 
+            _ltConfigurationError.Visible = false;
             _phDefaultValue.Controls.Clear();
             _phQualifiers.Controls.Clear();
             CreateFieldTypeQualifierControls( fieldTypeId );
@@ -1442,9 +1455,23 @@ namespace Rock.Web.UI.Controls
             _phQualifiers.ID = "phQualifiers";
             Controls.Add( _phQualifiers );
 
+            _ltConfigurationError = new Literal
+            {
+                ID = "ltConfigurationError",
+                Visible = false,
+                Text = "<div class='alert alert-warning'>Unable to create default value control. This is likely due to a configuration error.</div>",
+            };
+            Controls.Add( _ltConfigurationError );
+
             _phDefaultValue = new DynamicPlaceholder();
             _phDefaultValue.ID = "phDefaultValue";
             Controls.Add( _phDefaultValue );
+
+            _lValueFormat = new RockLiteral();
+            _lValueFormat.Label = "Value Format";
+            _lValueFormat.ID = "lValueFormat";
+            _lValueFormat.Visible = false;
+            Controls.Add( _lValueFormat );
 
             _pwAdvanced = new PanelWidget();
             _pwAdvanced.ID = "pwAdvanced";
@@ -1634,6 +1661,12 @@ namespace Rock.Web.UI.Controls
                 }
             }
 
+            if ( FieldTypeIdState.HasValue )
+            {
+                var configurationValues = FieldTypeQualifierStateJSON.FromJsonOrNull<Dictionary<string, ConfigurationValue>>();
+
+                UpdateFieldValueFormat( FieldTypeIdState.Value, configurationValues ?? new Dictionary<string, ConfigurationValue>() );
+            }
 
             // Hide the validation summary if there is already one on the page with the same ValidationGroup.
             var parentSummary = this.FindFirstInParentContainerWhere( x => x.GetType() == typeof( ValidationSummary ) && ( ( ValidationSummary ) x ).ValidationGroup == validationGroup );
@@ -1752,7 +1785,9 @@ namespace Rock.Web.UI.Controls
             _ddlFieldType.RenderControl( writer );
             _lFieldType.RenderControl( writer );
             _phQualifiers.RenderControl( writer );
+            _ltConfigurationError.RenderControl( writer );
             _phDefaultValue.RenderControl( writer );
+            _lValueFormat.RenderControl( writer );
             writer.RenderEndTag();
 
             writer.RenderEndTag();
@@ -2095,7 +2130,22 @@ namespace Rock.Web.UI.Controls
                 qualifiers?.TryAdd( "DataEntryMode", new ConfigurationValue { Name = "DataEntryMode", Value = "DefaultValue" } );
 
                 // make sure each default control has a unique/predictable ID to help avoid viewstate issues
-                var defaultControl = field.EditControl( qualifiers, $"defaultValue_{fieldTypeId}_{this.AttributeGuid.ToString("N")}" );
+                Control defaultControl;
+                try
+                {
+                    defaultControl = field.EditControl( qualifiers, $"defaultValue_{fieldTypeId}_{this.AttributeGuid.ToString( "N" )}" );
+                    _ltConfigurationError.Visible = false;
+                }
+                catch
+                {
+                    // If the edit control cannot be created with the current
+                    // qualifiers, just don't show it. Otherwise the admin is
+                    // prevented from fixing the qualifiers that are causing
+                    // the issue.
+                    defaultControl = null;
+                    _ltConfigurationError.Visible = true;
+                }
+
                 if ( defaultControl != null )
                 {
                     _phDefaultValue.Controls.Add( defaultControl );
@@ -2107,6 +2157,38 @@ namespace Rock.Web.UI.Controls
                         rockControl.Label = "Default Value";
                     }
                 }
+            }
+        }
+
+        /// <summary>
+        /// Updates the Value Format label to match the current field type
+        /// and configuration.
+        /// </summary>
+        /// <param name="fieldTypeId">The identifier of the configured field type.</param>
+        /// <param name="qualifiers">The configuration values for the field type.</param>
+        private void UpdateFieldValueFormat( int fieldTypeId, Dictionary<string, ConfigurationValue> qualifiers )
+        {
+            try
+            {
+                var field = FieldTypeCache.Get( fieldTypeId ).Field;
+
+                if ( field is Field.FieldType hintField )
+                {
+                    var hints = hintField.GetFieldHints( qualifiers.ToDictionary( kvp => kvp.Key, kvp => kvp.Value.Value ) );
+
+                    _lValueFormat.Text = hints?.ValueFormat;
+                    _lValueFormat.Visible = _lValueFormat.Text.IsNotNullOrWhiteSpace();
+                }
+                else
+                {
+                    _lValueFormat.Text = string.Empty;
+                    _lValueFormat.Visible = false;
+                }
+            }
+            catch
+            {
+                _lValueFormat.Text = string.Empty;
+                _lValueFormat.Visible = false;
             }
         }
 

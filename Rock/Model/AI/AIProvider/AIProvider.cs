@@ -20,15 +20,29 @@ using System.Data.Entity.ModelConfiguration;
 using System.Runtime.Serialization;
 using Rock.AI.Provider;
 using Rock.Data;
+using Rock.Enums.Security;
+using Rock.Security;
+using Rock.Utility;
 using Rock.Web.Cache;
 
 namespace Rock.Model
 {
+    /*
+        10/15/2026 - MSE
+
+        The generic v1 REST controller (secured only by the controller VIEW
+        rule) returned provider attributes, including the secret API key,
+        through loadAttributes. Nothing in Rock calls it; the AI provider
+        picker uses the v2 Controls API.
+
+        Reason: Keep AI provider secret keys private.
+    */
     /// <summary>
     /// Represents an AI provider in Rock.
     /// </summary>
     [RockDomain( "AI" )]
     [Table( "AIProvider" )]
+    [CodeGenExclude( CodeGenFeature.DefaultRestController )]
     [DataContract]
     [CodeGenerateRest( DisableEntitySecurity = true )]
     [Rock.SystemGuid.EntityTypeGuid( "945A994F-F15E-43AC-B503-A54BDE70F77F" )]
@@ -45,6 +59,7 @@ namespace Rock.Model
         [Required]
         [MaxLength( 50 )]
         [DataMember( IsRequired = true )]
+        [StringValidation( StringValidationProfile.Name )]
         public string Name { get; set; }
 
         /// <summary>
@@ -93,6 +108,7 @@ namespace Rock.Model
         /// The description.
         /// </value>
         [DataMember]
+        [StringValidation( StringValidationProfile.LavaAndBasicHtml )]
         public string Description { get; set; }
 
         #endregion Entity Properties

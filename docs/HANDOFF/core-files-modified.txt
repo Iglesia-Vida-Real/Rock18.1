@@ -69,6 +69,12 @@ Rock.sln
 Rock/Communication/Medium/Sms.cs
 Rock/Communication/SmsActions/SmsActionConversations.cs
 Rock/Model/Event/Registration/RegistrationService.cs
+Rock/Model/Event/RegistrationInstance/Options/GetSpotsAvailableOptions.cs
+Rock/Model/Event/RegistrationInstance/RegistrationInstanceService.cs
+Rock/Model/Event/RegistrationSession/RegistrationSessionService.cs
+Rock/Model/Event/RegistrationTemplate/Options/RegistrantEligibilityEvaluationMode.cs
+Rock/Model/Event/RegistrationTemplate/Options/RegistrantEligibilityEvaluationOptions.cs
+Rock/Model/Event/RegistrationTemplate/RegistrantEligibilityEvaluator.cs
 Rock/Model/Finance/FinancialTransaction/FinancialTransactionService.cs
 Rock/Model/Finance/FinancialTransaction/MonthlyAccountGivingHistory.cs
 Rock/Model/Security/RemoteAuthenticationSessionService.cs

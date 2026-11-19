@@ -19,12 +19,14 @@ using System.Collections.Generic;
 using System.Linq;
 #if WEBFORMS
 using System.Web.UI;
+
 #endif
 using Rock.Attribute;
 using Rock.Reporting;
 using Rock.Security.SecurityGrantRules;
 using Rock.Security;
 using Rock.Web.UI.Controls;
+using Rock.Enums.Security;
 
 namespace Rock.Field.Types
 {
@@ -64,8 +66,8 @@ namespace Rock.Field.Types
             var publicConfig = new Dictionary<string, string>( privateConfigurationValues );
 
             publicConfig.AddOrReplace( CONDENSED_HTML, GetCondensedHtmlValue( value, privateConfigurationValues ) );
-            publicConfig.AddOrReplace( ENCRYPTED_DOCUMENT_FOLDER_ROOT, Rock.Security.Encryption.EncryptString( publicConfig.GetValueOrDefault( DOCUMENT_FOLDER_ROOT, "" ) ) );
-            publicConfig.AddOrReplace( ENCRYPTED_IMAGE_FOLDER_ROOT, Rock.Security.Encryption.EncryptString( publicConfig.GetValueOrDefault( IMAGE_FOLDER_ROOT, "" ) ) );
+            publicConfig.AddOrReplace( ENCRYPTED_DOCUMENT_FOLDER_ROOT, Rock.Security.Encryption.EncryptRootFolder( publicConfig.GetValueOrDefault( DOCUMENT_FOLDER_ROOT, "" ) ) );
+            publicConfig.AddOrReplace( ENCRYPTED_IMAGE_FOLDER_ROOT, Rock.Security.Encryption.EncryptRootFolder( publicConfig.GetValueOrDefault( IMAGE_FOLDER_ROOT, "" ) ) );
 
             return publicConfig;
         }
@@ -81,6 +83,12 @@ namespace Rock.Field.Types
             privateConfig.Remove( ENCRYPTED_IMAGE_FOLDER_ROOT );
 
             return privateConfig;
+        }
+
+        /// <inheritdoc/>
+        public override StringValidationRule GetValidationRules( Dictionary<string, string> privateConfigurationValues )
+        {
+            return StringValueValidator.GetEffectiveRules( StringValidationProfile.Unrestricted );
         }
 
         #endregion
@@ -385,6 +393,12 @@ namespace Rock.Field.Types
                 grant.AddRule( new AssetAndFileManagerSecurityGrantRule( Rock.Security.Authorization.VIEW ) );
                 grant.AddRule( new AssetAndFileManagerSecurityGrantRule( Rock.Security.Authorization.EDIT ) );
                 grant.AddRule( new AssetAndFileManagerSecurityGrantRule( Rock.Security.Authorization.DELETE ) );
+
+                // Uploads are checked separately from the asset manager, so
+                // allow uploads to the configured folders and to providers.
+                grant.AddRule( new FileUploadSecurityGrantRule( privateConfigurationValues.GetValueOrDefault( DOCUMENT_FOLDER_ROOT, "" ) ) );
+                grant.AddRule( new FileUploadSecurityGrantRule( privateConfigurationValues.GetValueOrDefault( IMAGE_FOLDER_ROOT, "" ) ) );
+                grant.AddRule( FileUploadSecurityGrantRule.ForAssetStorageProviders() );
             }
         }
     }

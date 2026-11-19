@@ -40,7 +40,12 @@ namespace RockWeb.Blocks.Finance
     [AccountsField("Accounts", "A selection of accounts to use for checking if transactions for the current user exist. If no accounts are provided then all tax-deductible accounts will be considered.", false, order: 0 )]
     [IntegerField("Max Years To Display", "The maximum number of years to display (including the current year).", true, 3, order:1)]
     [LinkedPage("Detail Page", "The statement detail page.", order: 2)]
-    [CodeEditorField("Lava Template", "The Lava template to use for the contribution statement.", CodeEditorMode.Lava, CodeEditorTheme.Rock, 500, true, DefaultValue = @"{% assign currentYear = 'Now' | Date:'yyyy' %}
+    [CodeEditorField("Lava Template",
+        Description = "The Lava template to use for the contribution statement.",
+        EditorMode = CodeEditorMode.Lava,
+        EditorHeight = 500,
+        IsRequired = true,
+        DefaultValue = @"{% assign currentYear = 'Now' | Date:'yyyy' %}
 
 <h4>Available Contribution Statements</h4>
 
@@ -52,7 +57,8 @@ namespace RockWeb.Blocks.Finance
         <a href=""{{ DetailPage }}?StatementYear={{ statementyear.Year }}"" class=""btn btn-primary"">{{ statementyear.Year }}</a>
     {% endif %}
 {% endfor %}
-</div>", Order = 3)]
+</div>",
+        Order = 3)]
     [BooleanField("Use Person Context", "Determines if the person context should be used instead of the CurrentPerson.", false, order: 5)]
 
     [ContextAware]
@@ -68,6 +74,11 @@ namespace RockWeb.Blocks.Finance
         /// The target person.
         /// </value>
         protected Person TargetPerson { get; private set; }
+
+        /// <summary>
+        /// Set by <see cref="OnInit" /> when there is a context person the current person may not view.
+        /// </summary>
+        private bool _isContextPersonUnauthorized;
 
         #endregion
 
@@ -85,7 +96,8 @@ namespace RockWeb.Blocks.Finance
 
             if ( GetAttributeValue( "UsePersonContext" ).AsBoolean() )
             {
-                TargetPerson = ContextEntity<Person>();
+                TargetPerson = GetAuthorizedContextPerson();
+                _isContextPersonUnauthorized = TargetPerson == null && ContextEntity<Person>() != null;
             }
             else
             {
@@ -131,8 +143,49 @@ namespace RockWeb.Blocks.Finance
 
         #region Methods
 
+        /// <summary>
+        /// Gets the person context, but only if the current person is allowed to view that
+        /// person's contribution statements. This is allowed if the person is the current
+        /// person, shares the same giving unit, is one of the current person's businesses,
+        /// or the current person is authorized to view financial transactions.
+        /// </summary>
+        /// <returns>The context person, or <c>null</c> if there is none or it is not allowed.</returns>
+        private Person GetAuthorizedContextPerson()
+        {
+            var contextPerson = ContextEntity<Person>();
+            var currentPerson = CurrentPerson;
+
+            if ( contextPerson == null || currentPerson == null )
+            {
+                return null;
+            }
+
+            var isCurrentPerson = contextPerson.Id == currentPerson.Id;
+            var isInGivingUnit = contextPerson.GivingId.IsNotNullOrWhiteSpace()
+                && contextPerson.GivingId == currentPerson.GivingId;
+
+            if ( isCurrentPerson || isInGivingUnit || currentPerson.GetBusinesses().Any( b => b.Id == contextPerson.Id ) )
+            {
+                return contextPerson;
+            }
+
+            if ( new FinancialTransaction().IsAuthorized( Authorization.VIEW, currentPerson ) )
+            {
+                return contextPerson;
+            }
+
+            return null;
+        }
+
         private void DisplayResults()
         {
+            nbNotAuthorized.Visible = _isContextPersonUnauthorized;
+            if ( _isContextPersonUnauthorized )
+            {
+                lResults.Text = string.Empty;
+                return;
+            }
+
             var numberOfYears = GetAttributeValue( "MaxYearsToDisplay" ).AsInteger();
 
             RockContext rockContext = new RockContext();
@@ -180,7 +233,7 @@ namespace RockWeb.Blocks.Finance
             {
                 mergeFields.Add( "PersonGuid", TargetPerson.Guid );
             }
-            
+
             var template = GetAttributeValue( "LavaTemplate" );
 
             lResults.Text = template.ResolveMergeFields( mergeFields );

@@ -53,7 +53,6 @@ namespace RockWeb.Blocks.Cms
         "Lava Template",
         Description = "Lava template to use to display content",
         EditorMode = CodeEditorMode.Lava,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 400,
         IsRequired = true,
         DefaultValue =  DefaultLavaTemplate,
@@ -64,7 +63,6 @@ namespace RockWeb.Blocks.Cms
         "Edit Header",
         Description = "The HTML to display above list when editing values.",
         EditorMode = CodeEditorMode.Html,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 100,
         IsRequired = true,
         DefaultValue = DefaultEditHeader,
@@ -75,7 +73,6 @@ namespace RockWeb.Blocks.Cms
         "Edit Footer",
         Description = "The HTML to display above list when editing values.",
         EditorMode = CodeEditorMode.Html,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 100,
         IsRequired = true,
         DefaultValue = DefaultEditFooter,
@@ -263,12 +260,17 @@ namespace RockWeb.Blocks.Cms
         /// <param name="e">The <see cref="RowEventArgs"/> instance containing the event data.</param>
         protected void gLinks_Delete( object sender, RowEventArgs e )
         {
+            if ( !_canEdit || _definedType == null )
+            {
+                return;
+            }
+
             using ( var rockContext = new RockContext() )
             {
                 var service = new DefinedValueService( rockContext );
                 var definedValue = service.Get( e.RowKeyId );
 
-                if ( definedValue != null )
+                if ( definedValue != null && definedValue.DefinedTypeId == _definedType.Id )
                 {
                     string errorMessage;
                     if ( !service.CanDelete( definedValue, out errorMessage ) )
@@ -292,6 +294,11 @@ namespace RockWeb.Blocks.Cms
         /// <param name="e">The <see cref="GridReorderEventArgs"/> instance containing the event data.</param>
         void gLinks_GridReorder( object sender, GridReorderEventArgs e )
         {
+            if ( !_canEdit || _definedType == null )
+            {
+                return;
+            }
+
             using ( var rockContext = new RockContext() )
             {
                 var service = new DefinedValueService( rockContext );
@@ -360,6 +367,12 @@ namespace RockWeb.Blocks.Cms
         /// <param name="e">The <see cref="EventArgs"/> instance containing the event data.</param>
         protected void dlgLink_SaveClick( object sender, EventArgs e )
         {
+            if ( !_canEdit || _definedType == null )
+            {
+                HideDialog();
+                return;
+            }
+
             DefinedValue definedValue = null;
             using ( var rockContext = new RockContext() )
             {
@@ -368,6 +381,14 @@ namespace RockWeb.Blocks.Cms
                 if ( definedValueId.HasValue )
                 {
                     definedValue = service.Get( definedValueId.Value );
+
+                    // Only allow editing values of the block's configured defined type.
+                    if ( definedValue != null && definedValue.DefinedTypeId != _definedType.Id )
+                    {
+                        HideDialog();
+                        BindGrid();
+                        return;
+                    }
                 }
 
                 if ( definedValue == null )
@@ -445,7 +466,11 @@ namespace RockWeb.Blocks.Cms
                     switch ( action )
                     {
                         case "EditList":
-                            DisplayEditList();
+                            if ( _canEdit )
+                            {
+                                DisplayEditList();
+                            }
+
                             break;
                     }
                 }

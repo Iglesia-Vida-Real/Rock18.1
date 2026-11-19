@@ -32,7 +32,6 @@ using Rock.Data;
 using Rock.Enums.Security;
 using Rock.Model;
 using Rock.Oidc.Authorization;
-using Rock.Utility;
 using Rock.Web.UI;
 
 namespace RockWeb.Blocks.Security.Oidc
@@ -76,7 +75,6 @@ namespace RockWeb.Blocks.Security.Oidc
 
         private const string AntiXsrfTokenKey = "__AntiXsrfToken";
         protected string _antiXsrfTokenValue;
-        private const string ScopeCookiePrefix = ".ROCK-OidcScopeApproval-";
 
         #endregion Fields
 
@@ -170,6 +168,19 @@ namespace RockWeb.Blocks.Security.Oidc
         /// <param name="e">The <see cref="T:System.EventArgs" /> object that contains the event data.</param>
         protected override void OnLoad( EventArgs e )
         {
+            // On a development site the OIDC server lets this page display its errors, so a request it already
+            // rejected (e.g. a redirect URI that isn't allowed) still reaches this block and must stop here.
+            var rejectedResponse = Context.GetOwinContext().GetOpenIdConnectResponse();
+            if ( rejectedResponse != null && rejectedResponse.Error.IsNotNullOrWhiteSpace() )
+            {
+                divContent.Visible = false;
+                ShowError( rejectedResponse.ErrorDescription.IsNotNullOrWhiteSpace()
+                    ? rejectedResponse.ErrorDescription.EncodeHtml()
+                    : "The application requesting access could not be verified." );
+                base.OnLoad( e );
+                return;
+            }
+
             // Get the auth client for the request
             var authClient = GetAuthClient();
             if ( authClient == null )
@@ -197,9 +208,11 @@ namespace RockWeb.Blocks.Security.Oidc
                 return;
             }
 
+            lNickName.Text = CurrentPerson.NickName.EncodeHtml();
+
             // Check if this client has already approved the scopes. We'll look for the cookie and check that the scopes have not changed.
-            var scopesApprovalCookieValue = RockPage.GetCookie( GetScopeCookieName( authClient ) )?.Value;
-            var scopesPreviouslyApproved = Rock.Security.Encryption.DecryptString( scopesApprovalCookieValue ) == authClient.AllowedScopes.ToString();
+            var scopesApprovalCookieValue = RockPage.GetCookie( AuthClientService.GetScopeCookieName( authClient, CurrentUser ) )?.Value;
+            var scopesPreviouslyApproved = AuthClientService.IsScopeCookieValueValid( scopesApprovalCookieValue, authClient, CurrentUser );
 
             // We have to use querystring, because something in the .net postback chain writes to the Response object which breaks the auth call.
             var action = PageParameter( PageParamKey.Action );
@@ -252,11 +265,59 @@ namespace RockWeb.Blocks.Security.Oidc
                 }.SaveAfterDelay();
             }
 
+            // An unknown client or unregistered redirect URI must not be redirected to (RFC 6749 section 4.1.2.1).
+            var redirectUri = GetValidatedRedirectUri( authClient );
+            if ( redirectUri == null )
+            {
+                divContent.Visible = false;
+                ShowError( "The application requesting access could not be verified." );
+                return;
+            }
+
             // Notify the client that the authorization grant has been denied by the resource owner.
             var owinContext = Context.GetOwinContext();
-            var redirectUri = owinContext.Request.Query["redirect_uri"];
-            Response.Redirect( redirectUri + $"?error=access_denied&error_description={errorDescription.Replace( ' ', '+' )}", true );
+            var state = owinContext.Request.Query["state"];
+
+            var separator = redirectUri.Contains( "?" ) ? "&" : "?";
+            var qs = $"error=access_denied&error_description={errorDescription.Replace( ' ', '+' )}";
+
+            if ( !string.IsNullOrEmpty( state ) )
+            {
+                qs += $"&state={Uri.EscapeDataString( state )}";
+            }
+
+            Response.Redirect( $"{redirectUri}{separator}{qs}", true );
             ApplicationInstance.CompleteRequest();
+        }
+
+        /// <summary>
+        /// Gets the redirect URI registered for the auth client.
+        /// </summary>
+        /// <param name="authClient">The <see cref="AuthClient"/> for which authorization is being requested.</param>
+        /// <returns>
+        /// The request's <c>redirect_uri</c> if it's registered for the client, the client's redirect URI if the
+        /// request has none, or <c>null</c> if the client is unknown or the request's <c>redirect_uri</c> isn't
+        /// registered.
+        /// </returns>
+        private string GetValidatedRedirectUri( AuthClient authClient )
+        {
+            if ( authClient == null || authClient.RedirectUri.IsNullOrWhiteSpace() )
+            {
+                return null;
+            }
+
+            var requestedRedirectUri = Context.GetOwinContext().Request.Query["redirect_uri"];
+            if ( requestedRedirectUri.IsNullOrWhiteSpace() )
+            {
+                return authClient.RedirectUri;
+            }
+
+            if ( !AuthClientService.IsRedirectUriAllowed( authClient, requestedRedirectUri ) )
+            {
+                return null;
+            }
+
+            return requestedRedirectUri;
         }
 
         /// <summary>
@@ -282,7 +343,7 @@ namespace RockWeb.Blocks.Security.Oidc
 
             if ( authClient != null )
             {
-                lClientName.Text = authClient.Name;
+                lClientName.Text = authClient.Name.EncodeHtml();
             }
         }
 
@@ -316,18 +377,15 @@ namespace RockWeb.Blocks.Security.Oidc
             var request = owinContext.GetOpenIdConnectRequest();
             var requestedScopes = request.GetScopes();
             var rockContext = new RockContext();
-            var authClientService = new AuthClientService( rockContext );
+            var authClient = GetAuthClient();
 
-            var clientAllowedClaims = authClientService
-                .Queryable()
-                .Where( ac => ac.ClientId == request.ClientId )
-                .Select( ac => ac.AllowedClaims ).FirstOrDefault();
-
-            var parsedAllowedClientClaims = clientAllowedClaims.FromJsonOrNull<List<string>>();
-            if ( parsedAllowedClientClaims == null )
+            var parsedAllowedClientClaims = authClient?.AllowedClaims.FromJsonOrNull<List<string>>();
+            var parsedAllowedClientScopes = authClient?.AllowedScopes.FromJsonOrNull<List<string>>();
+            if ( parsedAllowedClientClaims == null || parsedAllowedClientScopes == null )
             {
                 return new List<string>();
             }
+
             var authClaimService = new AuthClaimService( rockContext );
             var activeAllowedClientClaims = authClaimService
                 .Queryable()
@@ -340,8 +398,29 @@ namespace RockWeb.Blocks.Security.Oidc
                 .Select( ac => new { Scope = ac.Key, Claims = string.Join( ", ", ac.ToArray() ) } );
 
             scopes.AddRange( activeAllowedClientClaims.Select( ac => ac.Scope == ac.Claims ? ac.Scope : ac.Scope + " (" + ac.Claims + ")" ) );
+
+            var activeScopes = new AuthScopeService( rockContext )
+                .Queryable()
+                .Where( s => s.IsActive )
+                .Select( s => new
+                {
+                    s.Name,
+                    s.PublicName
+                } );
+
+            // If the client requested a scope that is in the client's allowed
+            // scopes, but not included in the active allowed claims, we should
+            // still show that scope to the user.
+            foreach ( var requestedScope in requestedScopes )
+            {
+                if ( !scopes.Contains( requestedScope ) && parsedAllowedClientScopes.Contains( requestedScope ) )
+                {
+                    var scope = activeScopes.FirstOrDefault( s => s.Name == requestedScope );
+                    scopes.Add( scope.PublicName.IfEmpty( requestedScope ) );
+                }
+            }
+
             return scopes;
-            //return scopeString.SplitDelimitedValues().ToList();
         }
 
         /// <summary>
@@ -367,18 +446,6 @@ namespace RockWeb.Blocks.Security.Oidc
         #region Private Methods
 
         /// <summary>
-        /// Gets the scope cookie name for the current <see cref="AuthClient"/> and <see cref="UserLogin"/> combination.
-        /// </summary>
-        /// <param name="authClient">The <see cref="AuthClient"/> for which authorization is being requested.</param>
-        /// <returns>
-        /// The scope cookie name for the current <see cref="AuthClient"/> and <see cref="UserLogin"/> combination.
-        /// </returns>
-        private string GetScopeCookieName( AuthClient authClient )
-        {
-            return $"{ScopeCookiePrefix}{IdHasher.Instance.GetHash( authClient.Id )}-{IdHasher.Instance.GetHash( CurrentUser.Id )}";
-        }
-
-        /// <summary>
         /// Adds a cookie indicating that the individual has authorized the requested scopes and continues the OIDC
         /// authentication process.
         /// </summary>
@@ -388,18 +455,15 @@ namespace RockWeb.Blocks.Security.Oidc
             var request = owinContext.GetOpenIdConnectRequest();
 
             // TODO: only allow valid scopes.
-            var requestedScopes = request.GetScopes();
-            var authClientId = PageParameter( PageParamKey.ClientId );
+            var requestedScopes = request.GetScopes() ?? Array.Empty<string>();
+            var authClient = GetAuthClient();
             IDictionary<string, string> clientAllowedClaims = null;
 
-            AuthClient authClient = null;
-            IEnumerable<string> clientAllowedScopes = null;
+            List<string> clientAllowedScopes = null;
             using ( var rockContext = new RockContext() )
             {
-                var authClientService = new AuthClientService( rockContext );
-                authClient = authClientService.GetByClientId( authClientId );
-                clientAllowedScopes = RockIdentityHelper.NarrowRequestedScopesToApprovedScopes( rockContext, authClientId, requestedScopes );
-                clientAllowedClaims = RockIdentityHelper.GetAllowedClientClaims( rockContext, authClientId, clientAllowedScopes );
+                clientAllowedScopes = RockIdentityHelper.NarrowRequestedScopesToApprovedScopes( rockContext, authClient, requestedScopes ).ToList();
+                clientAllowedClaims = RockIdentityHelper.GetAllowedClientClaims( rockContext, authClient, clientAllowedScopes );
             }
 
             if ( authClient == null || clientAllowedScopes == null || clientAllowedClaims == null )
@@ -408,22 +472,42 @@ namespace RockWeb.Blocks.Security.Oidc
                 return;
             }
 
+            // The "openid" scope not a traditional scope. It is used by the
+            // OpenID Connect provider to indicate that the client is
+            // requesting an id_token. Therefore it is safe to add it to the
+            // list of allowed scopes if it was requested without checking if
+            // the client is allowed to request it via the
+            // NarrowRequestedScopesToApprovedScopes() method.
+            if ( requestedScopes.Contains( "openid" ) )
+            {
+                clientAllowedScopes.Add( "openid" );
+            }
+
+            // This is a hack since we don't store the grant_types during DCR
+            // to know if the client supports refresh tokens. So we'll just
+            // assume that if the client is asking for the mcp:invoke scope,
+            // then they support refresh tokens.
+            if ( clientAllowedScopes.Contains( "mcp:invoke" ) && !clientAllowedScopes.Contains( "offline_access" ) )
+            {
+                clientAllowedScopes.Add( "offline_access" );
+            }
+
             // Create a new ClaimsIdentity containing the claims that
             // will be used to create an id_token, a token or a code.
-            var identity = RockIdentityHelper.GetRockClaimsIdentity( CurrentUser, clientAllowedClaims, authClientId );
+            var identity = RockIdentityHelper.GetRockClaimsIdentity( CurrentUser, clientAllowedClaims, authClient.ClientId );
 
             // Create a new authentication ticket holding the user identity.
             var ticket = new AuthenticationTicket( identity, new AuthenticationProperties() );
 
             // We should set the scopes to the requested valid scopes.
-            ticket.SetScopes( requestedScopes );
+            ticket.SetScopes( clientAllowedScopes );
 
             // Set the resource servers the access token should be issued for.
             ticket.SetResources( "resource_server" );
 
             // Set cookie to remember the fact that this individual as approved the scopes.
-            var cookieValue = $"{Rock.Security.Encryption.EncryptString( authClient.AllowedScopes.ToString() )}";
-            RockPage.AddOrUpdateCookie( GetScopeCookieName( authClient ), cookieValue, RockDateTime.Now.AddDays( authClient.ScopeApprovalExpiration ) );
+            var cookieValue = AuthClientService.GetScopeCookieValue( authClient, CurrentUser );
+            RockPage.AddOrUpdateCookie( AuthClientService.GetScopeCookieName( authClient, CurrentUser ), cookieValue, RockDateTime.Now.AddDays( authClient.ScopeApprovalExpiration ) );
 
             // Returning a SignInResult will ask ASOS to serialize the specified identity
             // to build appropriate tokens. You should always make sure the identities

@@ -255,6 +255,12 @@ export default class VirtualScroller {
             // too much buffer.
             if (start === this.range.startIndex && firstVisibleIndex - start > (this.options.bufferCount * 3)) {
                 start = Math.max(firstVisibleIndex - (this.options.bufferCount * 2), 0);
+
+                // Don't let start exceed the end of the list of items. Otherwise
+                // the keep growing the size of the grid as the user scrolls down
+                // because we keep adding padding for the "start" count. This can
+                // happen if there is a ton of content below the grid.
+                start = Math.min(start, this.getLastIndex());
             }
         }
 
@@ -436,7 +442,7 @@ export default class VirtualScroller {
 
 type VirtualScrollOptions<RowItem> = {
     /** The data for each row in the list */
-    items: Ref<RowItem[]>
+    items: Ref<RowItem[]>;
 
     /**
      * The field that contains the unique identifier for each item. This must
@@ -448,10 +454,17 @@ type VirtualScrollOptions<RowItem> = {
      * The HTML element that wraps the list, marking the top and bottom of the
      * list. This is required to determine the scroll container.
      */
-    container: Ref<HTMLElement | null | undefined>
+    container: Ref<HTMLElement | null | undefined>;
+
+    /**
+     * A list of CSS classes that should be ignored when looking for the scroll
+     * container. This is useful to prevent certain containers from being used as the
+     * scroll container, such as the Grid's internal horizontal scroll container.
+     */
+    ignoreContainerClasses?: string[];
 
     /** The estimated height of each item in the list. */
-    estimatedItemHeight: number,
+    estimatedItemHeight: number;
 };
 
 type VirtualScrollReturns<RowItem> = {
@@ -520,6 +533,15 @@ export function useVirtualScroller<RowItem>(options: VirtualScrollOptions<RowIte
 
         // If the element is scrollable, use it.
         while (elem && elem !== document.body && elem !== document.documentElement) {
+            // Ignore the element if it has one of the ignore classes specified.
+            if (options.ignoreContainerClasses) {
+                const hasIgnoredClass = options.ignoreContainerClasses.some(c => elem?.classList.contains(c));
+                if (hasIgnoredClass) {
+                    elem = elem.parentElement;
+                    continue;
+                }
+            }
+
             const style = window.getComputedStyle(elem);
 
             if (style.overflowY === "auto" || style.overflowY === "scroll") {

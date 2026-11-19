@@ -24,6 +24,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
 using System.Web.Caching;
+using System.Web.Hosting;
 using System.Web.Http;
 using System.Web.Optimization;
 using System.Web.Routing;
@@ -250,6 +251,9 @@ namespace RockWeb
             StartEnsureChromeEngineThread();
 
             Rock.Bus.RockMessageBus.IsRockStarted = true;
+
+            // Enable enforcement if it has been requested in the security settings.
+            DbContext.EnableStringValidation = new SecuritySettingsService().SecuritySettings.EnableServerModelValidation;
         }
 
         /// <summary>
@@ -302,7 +306,9 @@ namespace RockWeb
 
                 // Compile the next-generation themes.
                 var stopwatchCompileTheme = Stopwatch.StartNew();
+#pragma warning disable CS0618 // Type or member is obsolete
                 var compileMessages = ThemeService.CompileAll( _threadCancellationTokenSource.Token );
+#pragma warning restore CS0618 // Type or member is obsolete
                 stopwatchCompileTheme.Stop();
 
                 if ( System.Web.Hosting.HostingEnvironment.IsDevelopmentEnvironment )
@@ -411,6 +417,8 @@ namespace RockWeb
                     // Pass in a CancellationToken so we can stop compiling if Rock shuts down before it is done
                     BlockTypeService.VerifyBlockTypeInstanceProperties( allUsedBlockTypeIds, _threadCancellationTokenSource.Token );
 
+                    BlockTypeService.RegisterBlockTypes( HostingEnvironment.MapPath( "~" ), false );
+
                     UpdateCompilerAttributesOnBlockTypes();
 
                     Debug.WriteLine( string.Format( "[{0,5:#} seconds] Block Types Compiled", stopwatchCompileBlockTypes.Elapsed.TotalSeconds ) );
@@ -438,57 +446,13 @@ namespace RockWeb
             foreach ( var blockTypeWithCompiledType in blockTypesWithCompiledType )
             {
                 var type = blockTypeWithCompiledType.CompiledType;
-                var siteTypes = SiteTypeFlags.None;
-
-                // Process the SiteTypeFlags property on the BlockType Table for
-                // each block. This logic was introduce to improve performance.
-                // The SiteTypeFlags column stores the flags related to the
-                // SiteTypes associated with the Block Types which otherwise
-                // needs to be fetched using Reflection.
-                if ( typeof( RockBlockType ).IsAssignableFrom( type ) )
-                {
-                    var blockSiteTypes = type.GetCustomAttribute<SupportedSiteTypesAttribute>();
-
-                    if ( blockSiteTypes != null )
-                    {
-                        foreach ( var blockSiteType in blockSiteTypes.SiteTypes )
-                        {
-                            if ( blockSiteType == SiteType.Web )
-                            {
-                                siteTypes |= SiteTypeFlags.Web;
-                            }
-                            else if ( blockSiteType == SiteType.Mobile )
-                            {
-                                siteTypes |= SiteTypeFlags.Mobile;
-                            }
-                            else if ( blockSiteType == SiteType.Tv )
-                            {
-                                siteTypes |= SiteTypeFlags.Tv;
-                            }
-                        }
-                    }
-                }
-                else if ( typeof( IRockObsidianBlockType ).IsAssignableFrom( type ) )
-                {
-                    siteTypes |= SiteTypeFlags.Web;
-                }
-                else if ( typeof( IRockMobileBlockType ).IsAssignableFrom( type ) )
-                {
-                    siteTypes |= SiteTypeFlags.Mobile;
-                }
+                var siteTypes = BlockTypeService.GetSiteTypeFlagsForType( type );
 
                 var defaultRole = blockTypeWithCompiledType.BlockType.DefaultRole;
 
                 if ( type != null )
                 {
-                    if ( type.GetCustomAttribute<Rock.Cms.DefaultBlockRoleAttribute>() is Rock.Cms.DefaultBlockRoleAttribute blockRoleAttr )
-                    {
-                        defaultRole = blockRoleAttr.DefaultRole;
-                    }
-                    else
-                    {
-                        defaultRole = BlockRole.Content;
-                    }
+                    defaultRole = BlockTypeService.GetDefaultRoleForType( type );
                 }
 
                 if ( blockTypeWithCompiledType.BlockType.SiteTypeFlags != siteTypes || blockTypeWithCompiledType.BlockType.DefaultRole != defaultRole )
@@ -986,6 +950,17 @@ namespace RockWeb
         /// <param name="ex">The ex.</param>
         private void LogAndSendNotification( Exception ex )
         {
+            var isExpectedRedirectAbort = ex is ThreadAbortException
+                && HttpContext.Current?.Items["Rock:ExpectedRedirectAbort"] as bool? == true;
+
+            if ( isExpectedRedirectAbort )
+            {
+                // This is an expected exception that happens when Redirect()
+                // is called as it immediately ends the request which causes
+                // the thread to be aborted.
+                return;
+            }
+
             int? pageId = ( Context.Items["Rock:PageId"] ?? string.Empty ).ToString().AsIntegerOrNull();
             int? siteId = ( Context.Items["Rock:SiteId"] ?? string.Empty ).ToString().AsIntegerOrNull();
 
@@ -1217,8 +1192,29 @@ namespace RockWeb
             if ( !Global.QueueInUse )
             {
                 Global.QueueInUse = true;
-                RockQueue.Drain( ( ex ) => WriteErrorToRockLog( ex, "Rock.Transactions", null ) );
-                Global.QueueInUse = false;
+
+                /*
+                 * 2026-04-27 - DSH
+                 * 
+                 * Do not use a finally block here to turn QueueInUse back off.
+                 * There is a rare case with try/catch/finally where an exception
+                 * thrown inside a catch block can cause the finally block to not
+                 * execute under specific conditions, such as no exception handler
+                 * further upstream to catch the exception. This can lead to the
+                 * QueueInUse flag being left in the true state, which would prevent
+                 * the transaction queue from being processed until the application
+                 * is restarted.
+                 */
+                try
+                {
+                    RockQueue.Drain( ( ex ) => WriteErrorToRockLog( ex, "Rock.Transactions", null ) );
+                    Global.QueueInUse = false;
+                }
+                catch ( Exception ex )
+                {
+                    Global.QueueInUse = false;
+                    WriteErrorToRockLog( ex, "Rock.Transactions", "An error occurred while draining the transaction queue." );
+                }
             }
         }
 

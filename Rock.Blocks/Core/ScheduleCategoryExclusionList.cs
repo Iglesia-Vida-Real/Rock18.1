@@ -185,30 +185,34 @@ namespace Rock.Blocks.Core
         [BlockAction]
         public BlockActionResult Delete( string key )
         {
-                            var entityService = new ScheduleCategoryExclusionService( RockContext );
-                var entity = entityService.Get( key, !PageCache.Layout.Site.DisablePredictableIds );
+            var entityService = new ScheduleCategoryExclusionService( RockContext );
+            var entity = entityService.Get( key, !PageCache.Layout.Site.DisablePredictableIds );
+            var categoryId = GetCategoryId();
 
-                if ( entity == null )
-                {
-                    return ActionBadRequest( $"{ScheduleCategoryExclusion.FriendlyTypeName} not found." );
-                }
+            // Only allow exclusions of the category being displayed to be deleted.
+            if ( entity == null || !categoryId.HasValue || entity.CategoryId != categoryId.Value )
+            {
+                return ActionBadRequest( $"{ScheduleCategoryExclusion.FriendlyTypeName} not found." );
+            }
 
-                if ( !BlockCache.IsAuthorized( Authorization.EDIT, RequestContext.CurrentPerson ) )
-                {
-                    return ActionBadRequest( $"Not authorized to delete ${ScheduleCategoryExclusion.FriendlyTypeName}." );
-                }
+            if ( !GetCanAdministrateAuthorization() )
+            {
+                return ActionBadRequest( $"Not authorized to delete ${ScheduleCategoryExclusion.FriendlyTypeName}." );
+            }
 
-                if ( !entityService.CanDelete( entity, out var errorMessage ) )
-                {
-                    return ActionBadRequest( errorMessage );
-                }
+            if ( !entityService.CanDelete( entity, out var errorMessage ) )
+            {
+                return ActionBadRequest( errorMessage );
+            }
 
-                entityService.Delete( entity );
-                RockContext.SaveChanges();
+            entityService.Delete( entity );
+            RockContext.SaveChanges();
 
-                Rock.CheckIn.KioskDevice.Clear();
+#if NET472_OR_GREATER
+            Rock.CheckIn.KioskDevice.Clear();
+#endif
 
-                return ActionOk();
+            return ActionOk();
         }
 
         /// <summary>
@@ -219,25 +223,30 @@ namespace Rock.Blocks.Core
         [BlockAction]
         public BlockActionResult Save( ScheduleCategoryExclusionBag bag )
         {
-            if ( !BlockCache.IsAuthorized( Authorization.EDIT, RequestContext.CurrentPerson ) )
+            if ( !GetCanAdministrateAuthorization() )
             {
                 return ActionBadRequest( $"Not authorized to edit ${ScheduleCategoryExclusion.FriendlyTypeName}." );
             }
 
             var entityService = new ScheduleCategoryExclusionService( RockContext );
             var entity = entityService.Get( bag.IdKey, !PageCache.Layout.Site.DisablePredictableIds );
-
-            if ( entity == null )
-            {
-                entity = new ScheduleCategoryExclusion();
-                entityService.Add( entity );
-            }
-
             var categoryId = GetCategoryId();
 
             if ( !categoryId.HasValue )
             {
                 return ActionBadRequest( "Ensure a category is configured for the block." );
+            }
+
+            // Only allow exclusions of the category being displayed to be edited.
+            if ( entity != null && entity.CategoryId != categoryId.Value )
+            {
+                return ActionBadRequest( $"{ScheduleCategoryExclusion.FriendlyTypeName} not found." );
+            }
+
+            if ( entity == null )
+            {
+                entity = new ScheduleCategoryExclusion();
+                entityService.Add( entity );
             }
 
             entity.CategoryId = categoryId.Value;
@@ -251,7 +260,10 @@ namespace Rock.Blocks.Core
             }
 
             RockContext.SaveChanges();
+
+#if NET472_OR_GREATER
             Rock.CheckIn.KioskDevice.Clear();
+#endif
 
             return ActionOk();
         }

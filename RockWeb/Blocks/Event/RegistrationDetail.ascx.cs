@@ -619,7 +619,7 @@ namespace RockWeb.Blocks.Event
                             Registration = GetRegistration( Registration.Id );
                         }
 
-                        lWizardRegistrationName.Text = Registration.ToString();
+                        lWizardRegistrationName.Text = Registration.ToString().EncodeHtml();
                         ShowReadonlyDetails( Registration );
                     }
                 }
@@ -1174,7 +1174,7 @@ namespace RockWeb.Blocks.Event
 
             // Reload registration
             Registration = GetRegistration( Registration.Id );
-            lWizardRegistrationName.Text = Registration.ToString();
+            lWizardRegistrationName.Text = Registration.ToString().EncodeHtml();
             ShowReadonlyDetails( Registration );
         }
 
@@ -1202,7 +1202,7 @@ namespace RockWeb.Blocks.Event
 
                                 var groupMemberService = new GroupMemberService( rockContext );
                                 var groupMember = groupMemberService
-                                    .Queryable().AsNoTracking()
+                                    .Queryable()
                                     .Where( m =>
                                         m.GroupId == Registration.Group.Id &&
                                         m.PersonId == registrant.PersonId &&
@@ -1438,12 +1438,18 @@ namespace RockWeb.Blocks.Event
                     Registration = GetRegistration( RegistrationId.Value, rockContext );
                     if ( Registration != null )
                     {
+                        if ( !CanViewRegistration( Registration ) )
+                        {
+                            ShowNotAuthorizedToView();
+                            return;
+                        }
+
                         Title = Registration.ToString();
                         RegistrationInstanceId = Registration.RegistrationInstanceId;
                         RegistrationTemplateId = Registration.RegistrationInstance.RegistrationTemplateId;
                         lWizardTemplateName.Text = Registration.RegistrationInstance.RegistrationTemplate.Name;
                         lWizardInstanceName.Text = Registration.RegistrationInstance.Name;
-                        lWizardRegistrationName.Text = Registration.ToString();
+                        lWizardRegistrationName.Text = Registration.ToString().EncodeHtml();
 
                         EditAllowed = EditAllowed ||
                             Registration.RegistrationInstance.IsAuthorized( "Register", CurrentPerson ) ||
@@ -1456,11 +1462,18 @@ namespace RockWeb.Blocks.Event
                 {
                     var registrationInstance = new RegistrationInstanceService( rockContext )
                         .Queryable()
-                        .Include( a => a.RegistrationTemplate ).AsNoTracking()
+                        .Include( a => a.RegistrationTemplate )
+                        .Include( a => a.RegistrationTemplate.Category ).AsNoTracking()
                         .Where( i => i.Id == RegistrationInstanceId.Value )
                         .FirstOrDefault();
                     if ( registrationInstance != null )
                     {
+                        if ( !CanViewRegistration( registrationInstance ) )
+                        {
+                            ShowNotAuthorizedToView();
+                            return;
+                        }
+
                         lWizardTemplateName.Text = registrationInstance.RegistrationTemplate.Name;
                         lWizardInstanceName.Text = registrationInstance.Name;
                         lWizardRegistrationName.Text = "New Registration";
@@ -1505,6 +1518,54 @@ namespace RockWeb.Blocks.Event
             return null;
         }
 
+        /// <summary>
+        /// Determines whether the current person can view the registration
+        /// (or the registration instance for a new registration).
+        /// </summary>
+        /// <param name="item">The registration or registration instance.</param>
+        /// <returns><c>true</c> if the current person can view it; otherwise <c>false</c>.</returns>
+        private bool CanViewRegistration( ISecured item )
+        {
+            /*
+                10/12/2026 - MSE
+
+                The registration is loaded from the page parameters, so any
+                person who could open this page could read registrations in a
+                template or category they can not view. Registrations inherit
+                security from the instance, template and category. Register,
+                Edit and Administrate are also accepted because this block and
+                the registrations list already let those people manage a
+                registration. Block edit rights do not bypass this check.
+
+                Reason: Enforce registration template security on this block.
+            */
+            return item != null
+                && ( item.IsAuthorized( Authorization.VIEW, CurrentPerson )
+                    || item.IsAuthorized( "Register", CurrentPerson )
+                    || item.IsAuthorized( Authorization.EDIT, CurrentPerson )
+                    || item.IsAuthorized( Authorization.ADMINISTRATE, CurrentPerson ) );
+        }
+
+        /// <summary>
+        /// Clears the registration state and shows the not authorized message.
+        /// </summary>
+        private void ShowNotAuthorizedToView()
+        {
+            Registration = null;
+            RegistrationId = null;
+            RegistrationInstanceId = null;
+            RegistrationTemplateId = 0;
+            _registrationTemplate = null;
+            EditAllowed = false;
+            Title = string.Empty;
+            lWizardTemplateName.Text = "Template";
+            lWizardInstanceName.Text = "Instance";
+            lWizardRegistrationName.Text = "Registration";
+            pnlDetails.Visible = false;
+            nbSecurityWarning.Text = EditModeMessage.NotAuthorizedToView( Rock.Model.Registration.FriendlyTypeName );
+            nbSecurityWarning.Visible = true;
+        }
+
         #endregion Load/Save Methods
 
         #region Display Methods
@@ -1543,6 +1604,12 @@ namespace RockWeb.Blocks.Event
 
             if ( Registration != null )
             {
+                if ( !CanViewRegistration( Registration ) )
+                {
+                    ShowNotAuthorizedToView();
+                    return;
+                }
+
                 RegistrationInstanceId = Registration.RegistrationInstanceId;
 
                 // render UI based on Authorized and IsSystem
@@ -1681,10 +1748,10 @@ namespace RockWeb.Blocks.Event
             }
             else
             {
-                lName.Text = string.Format( "{0} {1}", registration.FirstName, registration.LastName );
+                lName.Text = string.Format( "{0} {1}", registration.FirstName, registration.LastName ).EncodeHtml();
             }
 
-            lConfirmationEmail.Text = registration.ConfirmationEmail;
+            lConfirmationEmail.Text = registration.ConfirmationEmail.EncodeHtml();
             lConfirmationEmail.Visible = !string.IsNullOrWhiteSpace( registration.ConfirmationEmail );
             lbResendConfirmation.Visible = lConfirmationEmail.Visible;
 
@@ -1710,7 +1777,7 @@ namespace RockWeb.Blocks.Event
             avcDisplayAttributes.AddDisplayControls( registration );
 
             lDiscountCode.Visible = !string.IsNullOrWhiteSpace( registration.DiscountCode );
-            lDiscountCode.Text = registration.DiscountCode;
+            lDiscountCode.Text = registration.DiscountCode.EncodeHtml();
 
             lDiscountPercent.Visible = registration.DiscountPercentage > 0.0m;
             lDiscountPercent.Text = registration.DiscountPercentage.ToString( "P0" );
@@ -1725,15 +1792,14 @@ namespace RockWeb.Blocks.Event
                 registration.RegistrationInstance.RegistrationTemplate != null &&
                 registration.RegistrationInstance.RegistrationTemplate.RequiredSignatureDocumentTemplateId.HasValue )
             {
-                var personIds = RegistrantsState.Select( r => r.PersonId ).ToList();
+                var signatureDocumentIds = RegistrantsState.Select( r => r.SignatureDocumentId ).ToList();
                 var documents = new SignatureDocumentService( rockContext )
                     .Queryable().AsNoTracking()
                     .Where( d =>
+                        signatureDocumentIds.Contains( d.Id ) &&
                         d.SignatureDocumentTemplateId == registration.RegistrationInstance.RegistrationTemplate.RequiredSignatureDocumentTemplateId.Value &&
-                        d.Status == SignatureDocumentStatus.Signed &&
-                        d.BinaryFileId.HasValue &&
-                        d.AppliesToPersonAlias != null && personIds.Contains( d.AppliesToPersonAlias.PersonId ) )
-                    .OrderByDescending( d => d.LastStatusDate )
+                        d.BinaryFileId.HasValue
+                    )
                     .ToList();
 
                 foreach ( var registrantInfo in RegistrantsState )
@@ -2267,7 +2333,7 @@ namespace RockWeb.Blocks.Event
 
             details.Add( txn.TransactionCode );
 
-            string formattedDetails = details.Where( d => d != null && d != string.Empty ).ToList().AsDelimited( "<br/>" );
+            string formattedDetails = details.Where( d => d != null && d != string.Empty ).Select( d => d.EncodeHtml() ).ToList().AsDelimited( "<br/>" );
             if ( txn.RefundDetails != null )
             {
                 return "<span class='label label-danger'>Refund</span> " + formattedDetails;
@@ -2334,7 +2400,10 @@ namespace RockWeb.Blocks.Event
                     var costSummary = new RegistrationCostSummaryInfo
                     {
                         Type = RegistrationCostSummaryType.Cost,
-                        Description = registrant.PersonName,
+                        // The fee summary repeater outputs Description as HTML. Only the
+                        // registrant name is encoded here because the fee descriptions
+                        // include the formatted currency symbol, which may be an HTML entity.
+                        Description = registrant.PersonName.EncodeHtml(),
                         RegistrationRegistrantGuid = registrant.Guid
                     };
 
@@ -2608,7 +2677,7 @@ namespace RockWeb.Blocks.Event
             var h1Heading = new HtmlGenericControl( "h1" );
             h1Heading.AddCssClass( "panel-title" );
             h1Heading.AddCssClass( "pull-left" );
-            h1Heading.InnerHtml = "<i class='ti ti-user'></i> " + registrant.PersonName;
+            h1Heading.InnerHtml = "<i class='ti ti-user'></i> " + registrant.PersonName.EncodeHtml();
             divHeading.Controls.Add( h1Heading );
 
             var divLabels = new HtmlGenericControl( "div" );
@@ -2674,7 +2743,7 @@ namespace RockWeb.Blocks.Event
                 sb.AppendFormat(
                     "There is not a signed {0} for {1}",
                     template.RequiredSignatureDocumentTemplate.Name,
-                    registrant.GetFirstName( template ) );
+                    registrant.GetFirstName( template ).EncodeHtml() );
 
                 if ( registrant.SignatureDocumentLastSent.HasValue )
                 {
@@ -2749,7 +2818,7 @@ namespace RockWeb.Blocks.Event
                         var lbGroupMember = new LinkButton();
                         lbGroupMember.CausesValidation = false;
                         lbGroupMember.ID = string.Format( "lbGroupMember_{0}", registrant.Id );
-                        lbGroupMember.Text = string.Format( "Add {0} to Target Group", registrant.GetFirstName( this.RegistrationTemplate ) );
+                        lbGroupMember.Text = string.Format( "Add {0} to Target Group", registrant.GetFirstName( this.RegistrationTemplate ).EncodeHtml() );
                         lbGroupMember.Click += lbGroupMember_Click;
                         pGroupMember.Controls.Add( lbGroupMember );
 
@@ -2974,7 +3043,7 @@ namespace RockWeb.Blocks.Event
                     switch ( field.PersonFieldType )
                     {
                         case RegistrationPersonFieldType.MiddleName:
-                            rlField.Text = fieldValue.ToString() ?? string.Empty;
+                            rlField.Text = fieldValue.ToString().EncodeHtml() ?? string.Empty;
                             break;
 
                         case RegistrationPersonFieldType.Campus:
@@ -2984,11 +3053,11 @@ namespace RockWeb.Blocks.Event
 
                         case RegistrationPersonFieldType.Address:
                             var location = fieldValue.ToString();
-                            rlField.Text = location != null ? location.ToString() : string.Empty;
+                            rlField.Text = location != null ? location.EncodeHtml() : string.Empty;
                             break;
 
                         case RegistrationPersonFieldType.Email:
-                            rlField.Text = fieldValue.ToString();
+                            rlField.Text = fieldValue.ToString().EncodeHtml();
                             break;
 
                         case RegistrationPersonFieldType.Birthdate:

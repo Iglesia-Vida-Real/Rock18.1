@@ -16,6 +16,9 @@
 //
 
 import { Ref, watch } from "vue";
+import { isNullish } from "./util";
+import { asBooleanOrNull, asTrueOrFalseString } from "./booleanUtils";
+import { toNumberOrNull } from "./numberUtils";
 
 /**
  * Is the value a valid URL?
@@ -33,79 +36,240 @@ export function isUrl(val: unknown): boolean {
 }
 
 /**
- * Make the URL safe to use for redirects. Basically, this strips off any
- * protocol and hostname from the URL and ensures it's not a javascript:
- * url or anything like that.
+ * Checks if the URL uses a safe scheme. The URL is resolved the same way
+ * the browser resolves an href, so relative URLs are allowed.
  *
- * @param url The URL to be made safe to use with a redirect.
+ * @param url The URL to be checked.
  *
- * @returns A string that is safe to assign to window.location.href.
+ * @returns true if the URL uses the http or https scheme; otherwise false.
  */
-export function makeUrlRedirectSafe(url: string): string {
+export function isUrlSchemeSafe(url: string): boolean {
     try {
-        // If this can't be parsed as a url, such as "/page/123" it will throw
-        // an error which will be handled by the next section.
-        const u = new URL(url);
+        const u = new URL(url, document.baseURI);
 
-        // If the protocol isn't an HTTP or HTTPS, then it is most likely
-        // a dangerous URL.
-        if (u.protocol !== "http:" && u.protocol !== "https:") {
-            return "/";
-        }
-
-        // Try again incase they did something like "http:javascript:alert('hi')".
-        return makeUrlRedirectSafe(`${u.pathname}${u.search}`);
+        return u.protocol === "http:" || u.protocol === "https:";
     }
     catch {
-        // If the URL contains a : but could not be parsed as a URL then it
-        // is not valid, so return "/" so they get redirected to home page.
-        if (url.indexOf(":") !== -1) {
-            return "/";
-        }
-
-        // Otherwise consider it safe to use.
-        return url;
+        return false;
     }
 }
 
 /**
- * Keep a list of named Refs synchronized with URL query parameters in the address of the same names.
- * If there are already query parameters in the URL with those names, the Refs will be assigned those
- * values. This will also watch those Refs for changes and update the query parameters to reflect
- * those changes.
+ * Make the URL safe to use for redirects.
  *
- * @param refs An object where the keys represent the query parameters keys to keep synchronized with
- * and the values are the Refs those query parameters are synched with.
+ * - A URL on this site is returned unchanged.
+ * - A URL on another site keeps its path and query, but on this site.
+ * - Anything else (e.g. javascript:, or a URL that can't be parsed) is "/".
+ *
+ * Allowed Redirect Domain(s) aren't checked here. To redirect to another
+ * site, validate the URL on the server with SiteCache.IsSafeRedirectUrl()
+ * instead.
+ *
+ * @param url The URL to redirect to.
+ *
+ * @returns A URL that is safe to assign to window.location.href.
  */
-export function syncRefsWithQueryParams(refs: Record<string, Ref>): void {
-    // Get current query parameters
+export function makeUrlRedirectSafe(url: string): string {
+    let u: URL;
+
+    try {
+        // Resolve the URL exactly as the browser will when it's assigned to
+        // window.location.href.
+        u = new URL(url, document.baseURI);
+    }
+    catch {
+        return "/";
+    }
+
+    // Only web pages are safe; this rejects javascript:, data:, etc.
+    if (u.protocol !== "http:" && u.protocol !== "https:") {
+        return "/";
+    }
+
+    if (u.origin === window.location.origin) {
+        return url;
+    }
+
+    // Keep the path but stay on this site. Prefixing the origin keeps a path
+    // like "//unsafe.com" from being read as another site.
+    return `${window.location.origin}${u.pathname}${u.search}`;
+}
+
+/**
+ * The types of query parameters that can be synchronized with Refs using the
+ * syncRefsWithQueryParams function.
+ */
+export type QueryParamType = "string" | "number" | "boolean" | "json";
+
+/**
+ * Defines the binding between a Ref and a query parameter, including the query
+ * parameter name and expected type for proper parsing and serialization.
+ */
+export type QueryParamBinding = {
+    /**
+     * The query parameter name in the URL.
+     */
+    param: string;
+
+    /**
+     * The Ref to keep synchronized with the query parameter.
+     */
+    ref: Ref;
+
+    /**
+     * The expected type of the query parameter for parsing/serialization.
+     */
+    type: QueryParamType;
+};
+
+/**
+ * Keep a list of named Refs synchronized with URL query parameters. If there
+ * are already query parameters in the URL with matching parameter names, the
+ * Refs will be assigned those values. This will also watch those Refs for
+ * changes and update the query parameters to reflect those changes.
+ *
+ * @param bindings The list of bindings that define which Refs to sync with
+ * which query parameters, and how to parse/serialize them.
+ */
+export function syncRefsWithQueryParams(bindings: QueryParamBinding[]): void {
+    let isReplaceStateScheduled = false;
+
+    /**
+     * Prevent multiple calls to history.replaceState in the same tick by
+     * scheduling it to run in a microtask and ignoring any additional calls
+     * until it runs.
+     */
+    function scheduleReplaceState(): void {
+        if (isReplaceStateScheduled) {
+            return;
+        }
+
+        isReplaceStateScheduled = true;
+
+        queueMicrotask(() => {
+            try {
+                const qs = params.toString();
+                const { pathname, search, hash } = window.location;
+                const nextUrl = qs ? `${pathname}?${qs}${hash}` : `${pathname}${hash}`;
+                const currentUrl = `${pathname}${search}${hash}`;
+
+                if (nextUrl !== currentUrl) {
+                    history.replaceState(null, "", nextUrl);
+                }
+            }
+            finally {
+                isReplaceStateScheduled = false;
+            }
+        });
+    }
+
+    // Get current query parameters.
     const params = new URLSearchParams(window.location.search);
 
-    Object.entries(refs).forEach(([key, ref]: [string, Ref]) => {
-        let param = null;
+    // Loop through bindings. If there is a query parameter in the URL that
+    // matches a binding's param, set the ref to that value (after parsing it
+    // to the correct type). Then watch the ref for changes and update the
+    // query parameter when it changes.
+    for (const binding of bindings) {
+        const { param, ref, type } = binding;
 
-        // try to get the decoded parameter value
-        try {
-            param = JSON.parse(decodeURI(params.get(key) ?? ""));
+        // If we find a value in the URL, set the ref to it.
+        const raw = params.get(param);
+        if (!isNullish(raw)) {
+            const parsed = parse(raw, type);
+            if (!isNullish(parsed)) {
+                ref.value = parsed;
+            }
+            else {
+                // Don't change the ref value if we can't parse the URL value.
+            }
         }
-        catch (e) { /* just leave the param as null */ }
 
-        // If we found a value, set the Ref to it
-        if (param != null) {
-            ref.value = param;
+        // Keep URL params up-to-date with changes to this ref.
+        watch(ref, (value) => {
+            if (isNullish(value)) {
+                params.delete(param);
+            }
+            else {
+                const serialized = serialize(value, type);
+                if (isNullish(serialized)) {
+                    params.delete(param);
+                }
+                else {
+                    params.set(param, serialized);
+                }
+            }
+
+            scheduleReplaceState();
+        });
+    }
+
+    /**
+     * Parse the raw string value from the URL into the correct type based on
+     * the provided QueryParamType.
+     *
+     * @param raw The raw string value from the URL.
+     * @param type The type to which the raw value should be parsed.
+     * @returns The parsed value or null if parsing fails.
+     */
+    function parse(raw: string, type: QueryParamType): unknown | null {
+        switch (type) {
+            case "string":
+                return raw;
+
+            case "boolean": {
+                return asBooleanOrNull(raw);
+            }
+
+            case "number": {
+                return toNumberOrNull(raw);
+            }
+
+            case "json": {
+                try {
+                    return JSON.parse(raw);
+                }
+                catch {
+                    return null;
+                }
+            }
         }
+    }
 
-        // keep URL params up-to-date with changes to this Ref
-        watch(ref, updater(key));
-    });
+    /**
+     * Serialize the value to a string that can be stored in the URL based on
+     * the provided QueryParamType. If the value cannot be serialized to the
+     * specified type, null is returned.
+     *
+     * @param value The value to be serialized.
+     * @param type The type to which the value should be serialized.
+     * @returns The serialized string or null if serialization fails.
+     */
+    function serialize(value: unknown, type: QueryParamType): string | null {
+        switch (type) {
+            case "string":
+                return typeof value === "string"
+                    ? value
+                    : null;
 
-    //
-    function updater(key) {
-        return (value) => {
-            params.set(key, encodeURI(JSON.stringify(value)));
+            case "boolean": return typeof value === "boolean"
+                ? asTrueOrFalseString(value)
+                : null;
 
-            history.replaceState(null, "", "?" + params.toString());
-        };
+            case "number":
+                return typeof value === "number" && Number.isFinite(value)
+                    ? String(value)
+                    : null;
+
+            case "json": {
+                try {
+                    return JSON.stringify(value);
+                }
+                catch {
+                    return null;
+                }
+            }
+        }
     }
 }
 

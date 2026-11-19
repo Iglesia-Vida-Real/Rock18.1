@@ -41,6 +41,17 @@ export function* getAncestors(element: Element): IterableIterator<Element> {
     }
 }
 
+export function isElementFullyVisible(element: Element): boolean {
+    const rect = element.getBoundingClientRect();
+
+    return (
+        rect.top >= 0 &&
+        rect.left >= 0 &&
+        rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
+        rect.right <= (window.innerWidth || document.documentElement.clientWidth)
+    );
+}
+
 /**
  * Scrolls the start of an element to the top of the window.
  *
@@ -319,4 +330,32 @@ export function removeWhiteSpaceFromChildElements(element: Document | Element, s
                 removeWhiteSpaceFromElement(el, selector);
             });
     }
+}
+
+/**
+ * Replaces an element's tag name with a new tag name, preserving attributes and children.
+ *
+ * Does not copy event listeners.
+ *
+ * @param oldElement The element to be replaced.
+ * @param newTagName The new tag name to use.
+ * @returns The newly created element with the new tag name.
+ */
+export function replaceTagName<K extends keyof HTMLElementTagNameMap>(oldElement: HTMLElement, newTagName: K): HTMLElement {
+    const newElement = oldElement.ownerDocument.createElement(newTagName);
+
+    // Copy attributes from the old element
+    Array.from(oldElement.attributes).forEach((attr) =>
+        newElement.setAttribute(attr.name, attr.value)
+    );
+
+    // Move children to the new element
+    while (oldElement.firstChild) {
+        newElement.appendChild(oldElement.firstChild);
+    }
+
+    // Replace the old element with the new one in the DOM
+    oldElement.replaceWith(newElement);
+
+    return newElement;
 }

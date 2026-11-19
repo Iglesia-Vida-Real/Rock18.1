@@ -44,7 +44,6 @@ namespace Rock.Blocks.Lms
         Key = AttributeKey.HeaderLavaTemplate,
         Description = "The Lava template to use to show a header above the various state templates. Merge fields include: LearningClass, Facilitators, Registrant, CurrentPerson and other Common Merge Fields. <span class='tip tip-lava'></span>",
         EditorMode = CodeEditorMode.Lava,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 400,
         IsRequired = false,
         DefaultValue = AttributeDefault.HeaderLavaTemplate,
@@ -53,7 +52,6 @@ namespace Rock.Blocks.Lms
     [CodeEditorField( "Confirmation Lava Template",
         Key = AttributeKey.ConfirmationLavaTemplate,
         Description = "The Lava template to use when displaying the confirmation messaging to the individual. Merge fields include: ErrorKey (one of: 'unmet_course_requirements', 'class_full', 'enrollment_closed', 'already_enrolled'), UnmetRequirements, LearningClass, Facilitators, Registrant, CurrentPerson and other Common Merge Fields. <span class='tip tip-lava'></span>", EditorMode = CodeEditorMode.Lava,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 400,
         IsRequired = false,
         DefaultValue = AttributeDefault.ConfirmationLavaTemplate,
@@ -62,7 +60,6 @@ namespace Rock.Blocks.Lms
     [CodeEditorField( "Completion Lava Template",
         Key = AttributeKey.CompletionLavaTemplate,
         Description = "The Lava template to use to show the completed message. Merge fields include: UnmetRequirements, LearningClass, Facilitators, Registrant, CurrentPerson and other Common Merge Fields. <span class='tip tip-lava'></span>", EditorMode = CodeEditorMode.Lava,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 400,
         IsRequired = false,
         DefaultValue = AttributeDefault.CompletionLavaTemplate,
@@ -71,7 +68,6 @@ namespace Rock.Blocks.Lms
     [CodeEditorField( "Enrollment Error Lava Template",
         Key = AttributeKey.EnrollmentErrorLavaTemplate,
         Description = "The Lava template to use when the individual is not able to enroll. Merge fields include: ErrorKey (one of: 'unmet_course_requirements', 'class_full', 'enrollment_closed', 'already_enrolled'), UnmetRequirements, Facilitators, LearningClass, Registrant, CurrentPerson and other Common Merge Fields. <span class='tip tip-lava'></span>", EditorMode = CodeEditorMode.Lava,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 400,
         IsRequired = true,
         DefaultValue = AttributeDefault.EnrollmentErrorLavaTemplate,
@@ -416,6 +412,43 @@ namespace Rock.Blocks.Lms
         }
 
         /// <summary>
+        /// Determines whether the current person can view and enroll the registrant.
+        /// </summary>
+        /// <param name="currentPerson">The person currently viewing this block.</param>
+        /// <param name="registrant">The person being registered for the class.</param>
+        /// <param name="learningClass">The class the registrant is being enrolled in.</param>
+        /// <returns><c>true</c> if the current person can act for the registrant; otherwise <c>false</c>.</returns>
+        private bool CanActForRegistrant( Person currentPerson, Person registrant, LearningClass learningClass )
+        {
+            /*
+                10/9/2026 - MSE
+
+                The RegistrantId page parameter comes from the browser, so it is
+                only honored for the current person, their family members, or
+                someone who can edit the class (such as a facilitator).
+
+                Reason: Limit who can be enrolled through this block.
+            */
+            if ( currentPerson == null || registrant == null )
+            {
+                return false;
+            }
+
+            if ( registrant.Id == currentPerson.Id )
+            {
+                return true;
+            }
+
+            if ( learningClass != null && learningClass.IsAuthorized( Rock.Security.Authorization.EDIT, currentPerson ) )
+            {
+                return true;
+            }
+
+            return currentPerson.GetFamilyMembers( false, RockContext )
+                .Any( m => m.PersonId == registrant.Id );
+        }
+
+        /// <summary>
         /// Gets the box navigation URLs required for the page to operate.
         /// </summary>
         /// <returns>A dictionary of key names and URL values.</returns>
@@ -457,7 +490,7 @@ namespace Rock.Blocks.Lms
             var currentPerson = GetCurrentPerson();
             var registrant = GetRegistrant( currentPerson );
 
-            if (registrant == null )
+            if ( registrant == null )
             {
                 box.ErrorMessage = "It looks like we don't have the information needed to enroll someone for this class. Please make sure you're logged in and try again.";
                 return;
@@ -473,11 +506,24 @@ namespace Rock.Blocks.Lms
                 return;
             }
 
+            if ( !CanActForRegistrant( currentPerson, registrant, learningClass ) )
+            {
+                box.ErrorMessage = "You are not allowed to enroll this person in this class.";
+                return;
+            }
+
             box.HeaderHtml = HeaderLavaTemplate.ResolveMergeFields( mergeFields );
 
             if ( !new LearningParticipantService( RockContext ).CanEnroll( learningClass, registrant, unmetRequirements, out var errorMessage ) )
             {
                 mergeFields.Add( "ErrorKey", errorMessage );
+            }
+
+            if ( errorMessage.Equals( "enrollment_unauthorized", StringComparison.OrdinalIgnoreCase ) )
+            {
+                box.ErrorMessage = "You are not allowed to enroll in this class.";
+                box.EnrollmentErrorHtml = string.Empty;
+                return;
             }
 
             // If already enrolled show the completion rather than the confirmation screen.
@@ -575,7 +621,19 @@ namespace Rock.Blocks.Lms
         {
             var currentPerson = GetCurrentPerson();
             var registrant = GetRegistrant( currentPerson );
+
+            if ( registrant == null )
+            {
+                return ActionBadRequest( "Unable to determine who to enroll." );
+            }
+
             var mergeFields = GetMergeFields( currentPerson, registrant, out var learningClass, out var unmetRequirements );
+
+            if ( !CanActForRegistrant( currentPerson, registrant, learningClass ) )
+            {
+                return ActionForbidden( "You are not allowed to enroll this person in this class." );
+            }
+
             var learningParticipantService = new LearningParticipantService( RockContext );
 
             try

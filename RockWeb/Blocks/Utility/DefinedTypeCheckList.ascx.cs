@@ -36,13 +36,21 @@ namespace RockWeb.Blocks.Utility
     [DisplayName( "Defined Type Check List" )]
     [Category( "Utility" )]
     [Description( "Used for managing the values of a defined type as a checklist." )]
+
     [DefinedTypeField( "Defined Type", "The Defined Type to display values for." )]
     [TextField( "Attribute Key", "The attribute key on the Defined Type that is used to store whether item has been completed (should be a boolean field type)." )]
     [BooleanField( "Hide Checked Items", "Hide items that are already checked.", false )]
     [BooleanField( "Hide Block When Empty", "Hides entire block if no checklist items are available.", false )]
     [TextField( "Checklist Title", "Title for your checklist.", false, "", "Description", 1 )]
-    [CodeEditorField( "Checklist Description", "Description for your checklist. Leave this blank and nothing will be displayed.",
-        CodeEditorMode.Html, CodeEditorTheme.Rock, 100, false, "", "Description", 2 )]
+
+    [CodeEditorField( "Checklist Description",
+        Description = "Description for your checklist. Leave this blank and nothing will be displayed.",
+        EditorMode = CodeEditorMode.Html,
+        EditorHeight = 100,
+        IsRequired = false,
+        Category = "Description",
+        Order = 2 )]
+
     [Rock.SystemGuid.BlockTypeGuid( "15572974-DD86-43C8-BBBF-5181EE76E2C9" )]
     public partial class DefinedTypeCheckList : RockBlock
     {
@@ -85,6 +93,7 @@ $('.checklist-item label strong, .checklist-desc-toggle').on('click', function (
                 using ( var rockContext = new RockContext() )
                 {
                     var definedValueService = new DefinedValueService( rockContext );
+                    var definedType = DefinedTypeCache.Get( GetAttributeValue( "DefinedType" ).AsGuid() );
 
                     foreach ( RepeaterItem item in rptrValues.Items )
                     {
@@ -94,7 +103,10 @@ $('.checklist-item label strong, .checklist-desc-toggle').on('click', function (
                         if ( hfValue != null && cbValue != null )
                         {
                             var value = definedValueService.Get( hfValue.ValueAsInt() );
-                            if ( value != null )
+
+                            // The value identifier comes from a hidden field, so make sure
+                            // it belongs to the defined type configured for this block.
+                            if ( value != null && definedType != null && value.DefinedTypeId == definedType.Id )
                             {
                                 Helper.LoadAttributes( value );
                                 if ( value.GetAttributeValue( attributeKey ) != cbValue.Checked.ToString() )

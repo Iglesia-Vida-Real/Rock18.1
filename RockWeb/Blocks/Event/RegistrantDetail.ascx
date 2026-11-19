@@ -55,6 +55,8 @@
             </div>
         </div>
 
+        <Rock:NotificationBox ID="nbSecurityWarning" runat="server" NotificationBoxType="Warning" Visible="false" />
+
         <asp:Panel ID="pnlDetails" runat="server">
 
             <div class="panel panel-block">
@@ -90,6 +92,7 @@
                             </div>
                             <asp:HiddenField ID="hfSignedDocumentId" runat="server" />
                             <Rock:FileUploader ID="fuSignedDocument" runat="server" Label="Signed Document" ShowDeleteButton="false"/>
+                            <Rock:NotificationBox ID="nbFoundExistingSignatureDocument" runat="server" Visible="false" NotificationBoxType="Info" Heading="Note" Text="An existing valid signature document was found for this registrant."></Rock:NotificationBox>
                         </div>
                     </div>
 

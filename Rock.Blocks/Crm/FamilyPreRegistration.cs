@@ -195,7 +195,6 @@ namespace Rock.Blocks.Crm
         DefaultValue = "/FamilyPreRegistrationSuccess?FamilyId={{ Family.Id }}&Parents={{ ParentIds }}&Children={{ ChildIds }}&When={{ PlannedVisitDate }}",
         Description = BlockAttributeDescription.RedirectURL,
         EditorMode = CodeEditorMode.Lava,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 200,
         IsRequired = false,
         Order = 17 )]
@@ -913,7 +912,7 @@ namespace Rock.Blocks.Crm
                 var person = new Person();
                 person.LoadAttributes();
 
-                var personAttributes = GetAttributeCategoryAttributes( rockContext, this.ChildAttributeCategoryGuids );
+                var personAttributes = GetAttributeCategoryAttributes( rockContext, this.ChildAttributeCategoryGuids, this.GetCurrentPerson() );
                 var bag = GetFamilyPreRegistrationPersonBag( person, Rock.SystemGuid.GroupRole.GROUPROLE_FAMILY_MEMBER_CHILD.AsGuid(), this.GetCurrentPerson(), personAttributes );
 
                 return ActionOk( bag );
@@ -933,6 +932,13 @@ namespace Rock.Blocks.Crm
                 {
                     Errors = errorMessages
                 } );
+            }
+
+            // Make sure the family, people and photos in the request are the
+            // ones this block would have offered to the current person.
+            if ( !TryRestrictRequestToCurrentFamily( bag, out var restrictErrorMessage ) )
+            {
+                return ActionBadRequest( restrictErrorMessage );
             }
 
             // Get some system values
@@ -1203,7 +1209,7 @@ namespace Rock.Blocks.Crm
                 var isChildGradeShown = GetFieldBag( AttributeKey.ChildGrade ).IsShown;
                 var isChildProfileShown = GetFieldBag( AttributeKey.ChildProfilePhoto ).IsShown;
 
-                var childAttributes = GetAttributeCategoryAttributes( rockContext, this.ChildAttributeCategoryGuids );
+                var childAttributes = GetAttributeCategoryAttributes( rockContext, this.ChildAttributeCategoryGuids, this.GetCurrentPerson() );
 
                 var binaryFileService = new BinaryFileService( rockContext );
                 var groupTypeRoleService = new GroupTypeRoleService( rockContext );
@@ -1674,7 +1680,7 @@ namespace Rock.Blocks.Crm
         {
             errorMessages = new List<string>();
 
-            var disableCaptcha = GetAttributeValue( AttributeKey.DisableCaptchaSupport ).AsBoolean();
+            var disableCaptcha = Captcha.CaptchaService.ShouldDisableCaptcha( GetAttributeValue( AttributeKey.DisableCaptchaSupport ).AsBoolean() );
             if ( !disableCaptcha && !RequestContext.IsCaptchaValid )
             {
                 errorMessages.Add( "Captcha was not valid." );
@@ -1909,12 +1915,13 @@ namespace Rock.Blocks.Crm
         }
 
         /// <summary>
-        /// Gets the attributes for the specified attribute categories.
+        /// Gets the attributes for the specified attribute categories that the current person is authorized to view.
         /// </summary>
         /// <param name="rockContext">The rock context.</param>
         /// <param name="attributeCategoryGuids">The attribute category guids.</param>
-        /// <returns>The attributes for the specified attribute categories.</returns>
-        private List<AttributeCache> GetAttributeCategoryAttributes( RockContext rockContext, List<Guid> attributeCategoryGuids )
+        /// <param name="currentPerson">The person whose view authorization is evaluated against each attribute.</param>
+        /// <returns>The viewable attributes for the specified attribute categories.</returns>
+        private List<AttributeCache> GetAttributeCategoryAttributes( RockContext rockContext, List<Guid> attributeCategoryGuids, Person currentPerson )
         {
             var attributeService = new AttributeService( rockContext );
             var attributes = new List<AttributeCache>();
@@ -1927,9 +1934,27 @@ namespace Rock.Blocks.Crm
                 {
                     foreach ( var attribute in attributeService.GetByCategoryId( category.Id, false ) )
                     {
-                        if ( !attributes.Any( a => a.Guid == attribute.Guid ) )
+                        var attributeCache = AttributeCache.Get( attribute );
+
+                        /*
+                            6/5/26 - JMH
+
+                            Filter category attributes by VIEW authorization so an attribute with View denied does not
+                            surface on the public registration form. The consumers of this list all pass
+                            enforceSecurity: false (so unauthenticated visitors can populate values), which leaves this
+                            list as the only authorization gate.
+
+                            VIEW is intentional, not EDIT: EDIT defaults to deny for anonymous users, so an EDIT filter
+                            would hide every category attribute here. VIEW defaults to allow, so attributes without an
+                            explicit rule still render while explicit View denies are honored.
+
+                            Reason: Honor person-attribute View security on the public pre-registration form.
+                        */
+                        if ( attributeCache != null
+                            && attributeCache.IsAuthorized( Authorization.VIEW, currentPerson )
+                            && !attributes.Any( a => a.Guid == attributeCache.Guid ) )
                         {
-                            attributes.Add( AttributeCache.Get( attribute ) );
+                            attributes.Add( attributeCache );
                         }
                     }
                 }
@@ -1999,7 +2024,7 @@ namespace Rock.Blocks.Crm
                 ChildProfilePhotoField = GetFieldBag( AttributeKey.ChildProfilePhoto ),
                 ChildRaceField = GetFieldBag( AttributeKey.ChildRaceOption ),
                 ChildEthnicityField = GetFieldBag( AttributeKey.ChildEthnicityOption ),
-                DisableCaptchaSupport = GetAttributeValue( AttributeKey.DisableCaptchaSupport ).AsBoolean(),
+                DisableCaptchaSupport = Captcha.CaptchaService.ShouldDisableCaptcha( GetAttributeValue( AttributeKey.DisableCaptchaSupport ).AsBoolean() ),
                 AdultLabel = GetAttributeValue( AttributeKey.AdultLabel ),
                 ChildLabel = GetAttributeValue( AttributeKey.ChildLabel ),
             };
@@ -2016,7 +2041,7 @@ namespace Rock.Blocks.Crm
 
                 var (adult1, adult2, children, family) = GetCurrentOrNewFamily( rockContext, currentPerson, childRelationshipTypes );
 
-                var adultAttributes = GetAttributeCategoryAttributes( rockContext, this.AdultAttributeCategoryGuids );
+                var adultAttributes = GetAttributeCategoryAttributes( rockContext, this.AdultAttributeCategoryGuids, currentPerson );
 
                 box.Adult1 = GetFamilyPreRegistrationPersonBag( adult1, currentPerson, adultAttributes );
                 box.Adult2 = GetFamilyPreRegistrationPersonBag( adult2, currentPerson, adultAttributes );
@@ -2033,7 +2058,7 @@ namespace Rock.Blocks.Crm
                     GradeOffset = null
                 };
                 mockChild.LoadAttributes( rockContext );
-                var childAttributes = GetAttributeCategoryAttributes( rockContext, this.ChildAttributeCategoryGuids );
+                var childAttributes = GetAttributeCategoryAttributes( rockContext, this.ChildAttributeCategoryGuids, currentPerson );
                 box.ChildAttributes = mockChild.GetPublicAttributesForEdit( currentPerson, enforceSecurity: false, attributeFilter: f => childAttributes.Any( a => a.Guid == f.Guid ) );
                 box.Children = children.Select( child => GetFamilyPreRegistrationPersonBag( child.Person, child.FamilyRoleGuid, currentPerson, childAttributes ) ).ToList();
 
@@ -2157,6 +2182,84 @@ namespace Rock.Blocks.Crm
             }
 
             return relationshipTypes;
+        }
+
+        /// <summary>
+        /// Restricts the save request to the family, adults and children that
+        /// <see cref="GetCurrentOrNewFamily(RockContext, Person, Dictionary{int, ListItemBag})"/>
+        /// returns for the current person. Any other family is treated as a
+        /// new family and any other person is treated as a new person, which
+        /// then goes through the normal matching logic. Profile photos must be
+        /// the person's current photo or a temporary file uploaded by the
+        /// current person.
+        /// </summary>
+        /// <param name="bag">The save request bag, which will be updated.</param>
+        /// <param name="errorMessage">On <c>false</c> return, contains the error message.</param>
+        /// <returns><c>true</c> if the request can be saved; otherwise <c>false</c>.</returns>
+        private bool TryRestrictRequestToCurrentFamily( FamilyPreRegistrationSaveRequestBag bag, out string errorMessage )
+        {
+            errorMessage = null;
+
+            using ( var rockContext = new RockContext() )
+            {
+                var currentPerson = GetCurrentPerson();
+                var (allowedAdult1, allowedAdult2, allowedChildren, allowedFamily) = GetCurrentOrNewFamily( rockContext, currentPerson, GetChildRelationshipTypes() );
+
+                // Only the existing family offered to the current person may be updated.
+                if ( bag.FamilyGuid.HasValue && ( allowedFamily == null || allowedFamily.Id == 0 || allowedFamily.Guid != bag.FamilyGuid.Value ) )
+                {
+                    bag.FamilyGuid = null;
+                }
+
+                var allowedAdults = new[] { allowedAdult1, allowedAdult2 }
+                    .Where( p => p != null && p.Id != 0 )
+                    .ToList();
+                var allowedChildPeople = allowedChildren
+                    .Select( c => c.Person )
+                    .Where( p => p != null && p.Id != 0 )
+                    .ToList();
+
+                var binaryFileService = new BinaryFileService( rockContext );
+
+                // Validates a single person bag against the allowed people.
+                bool RestrictPersonBag( FamilyPreRegistrationPersonBag personBag, List<Person> allowedPeople )
+                {
+                    if ( personBag == null )
+                    {
+                        return true;
+                    }
+
+                    var existingPerson = allowedPeople.FirstOrDefault( p => p.Guid == personBag.Guid );
+
+                    // Anything other than an allowed person is a new person.
+                    if ( existingPerson == null )
+                    {
+                        personBag.Guid = Guid.NewGuid();
+                    }
+
+                    return binaryFileService.IsUploadedBinaryFileAllowedForPerson( personBag.ProfilePhotoGuid, existingPerson?.Photo?.Guid, currentPerson );
+                }
+
+                if ( !RestrictPersonBag( bag.Adult1, allowedAdults ) || !RestrictPersonBag( bag.Adult2, allowedAdults ) )
+                {
+                    errorMessage = "Invalid profile photo.";
+                    return false;
+                }
+
+                if ( bag.Children != null )
+                {
+                    foreach ( var child in bag.Children )
+                    {
+                        if ( !RestrictPersonBag( child, allowedChildPeople ) )
+                        {
+                            errorMessage = "Invalid profile photo.";
+                            return false;
+                        }
+                    }
+                }
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -2900,7 +3003,7 @@ namespace Rock.Blocks.Crm
 
             // Save any attribute values
             adult.LoadAttributes( rockContext );
-            var adultAttributes = GetAttributeCategoryAttributes( rockContext, this.AdultAttributeCategoryGuids );
+            var adultAttributes = GetAttributeCategoryAttributes( rockContext, this.AdultAttributeCategoryGuids, this.GetCurrentPerson() );
             adult.SetPublicAttributeValues(
                 bag.AttributeValues,
                 this.GetCurrentPerson(),

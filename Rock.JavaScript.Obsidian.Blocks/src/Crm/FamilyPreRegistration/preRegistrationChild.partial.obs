@@ -6,7 +6,7 @@
                 class="pull-right"
                 :disabled="disabled"
                 :isSquare="true"
-                @click="$emit('remove', child)">
+                @click="$emit('remove', child as ChildRequestBag)">
         <i class="ti ti-x"></i>
     </RockButton>
 
@@ -17,12 +17,13 @@
     <div class="row">
         <div class="col-sm-6">
             <DropDownList
-                          v-model="child.familyRoleGuid"
+                          :modelValue="child.familyRoleGuid!"
                           :disabled="disabled"
                           :items="config.childRelationshipTypes ?? undefined"
                           :label="t('labelRelationshipTo', { label: adultLabel })"
                           :rules="requiredRules"
-                          :showBlankItem="false" />
+                          :showBlankItem="false"
+                          @update:modelValue="v => child.familyRoleGuid = v as string" />
         </div>
         <div class="col-sm-6"></div><!-- filler/blocker column -->
     </div>

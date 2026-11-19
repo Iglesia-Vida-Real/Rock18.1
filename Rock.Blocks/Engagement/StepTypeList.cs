@@ -202,7 +202,7 @@ namespace Rock.Blocks.Engagement
         {
             var stepProgram = GetStepProgram();
             var stepTypeService = new StepTypeService( rockContext );
-            var stepTypeQueryable = stepTypeService
+            IQueryable<StepType> stepTypeQueryable = stepTypeService
                 .Queryable()
                 .Include( st => st.OrganizationalObjectiveValue );
 
@@ -283,7 +283,7 @@ namespace Rock.Blocks.Engagement
                 .AddField( "allowMultiple", a => a.StepType.AllowMultiple )
                 .AddField( "startedCount", a => a.StartedCount )
                 .AddField( "completedCount", a => a.CompletedCount )
-                .AddField( "isSecurityDisabled", _ => !BlockCache.IsAuthorized( Authorization.ADMINISTRATE, RequestContext.CurrentPerson ) )
+                .AddField( "isSecurityDisabled", a => !a.StepType.IsAuthorized( Authorization.ADMINISTRATE, RequestContext.CurrentPerson ) )
                 .AddField( "isSystem", a => a.StepType.IsSystem )
                 .AddAttributeFieldsFrom( a => a.StepType, _gridAttributes.Value );
         }
@@ -352,6 +352,11 @@ namespace Rock.Blocks.Engagement
         [BlockAction]
         public BlockActionResult ReorderItem( string key, string beforeKey )
         {
+            if ( !GetIsAddDeleteEnabled() )
+            {
+                return ActionBadRequest( $"Not authorized to reorder {StepType.FriendlyTypeName}." );
+            }
+
             // Get the queryable and make sure it is ordered correctly.
             var qry = GetListQueryable( RockContext );
             qry = GetOrderedListQueryable( qry, RockContext );
@@ -388,6 +393,11 @@ namespace Rock.Blocks.Engagement
             if ( !entity.IsAuthorized( Authorization.EDIT, RequestContext.CurrentPerson ) )
             {
                 return ActionBadRequest( $"Not authorized to delete {StepType.FriendlyTypeName}." );
+            }
+
+            if ( entity.IsSystem )
+            {
+                return ActionBadRequest( $"You cannot delete a system {StepType.FriendlyTypeName}." );
             }
 
             if ( !entityService.CanDelete( entity, out var errorMessage ) )

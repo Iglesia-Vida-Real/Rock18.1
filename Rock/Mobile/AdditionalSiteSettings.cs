@@ -185,6 +185,12 @@ namespace Rock.Mobile
         public int? ChatPageId { get; set; }
 
         /// <summary>
+        /// The identifier for the page that will Outreach Toolbox touchpoints.
+        /// This page is used by push notifications sent via Outreach Toolbox.
+        /// </summary>
+        public int? OutreachToolboxTouchpointPageId { get; set; }
+
+        /// <summary>
         /// Gets or sets the person attribute categories.
         /// </summary>
         /// <value>
@@ -415,6 +421,13 @@ namespace Rock.Mobile
         /// Gets or sets the record status to use for new Auth0 logins.
         /// </summary>
         public int? Auth0RecordStatusValueId { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether a first Auth0 sign-in is linked
+        /// to an existing person only if Auth0 reports the email as verified.
+        /// </summary>
+        /// <value><c>true</c> if a verified email is required to link to an existing person; otherwise, <c>false</c>.</value>
+        public bool Auth0RequireVerifiedEmail { get; set; } = true;
 
         /// <summary>
         /// The Entra client identifier.

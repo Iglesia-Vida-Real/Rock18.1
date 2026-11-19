@@ -19,6 +19,7 @@ using System.Collections.Concurrent;
 using System.Linq;
 using System.Runtime.Serialization;
 
+using Rock.Configuration;
 using Rock.Data;
 using Rock.Model;
 
@@ -167,9 +168,22 @@ namespace Rock.Web.Cache
         /// </summary>
         /// <param name="interactionChannelId">The interaction channel identifier.</param>
         /// <param name="componentEntityId">The component entity identifier.</param>
-        /// <param name="componentName">Name of the component. This value will only be used if a new record is created.</param>
+        /// <param name="componentName">Name of the component. This is used when a new record is created and is also written to an existing record.</param>
         /// <returns></returns>
         public static int GetComponentIdByChannelIdAndEntityId( int interactionChannelId, int? componentEntityId, string componentName )
+        {
+            return GetComponentIdByChannelIdAndEntityId( interactionChannelId, componentEntityId, componentName, true );
+        }
+
+        /// <summary>
+        /// Gets the component identifier by channel identifier and component entity identifier, and creates it if it doesn't exist.
+        /// </summary>
+        /// <param name="interactionChannelId">The interaction channel identifier.</param>
+        /// <param name="componentEntityId">The component entity identifier.</param>
+        /// <param name="componentName">Name of the component to use when a new record is created.</param>
+        /// <param name="updateExistingName">If <c>true</c>, an existing component is renamed to <paramref name="componentName"/>. Callers passing a client supplied name must pass <c>false</c>.</param>
+        /// <returns></returns>
+        internal static int GetComponentIdByChannelIdAndEntityId( int interactionChannelId, int? componentEntityId, string componentName, bool updateExistingName )
         {
             var lookupKey = $"{interactionChannelId}|{componentEntityId}";
 
@@ -178,10 +192,10 @@ namespace Rock.Web.Cache
                 return componentId;
             }
 
-            using ( var rockContext = new RockContext() )
+            using ( var rockContext = RockApp.Current.CreateRockContext() )
             {
                 int? interactionComponentId = null;
-                var interactionComponent = new InteractionComponentService( rockContext ).GetComponentByChannelIdAndEntityId( interactionChannelId, componentEntityId, componentName );
+                var interactionComponent = new InteractionComponentService( rockContext ).GetComponentByChannelIdAndEntityId( interactionChannelId, componentEntityId, componentName, updateExistingName );
 
                 // If a new component was added above we need to save the change
                 rockContext.SaveChanges();
@@ -210,7 +224,7 @@ namespace Rock.Web.Cache
                 return componentId;
             }
 
-            using ( var rockContext = new RockContext() )
+            using ( var rockContext = RockApp.Current.CreateRockContext() )
             {
                 int? interactionComponentId = null;
                 var interactionComponent = new InteractionComponentService( rockContext ).GetComponentByComponentName( interactionChannelId, componentName );
@@ -252,7 +266,7 @@ namespace Rock.Web.Cache
                 return channelId;
             }
 
-            using ( var rockContext = new RockContext() )
+            using ( var rockContext = RockApp.Current.CreateRockContext() )
             {
                 var interactionComponentService = new InteractionComponentService( rockContext );
                 var interactionComponent = interactionComponentService.Queryable()

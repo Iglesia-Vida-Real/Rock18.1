@@ -23,8 +23,10 @@ using System.Web.UI;
 using System.Web.UI.WebControls;
 using Newtonsoft.Json;
 using Rock;
+using Rock.Constants;
 using Rock.Data;
 using Rock.Model;
+using Rock.Security;
 using Rock.Web.Cache;
 using Rock.Web.UI;
 using Rock.Web.UI.Controls;
@@ -223,6 +225,7 @@ namespace RockWeb.Blocks.Event
                 var registrationTemplateFeeService = new RegistrationTemplateFeeService( rockContext );
                 var registrationTemplateFeeItemService = new RegistrationTemplateFeeItemService( rockContext );
                 RegistrationRegistrant registrant = null;
+
                 if ( RegistrantState.Id > 0 )
                 {
                     registrant = registrantService.Get( RegistrantState.Id );
@@ -361,49 +364,83 @@ namespace RockWeb.Blocks.Event
                     int? binaryFileId = fuSignedDocument.BinaryFileId;
                     if ( signatureDocumentId.HasValue )
                     {
-                        document = documentService.Get( signatureDocumentId.Value );
+                        // The document id comes from a hidden field, so only accept the document already
+                        // linked to this registrant, or a document for this template and person, which
+                        // is how it was originally selected.
+                        var signatureDocumentTemplateId = this.RegistrationTemplate.RequiredSignatureDocumentTemplate.Id;
+                        var currentSignatureDocumentId = registrant.SignatureDocumentId;
+                        document = documentService.Queryable()
+                            .FirstOrDefault( d => d.Id == signatureDocumentId.Value
+                                && ( d.Id == currentSignatureDocumentId
+                                    || ( d.SignatureDocumentTemplateId == signatureDocumentTemplateId
+                                        && d.AppliesToPersonAlias.PersonId == personId.Value ) ) );
+
+                        if ( document != null && registrant.SignatureDocument == null )
+                        {
+                            registrant.SignatureDocument = document;
+                        }
+                    }
+
+                    // Only accept the document's current file or a new upload, otherwise keep the current file.
+                    if ( !binaryFileService.IsUploadedBinaryFileAllowedForPerson( binaryFileId, document?.BinaryFileId, CurrentPerson ) )
+                    {
+                        binaryFileId = document?.BinaryFileId;
                     }
 
                     if ( document == null && binaryFileId.HasValue )
                     {
-                        var instance = new RegistrationInstanceService( rockContext ).Get( RegistrationInstanceId );
+                        document = CreateNewSignatureDocumentForThisRegistant( documentService, registrant, person, binaryFileId );
+                    }
+                    else if ( document == null && !binaryFileId.HasValue )
+                    {
+                        // If there is no document tied to this registrant, then look for an existing, valid signature document to connect to this registrant
+                        var existingSignatureDocumentId = registrantService.GetValidSignatureDocument( person.Id, this.RegistrationTemplate.RequiredSignatureDocumentTemplate )
+                            .Select( d => ( int? ) d.Id )
+                            .FirstOrDefault();
 
-                        document = new SignatureDocument();
-                        document.SignatureDocumentTemplateId = this.RegistrationTemplate.RequiredSignatureDocumentTemplate.Id;
-                        document.AppliesToPersonAliasId = registrant.PersonAliasId.Value;
-                        document.AssignedToPersonAliasId = registrant.PersonAliasId.Value;
-                        document.Name = string.Format(
-                            "{0}_{1}",
-                            instance != null ? instance.Name : this.RegistrationTemplate.Name,
-                            person != null ? person.FullName.RemoveSpecialCharacters() : string.Empty );
-                        document.Status = SignatureDocumentStatus.Signed;
-                        document.LastStatusDate = RockDateTime.Now;
-                        documentService.Add( document );
+                        if ( existingSignatureDocumentId != null )
+                        {
+                            registrant.SignatureDocumentId = existingSignatureDocumentId;
+                        }
                     }
 
-                    if ( document != null )
+                    // If there is an existing document AND a new file was just uploaded (and differs from the document's current file), then we either:
+                    //    A) create a new signature document if the existing one is shared with other registrants.
+                    //    B) OR replace (or set) the file on the existing signature document.
+                    if ( document != null && binaryFileId.HasValue && document.BinaryFileId != binaryFileId.Value )
                     {
-                        int? origBinaryFileId = document.BinaryFileId;
-                        document.BinaryFileId = binaryFileId;
+                        var registrantsUsingSignatureDocument = registrantService.GetRegistrantsUsingSignatureDocument( document.Id );
 
-                        if ( origBinaryFileId.HasValue && origBinaryFileId.Value != document.BinaryFileId )
+                        if ( registrantsUsingSignatureDocument.Count() > 1 )
                         {
-                            // if a new the binaryFile was uploaded, mark the old one as Temporary so that it gets cleaned up
-                            var oldBinaryFile = binaryFileService.Get( origBinaryFileId.Value );
-                            if ( oldBinaryFile != null && !oldBinaryFile.IsTemporary )
-                            {
-                                oldBinaryFile.IsTemporary = true;
-                            }
+                            document = CreateNewSignatureDocumentForThisRegistant( documentService, registrant, person, binaryFileId );
                         }
-
-                        // ensure the IsTemporary is set to false on binaryFile associated with this document
-                        if ( document.BinaryFileId.HasValue )
+                        else
                         {
-                            var binaryFile = binaryFileService.Get( document.BinaryFileId.Value );
-                            if ( binaryFile != null && binaryFile.IsTemporary )
+                            // Get the original binaryFileId (if any) before setting the document to use the new one.
+                            int? origBinaryFileId = document.BinaryFileId;
+
+                            // Mark the old one as Temporary so that it gets cleaned up (only if there was an old file).
+                            if ( origBinaryFileId.HasValue )
                             {
-                                binaryFile.IsTemporary = false;
+                                var oldBinaryFile = binaryFileService.Get( origBinaryFileId.Value );
+                                if ( oldBinaryFile != null && !oldBinaryFile.IsTemporary )
+                                {
+                                    oldBinaryFile.IsTemporary = true;
+                                }
                             }
+
+                            document.BinaryFileId = binaryFileId;
+                        }
+                    }
+
+                    // ensure the IsTemporary is set to FALSE on binaryFile associated with this document
+                    if ( document != null && document.BinaryFileId.HasValue )
+                    {
+                        var binaryFile = binaryFileService.Get( document.BinaryFileId.Value );
+                        if ( binaryFile != null && binaryFile.IsTemporary )
+                        {
+                            binaryFile.IsTemporary = false;
                         }
                     }
                 }
@@ -443,13 +480,13 @@ namespace RockWeb.Blocks.Event
                         rockContext.SaveChanges();
 
                         registrant.LoadAttributes();
-                    // NOTE: We will only have Registration Attributes displayed and editable on Registrant Detail.
-                    // To Edit Person or GroupMember Attributes, they will have to go the PersonDetail or GroupMemberDetail blocks
-                    foreach ( var field in this.RegistrationTemplate.Forms
-                            .SelectMany( f => f.Fields
-                                .Where( t =>
-                                    t.FieldSource == RegistrationFieldSource.RegistrantAttribute &&
-                                    t.AttributeId.HasValue ) ) )
+                        // NOTE: We will only have Registration Attributes displayed and editable on Registrant Detail.
+                        // To Edit Person or GroupMember Attributes, they will have to go the PersonDetail or GroupMemberDetail blocks
+                        foreach ( var field in this.RegistrationTemplate.Forms
+                                .SelectMany( f => f.Fields
+                                    .Where( t =>
+                                        t.FieldSource == RegistrationFieldSource.RegistrantAttribute &&
+                                        t.AttributeId.HasValue ) ) )
                         {
                             var attribute = AttributeCache.Get( field.AttributeId.Value );
                             if ( attribute != null )
@@ -483,7 +520,7 @@ namespace RockWeb.Blocks.Event
                                     registrant.SetAttributeValue( attribute.Key, fieldValue.ToString() );
                                 }
                             }
-                        }
+                         }
 
                         registrant.SaveAttributeValues( rockContext );
                     } );
@@ -505,7 +542,7 @@ namespace RockWeb.Blocks.Event
                                 {
                                     var groupMemberService = new GroupMemberService( newRockContext );
                                     var groupMember = groupMemberService
-                                        .Queryable().AsNoTracking()
+                                        .Queryable()
                                         .Where( m =>
                                             m.GroupId == reloadedRegistrant.Registration.Group.Id &&
                                             m.PersonId == reloadedRegistrant.PersonId &&
@@ -528,6 +565,10 @@ namespace RockWeb.Blocks.Event
                                     {
                                         registrantChanges.AddChange( History.HistoryVerb.Modify, History.HistoryChangeType.Record, string.Format( "Registrant to existing person in {0} group", reloadedRegistrant.Registration.Group.Name ) );
                                     }
+
+                                    // Always honor the template's configured Group Member Status, even when the person
+                                    // already exists in the group.
+                                    groupMember.GroupMemberStatus = this.RegistrationTemplate.GroupMemberStatus;
 
                                     if ( reloadedRegistrant.GroupMemberId.HasValue && reloadedRegistrant.GroupMemberId.Value != groupMember.Id )
                                     {
@@ -578,6 +619,26 @@ namespace RockWeb.Blocks.Event
             }
 
             NavigateToRegistration();
+        }
+
+        private SignatureDocument CreateNewSignatureDocumentForThisRegistant( SignatureDocumentService documentService, RegistrationRegistrant registrant, Person person, int? binaryFileId )
+        {
+            var document = new SignatureDocument();
+            document.SignatureDocumentTemplateId = this.RegistrationTemplate.RequiredSignatureDocumentTemplate.Id;
+            document.AppliesToPersonAliasId = registrant.PersonAliasId.Value;
+            document.AssignedToPersonAliasId = registrant.PersonAliasId.Value;
+            document.Name = string.Format(
+                "{0} ({1})",
+                person != null ? person.FullName.ReplaceSpecialCharacters(" ") : string.Empty,
+                registrant.Registration.RegistrationInstance != null ? registrant.Registration.RegistrationInstance.Name : this.RegistrationTemplate.Name
+            );
+            document.Status = SignatureDocumentStatus.Signed;
+            document.LastStatusDate = RockDateTime.Now;
+            document.SignedDateTime = RockDateTime.Now;
+            document.BinaryFileId = binaryFileId;
+            documentService.Add( document );
+            registrant.SignatureDocument = document;
+            return document;
         }
 
         /// <summary>
@@ -695,7 +756,7 @@ namespace RockWeb.Blocks.Event
         /// </summary>
         private void RegisterClientScript()
         {
-            if ( RegistrantState.Id > 0 && RegistrantState.GroupMemberId.HasValue )
+            if ( RegistrantState != null && RegistrantState.Id > 0 && RegistrantState.GroupMemberId.HasValue )
             {
                 string editScript = string.Format( @"
     $('a.js-edit-registrant').on('click', function( e ){{
@@ -722,6 +783,7 @@ namespace RockWeb.Blocks.Event
         /// </summary>
         private void LoadState()
         {
+            nbFoundExistingSignatureDocument.Visible = false;
             int? registrantId = PageParameter( "RegistrantId" ).AsIntegerOrNull();
             int? registrationId = PageParameter( "RegistrationId" ).AsIntegerOrNull();
 
@@ -736,6 +798,7 @@ namespace RockWeb.Blocks.Event
                         .Queryable().AsNoTracking()
                         .Include( a => a.Registration.RegistrationInstance.RegistrationTemplate.Forms )
                         .Include( a => a.Registration.RegistrationInstance.RegistrationTemplate.Fees )
+                        .Include( a => a.Registration.RegistrationInstance.RegistrationTemplate.Category )
                         .Include( a => a.PersonAlias.Person )
                         .Include( a => a.Fees )
                         .Where( r => r.Id == registrantId.Value )
@@ -746,16 +809,22 @@ namespace RockWeb.Blocks.Event
                         registrant.Registration.RegistrationInstance != null &&
                         registrant.Registration.RegistrationInstance.RegistrationTemplate != null )
                     {
+                        if ( !CanViewRegistration( registrant.Registration ) )
+                        {
+                            ShowNotAuthorizedToView();
+                            return;
+                        }
+
                         RegistrantState = new RegistrantInfo( registrant, rockContext );
                         this.RegistrationTemplateId = registrant.Registration.RegistrationInstance.RegistrationTemplateId;
                         this.RegistrationInstanceId = registrant.Registration.RegistrationInstanceId;
 
-                        lTitle.Text = registrant.ToString();
+                        lTitle.Text = registrant.ToString().EncodeHtml();
 
                         lWizardTemplateName.Text = registrant.Registration.RegistrationInstance.RegistrationTemplate.Name;
                         lWizardInstanceName.Text = registrant.Registration.RegistrationInstance.Name;
-                        lWizardRegistrationName.Text = registrant.Registration.ToString();
-                        lWizardRegistrantName.Text = registrant.ToString();
+                        lWizardRegistrationName.Text = registrant.Registration.ToString().EncodeHtml();
+                        lWizardRegistrantName.Text = registrant.ToString().EncodeHtml();
 
                         tglWaitList.Checked = !registrant.OnWaitList;
                     }
@@ -768,6 +837,7 @@ namespace RockWeb.Blocks.Event
                         .Include( a => a.RegistrationInstance.RegistrationTemplate )
                         .Include( a => a.RegistrationInstance.RegistrationTemplate.Forms )
                         .Include( a => a.RegistrationInstance.RegistrationTemplate.Fees )
+                        .Include( a => a.RegistrationInstance.RegistrationTemplate.Category )
                         .Include( a => a.PersonAlias.Person )
                         .Where( r => r.Id == registrationId.Value )
                         .FirstOrDefault();
@@ -776,6 +846,12 @@ namespace RockWeb.Blocks.Event
                         registration.RegistrationInstance != null &&
                         registration.RegistrationInstance.RegistrationTemplate != null )
                     {
+                        if ( !CanViewRegistration( registration ) )
+                        {
+                            ShowNotAuthorizedToView();
+                            return;
+                        }
+
                         this.RegistrationTemplateId = registration.RegistrationInstance.RegistrationTemplateId;
                         this.RegistrationInstanceId = registration.RegistrationInstanceId;
 
@@ -783,7 +859,7 @@ namespace RockWeb.Blocks.Event
 
                         lWizardTemplateName.Text = registration.RegistrationInstance.RegistrationTemplate.Name;
                         lWizardInstanceName.Text = registration.RegistrationInstance.Name;
-                        lWizardRegistrationName.Text = registration.ToString();
+                        lWizardRegistrationName.Text = registration.ToString().EncodeHtml();
                         lWizardRegistrantName.Text = "New Registrant";
                     }
                 }
@@ -830,20 +906,22 @@ namespace RockWeb.Blocks.Event
 
                     if ( ppPerson.PersonId.HasValue )
                     {
-                        var signatureDocument = new SignatureDocumentService( rockContext )
-                            .Queryable().AsNoTracking()
-                            .Where( d =>
-                                d.SignatureDocumentTemplateId == this.RegistrationTemplate.RequiredSignatureDocumentTemplateId.Value &&
-                                d.AppliesToPersonAlias != null &&
-                                d.AppliesToPersonAlias.PersonId == ppPerson.PersonId &&
-                                d.LastStatusDate.HasValue &&
-                                d.Status == SignatureDocumentStatus.Signed &&
-                                d.BinaryFile != null )
-                            .OrderByDescending( d => d.LastStatusDate.Value )
-                            .FirstOrDefault();
+                        var signatureDocument = registrant.SignatureDocument;
+
+                        if ( signatureDocument == null )
+                        {
+                            var registrantService = new RegistrationRegistrantService( rockContext );
+                            signatureDocument = registrantService.GetValidSignatureDocument( ppPerson.PersonId.Value, this.RegistrationTemplate.RequiredSignatureDocumentTemplate )
+                                .FirstOrDefault();
+                            if ( signatureDocument != null )
+                            {
+                                nbFoundExistingSignatureDocument.Visible = true;
+                            }
+                        }
 
                         if ( signatureDocument != null )
                         {
+                            RegistrantState.SignatureDocumentId = signatureDocument.Id;
                             hfSignedDocumentId.Value = signatureDocument.Id.ToString();
                             fuSignedDocument.BinaryFileId = signatureDocument.BinaryFileId;
                         }
@@ -875,6 +953,51 @@ namespace RockWeb.Blocks.Event
                 qryParams.Add( "RegistrationId", RegistrantState.RegistrationId.ToString() );
                 NavigateToParentPage( qryParams );
             }
+        }
+
+        /// <summary>
+        /// Determines whether the current person can view the registration.
+        /// </summary>
+        /// <param name="registration">The registration.</param>
+        /// <returns><c>true</c> if the current person can view the registration; otherwise <c>false</c>.</returns>
+        private bool CanViewRegistration( ISecured registration )
+        {
+            /*
+                10/12/2026 - MSE
+
+                The registrant and registration are loaded from the page
+                parameters, so any person who could open this page could read
+                and change registrants in a template or category they can not
+                view. Registrations inherit security from the instance,
+                template and category. Register, Edit and Administrate are also
+                accepted, matching the Registration Detail block.
+
+                Reason: Enforce registration template security on this block.
+            */
+            return registration != null
+                && ( registration.IsAuthorized( Authorization.VIEW, CurrentPerson )
+                    || registration.IsAuthorized( "Register", CurrentPerson )
+                    || registration.IsAuthorized( Authorization.EDIT, CurrentPerson )
+                    || registration.IsAuthorized( Authorization.ADMINISTRATE, CurrentPerson ) );
+        }
+
+        /// <summary>
+        /// Clears the registrant state and shows the not authorized message.
+        /// </summary>
+        private void ShowNotAuthorizedToView()
+        {
+            RegistrantState = null;
+            RegistrationTemplateId = 0;
+            RegistrationInstanceId = 0;
+            _registrationTemplate = null;
+            lTitle.Text = string.Empty;
+            lWizardTemplateName.Text = "Template";
+            lWizardInstanceName.Text = "Instance";
+            lWizardRegistrationName.Text = "Registration";
+            lWizardRegistrantName.Text = "Registrant";
+            pnlDetails.Visible = false;
+            nbSecurityWarning.Text = EditModeMessage.NotAuthorizedToView( RegistrationRegistrant.FriendlyTypeName );
+            nbSecurityWarning.Visible = true;
         }
 
         #region Build Controls

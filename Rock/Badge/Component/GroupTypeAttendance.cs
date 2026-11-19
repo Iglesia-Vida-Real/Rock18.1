@@ -38,8 +38,22 @@ namespace Rock.Badge.Component
 
     [GroupTypeField( "Group Type", "The type of group to use.", true, order: 1 )]
     [SlidingDateRangeField( "Date Range", "The date range in which the person attended.", required: false, order: 2 )]
-    [CodeEditorField( "Lava Template", "The lava template to use for the badge display", CodeEditorMode.Lava, CodeEditorTheme.Rock, 200, order: 3, defaultValue:
-        @"
+
+    /*
+        10/14/2026 - MSE
+
+        The default template puts the tooltip in an HTML attribute, which the browser
+        decodes once, and badge tooltips are then rendered as HTML (BadgeControl sets
+        html: true). A person can set their own name (for example through a public
+        signup form), so the tooltip is escaped twice to still be encoded when it is
+        rendered.
+
+        Reason: Prevent stored XSS through a person's name in the badge tooltip.
+    */
+    [CodeEditorField( "Lava Template",
+        Description = "The lava template to use for the badge display",
+        EditorMode = CodeEditorMode.Lava,
+        DefaultValue = @"
 {% if GroupType.IconCssClass and GroupType.IconCssClass != '' %}
   {% assign groupIcon = GroupType.IconCssClass %}
 {% else %}
@@ -60,10 +74,12 @@ namespace Rock.Badge.Component
   {% capture tooltipText %}{{ Person.NickName }} has not attended a group of type {{ GroupType.Name }}{{ dateRangeText }}.{% endcapture %}
 {% endif %}
 
-<div class='rockbadge rockbadge-grouptypeattendance rockbadge-id-{{Badge.Id}}' data-toggle='tooltip' data-original-title='{{ tooltipText }}'>
+<div class='rockbadge rockbadge-grouptypeattendance rockbadge-id-{{Badge.Id}}' data-toggle='tooltip' data-original-title='{{ tooltipText | Escape | Escape }}'>
   <i class='badge-icon {{ groupIcon }}' style='color: {{ iconColor }}'></i>
 </div>
-" )]
+",
+        Order = 3 )]
+
     [Rock.SystemGuid.EntityTypeGuid( "2A6DB456-8D8F-4D82-BFE2-F4545204BD90")]
     public class GroupTypeAttendance : BadgeComponent
     {

@@ -16,10 +16,11 @@
 //
 
 using System;
-using System.Collections.Generic;
+using System.Linq.Expressions;
 using System.Text.Json.Serialization;
 
-using Rock.AI.Agent.Classes.Common;
+using Rock.Configuration;
+using Rock.Data;
 using Rock.Model;
 using Rock.Web.Cache;
 
@@ -29,40 +30,10 @@ namespace Rock.AI.Agent.Classes.Entity
     /// A common POCO for storing information about a person. Apply only the properties that are needed for the specific use case.
     /// Null properties will not be serialized.
     /// </summary>
-    internal class PersonResult : EntityResultBase
+    public class PersonResult : EntityResultBase
     {
-        #region Private Variables
-        private AgentRequestContext _context;
-        #endregion
-
-        #region Constructors
-        /// <summary>
-        /// Default constructor
-        /// </summary>
-        public PersonResult()
-        {
-
-        }
-
-        /// <summary>
-        /// Constructor that takes an application root.
-        /// </summary>
-        /// <param name="context"></param>
-        public PersonResult( AgentRequestContext context )
-        {
-            _context = context;
-        }
-
-        #endregion
-
         #region Ignored Properties
         // These properties exist to help with internal logic but they should not be serialized to JSON.
-
-        /// <summary>
-        /// Gets or sets the primary family identifier.
-        /// </summary>
-        [JsonIgnore]
-        public int? PrimaryFamilyId { get; set; }
 
         /// <summary>
         /// Gets or sets the photo identifier.
@@ -77,38 +48,20 @@ namespace Rock.AI.Agent.Classes.Entity
         public int? RecordTypeValueId { get; set; }
 
         /// <summary>
-        /// Gets or sets the marital status unique identifier.
+        /// Determines if the avatar URL should be included in the return.
         /// </summary>
         [JsonIgnore]
-        public Guid? MaritalStatusGuid { get; set; }
-        #endregion
-
-        #region Common Properties
-        
-        /// <summary>
-        /// Gets or sets the stable identifier for the person's primary family (used by tools; avoid showing to end users).
-        /// </summary>
-        public string PrimaryFamilyIdKey { get; set; }
+        public bool IncludeAvatarUrl { get; set; } = true;
 
         /// <summary>
         /// Determines if the internal profile should be included in the return.
         /// </summary>
-        public bool IncludePublicProfile { get; set; }
+        [JsonIgnore]
+        public bool IncludeProfileLink { get; set; }
 
-        /// <summary>
-        /// The URL to the person's internal profile.
-        /// </summary>
-        public string InternalProfileUrl {
-            get
-            {
-                if ( !IncludePublicProfile )
-                {
-                    return null;
-                }
+        #endregion
 
-                return $"{GlobalAttributesCache.Get().GetValue( "InternalApplicationRoot" ).EnsureTrailingForwardslash()}person/{IdKey}";
-            }
-        }
+        #region Common Properties
 
         /// <summary>
         /// Gets or sets the person's first/given name.
@@ -121,19 +74,9 @@ namespace Rock.AI.Agent.Classes.Entity
         public string NickName { get; set; }
 
         /// <summary>
-        /// Gets or sets the person's middle name.
-        /// </summary>
-        public string MiddleName { get; set; }
-
-        /// <summary>
         /// Gets or sets the person's last/family name.
         /// </summary>
         public string LastName { get; set; }
-
-        /// <summary>
-        /// Gets or sets the list of previous last names.
-        /// </summary>
-        public List<string> PreviousLastNames { get; set; }
 
         /// <summary>
         /// Gets or sets the person's name suffix.
@@ -146,18 +89,28 @@ namespace Rock.AI.Agent.Classes.Entity
         public string Email { get; set; }
 
         /// <summary>
-        /// Gets or sets the list of phone numbers.
-        /// </summary>
-        public List<PhoneNumberResult> PhoneNumbers { get; set; }
-
-        /// <summary>
         /// Gets the URL for the person's avatar image.
         /// </summary>
         public string AvatarUrl
         {
             get
             {
-                var initials = FirstName.Left( 1 ) + LastName.Left( 1 );
+                if ( !IncludeAvatarUrl )
+                {
+                    return null;
+                }
+
+                string initials = null;
+
+                if ( FirstName.IsNotNullOrWhiteSpace() )
+                {
+                    initials = FirstName.Left( 1 ) + LastName.Left( 1 );
+                }
+                else if ( NickName.IsNotNullOrWhiteSpace() )
+                {
+                    initials = NickName.Left( 1 ) + LastName.Left( 1 );
+                }
+
                 var url = Person.GetPersonPhotoUrl(
                     initials,
                     PhotoId,
@@ -166,60 +119,31 @@ namespace Rock.AI.Agent.Classes.Entity
                     RecordTypeValueId,
                     AgeClassification );
 
-                if ( _context != null )
-                {
-                    url = _context.ResolveRockUrl( url );
-                }
-
-                return url;
+                return RockApp.Current.ResolveRockUrl( url );
             }
         }
 
         /// <summary>
-        /// Gets or sets the list of addresses.
+        /// The URL to the person's internal profile.
         /// </summary>
-        public List<LocationResult> Addresses { get; set; }
+        public string InternalProfileUrl
+        {
+            get
+            {
+                if ( !IncludeProfileLink )
+                {
+                    return null;
+                }
+
+                return $"{GlobalAttributesCache.Get().GetValue( "InternalApplicationRoot" ).EnsureTrailingForwardslash()}person/{IdKey}";
+            }
+        }
 
         /// <summary>
         /// Gets or sets the age classification.
         /// </summary>
         [JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
         public AgeClassification AgeClassification { get; set; }
-
-        /// <summary>
-        /// Gets or sets the spouse person result.
-        /// </summary>
-        public PersonResult Spouse { get; set; }
-
-        /// <summary>
-        /// Gets or sets the list of children in the family.
-        /// </summary>
-        public List<PersonResult> ChildrenInFamily { get; set; }
-
-        /// <summary>
-        /// Gets or sets the list of adults in the family.
-        /// </summary>
-        public List<PersonResult> AdultsInFamily { get; set; }
-
-        /// <summary>
-        /// Gets or sets the campus name.
-        /// </summary>
-        public KeyNameResult Campus { get; set; }
-
-        /// <summary>
-        /// Gets or sets the connection status.
-        /// </summary>
-        public string ConnectionStatus { get; set; }
-
-        /// <summary>
-        /// Gets or sets the record status.
-        /// </summary>
-        public string RecordStatus { get; set; }
-
-        /// <summary>
-        /// Gets or sets the marital status.
-        /// </summary>
-        public string MaritalStatus { get; set; }
 
         /// <summary>
         /// Gets or sets the age.
@@ -252,25 +176,188 @@ namespace Rock.AI.Agent.Classes.Entity
         /// </summary>
         public DateTime? AnniversaryDate { get; set; }
 
-        /// <summary>
-        /// Gets or sets the graduation year.
-        /// </summary>
-        public int? GraduationYear { get; set; }
+        #endregion
+
+        #region Constructor Expressions
 
         /// <summary>
-        /// Gets or sets the known relationships (e.g. Aunt, Uncle, Grandparent, etc.) where the key is the relationship name and the value is the related person.
+        /// The expression for constructing a <see cref="PersonResult"/> with
+        /// only the name of the individual.
         /// </summary>
-        public List<GroupMemberResult> KnownRelationships { get; set; }
+        private static readonly Expression<Func<Person, PersonResult>> _nameOnlyExpression = person => person != null
+            ? new PersonResult
+            {
+                Id = person.Id,
+                LastName = person.LastName,
+                NickName = person.NickName,
+                IncludeAvatarUrl = false,
+            }
+            : null;
 
         /// <summary>
-        /// Gets or sets the notes.
+        /// The compiled function representing <see cref="_nameOnlyExpression"/>.
         /// </summary>
-        public List<NoteResult> Notes { get; set; }
+        private static readonly Lazy<Func<Person, PersonResult>> _nameOnlyFunc = new Lazy<Func<Person, PersonResult>>( () => _nameOnlyExpression.Compile() );
 
         /// <summary>
-        /// Gets or sets the prayer requests.
+        /// The expression for constructing a <see cref="PersonResult"/> with
+        /// only the name of the individual.
         /// </summary>
-        public List<PrayerRequestResult> PrayerRequests { get; set; }
+        private static readonly Expression<Func<PersonAlias, PersonResult>> _nameOnlyPersonAliasExpression = personAlias => personAlias != null
+            ? new PersonResult
+            {
+                Id = personAlias.Person.Id,
+                LastName = personAlias.Person.LastName,
+                NickName = personAlias.Person.NickName,
+                IncludeAvatarUrl = false,
+            }
+            : null;
+
+        /// <summary>
+        /// The compiled function representing <see cref="_nameOnlyPersonAliasExpression"/>.
+        /// </summary>
+        private static readonly Lazy<Func<PersonAlias, PersonResult>> _nameOnlyPersonAliasFunc = new Lazy<Func<PersonAlias, PersonResult>>( () => _nameOnlyPersonAliasExpression.Compile() );
+
+        /// <summary>
+        /// The expression for constructing a <see cref="PersonResult"/> with
+        /// basic information about the individual.
+        /// </summary>
+        private static readonly Expression<Func<Person, PersonResult>> _basicExpression = person => person != null
+            ? new PersonResult
+            {
+                Id = person.Id,
+                LastName = person.LastName,
+                NickName = person.NickName,
+                FirstName = person.FirstName,
+                PhotoId = person.PhotoId,
+                Age = person.Age,
+                AgeClassification = person.AgeClassification,
+                Gender = person.Gender,
+                RecordTypeValueId = person.RecordTypeValueId,
+            }
+            : null;
+
+        /// <summary>
+        /// The compiled function representing <see cref="_basicExpression"/>.
+        /// </summary>
+        private static readonly Lazy<Func<Person, PersonResult>> _basicFunc = new Lazy<Func<Person, PersonResult>>( () => _basicExpression.Compile() );
+
+        /// <summary>
+        /// The expression for constructing a <see cref="PersonResult"/> with
+        /// basic information about the individual.
+        /// </summary>
+        private static readonly Expression<Func<PersonAlias, PersonResult>> _basicPersonAliasExpression = personAlias => personAlias != null
+            ? new PersonResult
+            {
+                Id = personAlias.Person.Id,
+                LastName = personAlias.Person.LastName,
+                NickName = personAlias.Person.NickName,
+                FirstName = personAlias.Person.FirstName,
+                PhotoId = personAlias.Person.PhotoId,
+                Age = personAlias.Person.Age,
+                AgeClassification = personAlias.Person.AgeClassification,
+                Gender = personAlias.Person.Gender,
+                RecordTypeValueId = personAlias.Person.RecordTypeValueId,
+            }
+            : null;
+
+        /// <summary>
+        /// The compiled function representing <see cref="_basicPersonAliasExpression"/>.
+        /// </summary>
+        private static readonly Lazy<Func<PersonAlias, PersonResult>> _basicPersonAliasFunc = new Lazy<Func<PersonAlias, PersonResult>>( () => _basicPersonAliasExpression.Compile() );
+
+        #endregion
+
+        #region Constructors
+
+        /// <summary>
+        /// Constructs a <see cref="PersonResult"/> with only information about
+        /// the individual's name.
+        /// </summary>
+        /// <param name="person">The <see cref="Person"/> object to construct the result from.</param>
+        /// <returns>An instance of <see cref="PersonResult"/> or <c>null</c> if <paramref name="person"/> is <c>null</c>.</returns>
+        [Expandable( nameof( NameOnlyExpression ) )]
+        public static PersonResult NameOnly( Person person )
+        {
+            return _nameOnlyFunc.Value( person );
+        }
+
+        /// <summary>
+        /// Constructs a <see cref="PersonResult"/> with only information about
+        /// the individual's name.
+        /// </summary>
+        /// <returns>An expression that can be used to project a <see cref="Person"/> to a <see cref="PersonResult"/>.</returns>
+        private static Expression<Func<Person, PersonResult>> NameOnlyExpression()
+        {
+            return _nameOnlyExpression;
+        }
+
+        /// <summary>
+        /// Constructs a <see cref="PersonResult"/> with only information about
+        /// the individual's name.
+        /// </summary>
+        /// <param name="personAlias">The <see cref="PersonAlias"/> object to construct the result from.</param>
+        /// <returns>An instance of <see cref="PersonResult"/> or <c>null</c> if <paramref name="personAlias"/> is <c>null</c>.</returns>
+        [Expandable( nameof( NameOnlyPersonAliasExpression ) )]
+        public static PersonResult NameOnly( PersonAlias personAlias )
+        {
+            return _nameOnlyPersonAliasFunc.Value( personAlias );
+        }
+
+        /// <summary>
+        /// Constructs a <see cref="PersonResult"/> with only information about
+        /// the individual's name.
+        /// </summary>
+        /// <returns>An expression that can be used to project a <see cref="PersonAlias"/> to a <see cref="PersonResult"/>.</returns>
+        private static Expression<Func<PersonAlias, PersonResult>> NameOnlyPersonAliasExpression()
+        {
+            return _nameOnlyPersonAliasExpression;
+        }
+
+        /// <summary>
+        /// Constructs a <see cref="PersonResult"/> with basic information
+        /// about the individual, such as name, age, gender and photo.
+        /// </summary>
+        /// <param name="person">The <see cref="Person"/> object to construct the result from.</param>
+        /// <returns>An instance of <see cref="PersonResult"/> or <c>null</c> if <paramref name="person"/> is <c>null</c>.</returns>
+        [Expandable( nameof( BasicExpression ) )]
+        public static PersonResult Basic( Person person )
+        {
+            return _basicFunc.Value.Invoke( person );
+        }
+
+
+        /// <summary>
+        /// Constructs a <see cref="PersonResult"/> with basic information
+        /// about the individual, such as name, age, gender and photo.
+        /// </summary>
+        /// <returns>An expression that can be used to project a <see cref="Person"/> to a <see cref="PersonResult"/>.</returns>
+        private static Expression<Func<Person, PersonResult>> BasicExpression()
+        {
+            return _basicExpression;
+        }
+
+        /// <summary>
+        /// Constructs a <see cref="PersonResult"/> with basic information
+        /// about the individual, such as name, age, gender and photo.
+        /// </summary>
+        /// <param name="personAlias">The <see cref="PersonAlias"/> object to construct the result from.</param>
+        /// <returns>An instance of <see cref="PersonResult"/> or <c>null</c> if <paramref name="personAlias"/> is <c>null</c>.</returns>
+        [Expandable( nameof( BasicPersonAliasExpression ) )]
+        public static PersonResult Basic( PersonAlias personAlias )
+        {
+            return _basicPersonAliasFunc.Value( personAlias );
+        }
+
+        /// <summary>
+        /// Constructs a <see cref="PersonResult"/> with basic information
+        /// about the individual, such as name, age, gender and photo.
+        /// </summary>
+        /// <returns>An expression that can be used to project a <see cref="PersonAlias"/> to a <see cref="PersonResult"/>.</returns>
+        private static Expression<Func<PersonAlias, PersonResult>> BasicPersonAliasExpression()
+        {
+            return _basicPersonAliasExpression;
+        }
 
         #endregion
     }

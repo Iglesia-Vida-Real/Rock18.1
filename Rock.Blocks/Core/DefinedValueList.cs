@@ -48,7 +48,8 @@ namespace Rock.Blocks.Core
 
     [Rock.Cms.DefaultBlockRole( Rock.Enums.Cms.BlockRole.Secondary )]
     [Rock.SystemGuid.EntityTypeGuid( "710916bd-4bc1-4d05-b088-381394351b53" )]
-    [Rock.SystemGuid.BlockTypeGuid( "f431f950-f007-493e-81c8-16559fe4c0f0" )]
+    // Was [Rock.SystemGuid.BlockTypeGuid( "f431f950-f007-493e-81c8-16559fe4c0f0" )]
+    [Rock.SystemGuid.BlockTypeGuid( "0AB2D5E9-9272-47D5-90E4-4AA838D2D3EE" )]
     [CustomizedGrid]
     public class DefinedValueList : RockEntityListBlockType<DefinedValue>
     {
@@ -261,6 +262,19 @@ namespace Rock.Blocks.Core
             return bag;
         }
 
+        /// <summary>
+        /// Determines whether the defined value belongs to the defined type
+        /// that this block is displaying.
+        /// </summary>
+        /// <param name="definedValue">The defined value to check.</param>
+        /// <returns><c>true</c> if the defined value belongs to the defined type; otherwise, <c>false</c>.</returns>
+        private bool IsValueOfDefinedType( DefinedValue definedValue )
+        {
+            var definedType = GetDefinedType();
+
+            return definedType != null && definedValue.DefinedTypeId == definedType.Id;
+        }
+
         #endregion
 
         #region Block Actions
@@ -274,6 +288,11 @@ namespace Rock.Blocks.Core
         [BlockAction]
         public BlockActionResult ReorderItem( string key, string beforeKey )
         {
+            if ( !GetIsAddDeleteEnabled() )
+            {
+                return ActionBadRequest( "Not authorized to reorder items." );
+            }
+
             // Get the queryable and make sure it is ordered correctly.
             var qry = GetListQueryable( RockContext );
             qry = GetOrderedListQueryable( qry, RockContext );
@@ -302,7 +321,8 @@ namespace Rock.Blocks.Core
             var entityService = new DefinedValueService( RockContext );
             var entity = entityService.Get( key, !PageCache.Layout.Site.DisablePredictableIds );
 
-            if ( entity == null )
+            // Only allow values of the defined type being displayed to be deleted.
+            if ( entity == null || !IsValueOfDefinedType( entity ) )
             {
                 return ActionBadRequest( $"{DefinedValue.FriendlyTypeName} not found." );
             }
@@ -337,6 +357,12 @@ namespace Rock.Blocks.Core
 
             var entityService = new DefinedValueService( RockContext );
             var entity = entityService.Get( key, !PageCache.Layout.Site.DisablePredictableIds );
+
+            // Only allow values of the defined type being displayed to be edited.
+            if ( entity != null && !IsValueOfDefinedType( entity ) )
+            {
+                return ActionBadRequest( $"{DefinedValue.FriendlyTypeName} not found." );
+            }
 
             if ( entity == null )
             {
@@ -393,7 +419,8 @@ namespace Rock.Blocks.Core
                 entity = entityService.Get( bag.IdKey, !PageCache.Layout.Site.DisablePredictableIds );
             }
 
-            if ( entity == null )
+            // Only allow values of the defined type being displayed to be saved.
+            if ( entity == null || !IsValueOfDefinedType( entity ) )
             {
                 return ActionBadRequest( $"{DefinedValue.FriendlyTypeName} not found." );
             }

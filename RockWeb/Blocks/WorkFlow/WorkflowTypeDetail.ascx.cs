@@ -46,9 +46,22 @@ namespace RockWeb.Blocks.WorkFlow
 
     [LinkedPage( "Workflow Launch Page", "Page used to launch a workflow.", true, "", "", 0 )]
     [LinkedPage( "Manage Workflows Page", "Page used to manage workflows.", true, "", "", 1 )]
-    [CodeEditorField( "Default No Action Message", "The default No Action Message.", CodeEditorMode.Lava, CodeEditorTheme.Rock, 100, false, @"
-This {{ Workflow.WorkflowType.WorkTerm }} does not currently require your attention.", "", 2 )]
-    [CodeEditorField( "Default Summary View Text", "The default Summary View Text.", CodeEditorMode.Lava, CodeEditorTheme.Rock, 500, false, @"
+
+    [CodeEditorField( "Default No Action Message",
+        Description = "The default No Action Message.",
+        EditorMode = CodeEditorMode.Lava,
+        EditorHeight = 100,
+        IsRequired = false,
+        DefaultValue = @"
+This {{ Workflow.WorkflowType.WorkTerm }} does not currently require your attention.",
+        Order = 2 )]
+
+    [CodeEditorField( "Default Summary View Text",
+        Description = "The default Summary View Text.",
+        EditorMode = CodeEditorMode.Lava,
+        EditorHeight = 500,
+        IsRequired = false,
+        DefaultValue = @"
 <div class='row'>
     <div class='col-sm-6'>
         <dl><dt>Started By</dt><dd>{{ Workflow.InitiatorPersonAlias.Person.FullName }}</dd></dl>
@@ -77,16 +90,13 @@ This {{ Workflow.WorkflowType.WorkTerm }} does not currently require your attent
             </dl>
         </div>
     </div>
-{% endif %}", "", 3 )]
+{% endif %}",
+        Order = 3 )]
+
     [LinkedPage( "Export Workflows Page", "Page used to export workflows.", false, "", "", 4 )]
     [Rock.SystemGuid.BlockTypeGuid( "E1FF677D-5E52-4259-90C7-5560ECBBD82B" )]
     public partial class WorkflowTypeDetail : RockBlock
     {
-        protected static class AuthorizationMisc
-        {
-            public const string VIEW_LIST = "ViewList";
-        }
-
         #region Properties
 
         private List<Attribute> AttributesState { get; set; }
@@ -95,6 +105,16 @@ This {{ Workflow.WorkflowType.WorkTerm }} does not currently require your attent
         private List<Guid> ExpandedActivities { get; set; }
         private List<Guid> ExpandedActivityAttributes { get; set; }
         private List<Guid> ExpandedActions { get; set; }
+
+        /// <summary>
+        /// The identifier of the workflow type that the new workflow type being
+        /// edited was copied from, or <c>null</c> if it was not copied.
+        /// </summary>
+        private int? CopiedFromWorkflowTypeId
+        {
+            get { return ViewState["CopiedFromWorkflowTypeId"] as int?; }
+            set { ViewState["CopiedFromWorkflowTypeId"] = value; }
+        }
 
         #endregion
 
@@ -285,6 +305,14 @@ This {{ Workflow.WorkflowType.WorkTerm }} does not currently require your attent
             var rockContext = new RockContext();
             var workflowType = new WorkflowTypeService( rockContext ).Get( hfWorkflowTypeId.Value.AsInteger() );
 
+            // The workflow type id comes from a hidden field, so re-check edit rights before showing the edit form.
+            if ( workflowType == null || !CanEditWorkflowType( workflowType ) )
+            {
+                nbEditModeMessage.Heading = "Information";
+                nbEditModeMessage.Text = EditModeMessage.ReadOnlyEditActionNotAllowed( WorkflowType.FriendlyTypeName );
+                return;
+            }
+
             LoadStateDetails( workflowType, rockContext );
             ShowEditDetails( workflowType, rockContext );
         }
@@ -329,6 +357,15 @@ This {{ Workflow.WorkflowType.WorkTerm }} does not currently require your attent
             var rockContext = new RockContext();
             var workflowTypeService = new WorkflowTypeService( rockContext );
             var workflowType = workflowTypeService.Get( hfWorkflowTypeId.Value.AsInteger() );
+
+            // The workflow type id comes from a hidden field, so re-check the
+            // same rights ShowDetail() checks before showing the copy button.
+            if ( workflowType == null || !CanCopyWorkflowType( workflowType ) )
+            {
+                return;
+            }
+
+            CopiedFromWorkflowTypeId = workflowType.Id;
 
             if ( workflowType != null )
             {
@@ -605,6 +642,32 @@ This {{ Workflow.WorkflowType.WorkTerm }} does not currently require your attent
             if ( workflowTypeId.HasValue )
             {
                 workflowType = service.Get( workflowTypeId.Value );
+            }
+
+            // The workflow type id comes from a hidden field, so re-check edit rights on the existing
+            // workflow type, copy rights on the workflow type a new one was copied from, or the same
+            // rights ShowDetail() checks when adding a new one.
+            bool canEdit;
+
+            if ( workflowType != null )
+            {
+                canEdit = CanEditWorkflowType( workflowType );
+            }
+            else if ( CopiedFromWorkflowTypeId.HasValue )
+            {
+                var copiedFromWorkflowType = service.Get( CopiedFromWorkflowTypeId.Value );
+                canEdit = copiedFromWorkflowType != null && CanCopyWorkflowType( copiedFromWorkflowType );
+            }
+            else
+            {
+                canEdit = CanEditWorkflowType( new WorkflowType { CategoryId = PageParameter( "ParentCategoryId" ).AsIntegerOrNull() } );
+            }
+
+            if ( !canEdit )
+            {
+                nbEditModeMessage.Heading = "Information";
+                nbEditModeMessage.Text = EditModeMessage.ReadOnlyEditActionNotAllowed( WorkflowType.FriendlyTypeName );
+                return;
             }
 
             if ( workflowType == null )
@@ -1349,6 +1412,31 @@ This {{ Workflow.WorkflowType.WorkTerm }} does not currently require your attent
         #region Show Details
 
         /// <summary>
+        /// Determines whether the current person can edit the workflow type. This mirrors
+        /// the check in <see cref="ShowDetail()"/> that decides whether the edit button is shown.
+        /// </summary>
+        /// <param name="workflowType">The workflow type.</param>
+        /// <returns><c>true</c> if the current person can edit the workflow type; otherwise, <c>false</c>.</returns>
+        private bool CanEditWorkflowType( WorkflowType workflowType )
+        {
+            return !workflowType.IsSystem && CanCopyWorkflowType( workflowType );
+        }
+
+        /// <summary>
+        /// Determines whether the current person can copy the workflow type. This mirrors
+        /// the check in <see cref="ShowDetail()"/> that decides whether the copy button is shown,
+        /// which also allows system workflow types to be copied.
+        /// </summary>
+        /// <param name="workflowType">The workflow type.</param>
+        /// <returns><c>true</c> if the current person can copy the workflow type; otherwise, <c>false</c>.</returns>
+        private bool CanCopyWorkflowType( WorkflowType workflowType )
+        {
+            return IsUserAuthorized( Authorization.EDIT )
+                || workflowType.IsAuthorized( Authorization.EDIT, CurrentPerson )
+                || workflowType.IsAuthorized( Authorization.ADMINISTRATE, CurrentPerson );
+        }
+
+        /// <summary>
         /// Shows the detail.
         /// </summary>
         private void ShowDetail()
@@ -1411,6 +1499,7 @@ This {{ Workflow.WorkflowType.WorkTerm }} does not currently require your attent
                 readOnly = true;
                 nbEditModeMessage.Heading = "Information";
                 nbEditModeMessage.Text = EditModeMessage.ReadOnlyEditActionNotAllowed( WorkflowType.FriendlyTypeName );
+                btnCopy.Visible = false;
             }
 
             if ( workflowType.IsSystem )
@@ -1421,7 +1510,7 @@ This {{ Workflow.WorkflowType.WorkTerm }} does not currently require your attent
             }
 
             // ViewList authorization is also used by WorkflowNavigation and WorkflowList
-            if ( !workflowType.IsAuthorized( AuthorizationMisc.VIEW_LIST, CurrentPerson ) )
+            if ( !workflowType.IsAuthorized( Rock.Security.Authorization.VIEW_LIST, CurrentPerson ) )
             {
                 lbManage.Enabled = false;
             }
@@ -1429,13 +1518,6 @@ This {{ Workflow.WorkflowType.WorkTerm }} does not currently require your attent
             if ( !hasAdministrate )
             {
                 btnSecurity.Visible = false;
-            }
-
-            // Only block editors can see the copy button. Otherwise Rock.Security.Authorization.AllowPerson()
-            // would be needed upon save (adding) if someone else created a 'copy' of a workflow.
-            if ( !isBlockEditor )
-            {
-                btnCopy.Visible = false;
             }
 
             if ( readOnly )

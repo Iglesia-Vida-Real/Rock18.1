@@ -20,14 +20,27 @@ using System.ComponentModel.DataAnnotations.Schema;
 using System.Data.Entity.ModelConfiguration;
 using System.Runtime.Serialization;
 using Rock.Data;
+using Rock.Enums.Security;
+using Rock.Security;
+using Rock.Utility;
 
 namespace Rock.Model
 {
+    /*
+        10/15/2026 - MSE
+
+        Verifications link to the live sign-in codes sent by phone number
+        lookup, so the generic v1 REST controller (secured only by the
+        controller VIEW rule) must not exist for this model.
+
+        Reason: Keep sign-in verification codes private.
+    */
     /// <summary>
     /// Used to verify individuals by phone number.
     /// </summary>
     [RockDomain( "CRM" )]
     [Table( "IdentityVerification" )]
+    [CodeGenExclude( CodeGenFeature.DefaultRestController )]
     [CodeGenerateRest( Enums.CodeGenerateRestEndpoint.ReadOnly, DisableEntitySecurity = true )]
     [Rock.SystemGuid.EntityTypeGuid( "C76071B0-0C2F-4A3F-88BF-08B2E006C614")]
     public partial class IdentityVerification : Model<IdentityVerification>
@@ -46,6 +59,7 @@ namespace Rock.Model
         /// </value>
         [DataMember]
         [MaxLength( 150 )]
+        [StringValidation( StringValidationProfile.PlainText )]
         public string ReferenceNumber { get; set; }
 
         /// <summary>
@@ -65,6 +79,7 @@ namespace Rock.Model
         /// </value>
         [DataMember]
         [MaxLength( 45 )]
+        [StringValidation( StringValidationProfile.PlainText )]
         public string RequestIpAddress { get; set; }
 
         /// <summary>

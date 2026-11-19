@@ -25,14 +25,18 @@ using Rock.Attribute;
 using Rock.ClientService.Core.Campus;
 using Rock.Common.Mobile;
 using Rock.Common.Mobile.Blocks.Connection.ConnectionRequestDetail;
+using Rock.Common.Mobile.Enums;
 using Rock.Core.NotificationMessageTypes;
 using Rock.Data;
+using Rock.Enums.Connection;
 using Rock.Mobile;
 using Rock.Model;
 using Rock.Security;
 using Rock.ViewModels.Utility;
 using Rock.Web.Cache;
 
+using ConnectionState = Rock.Model.ConnectionState;
+using DueStatus = Rock.Common.Mobile.Enums.DueStatus;
 using GroupMemberStatus = Rock.Model.GroupMemberStatus;
 using MeetsGroupRequirement = Rock.Model.MeetsGroupRequirement;
 
@@ -410,14 +414,14 @@ namespace Rock.Blocks.Types.Mobile.Connection
                     ActivityTypeGuid = a.ConnectionActivityType.Guid,
                     ConnectorGuid = a.ConnectorPersonAlias?.Person.Guid,
                     CreatedDateTime = ( DateTimeOffset ) a.CreatedDateTime,
-                    IsModifiable = IsActivityModifiable( a ),
+                    IsModifiable = isEditable && IsActivityModifiable( a ),
                     Note = a.Note.StripHtml(),
                     Guid = a.Guid,
                     ActivityType = a.ConnectionActivityType.ToString(),
                     Connector = a.ConnectorPersonAlias?.Person != null ?
                         new ConnectorItemViewModel
                         {
-                            FirstName = a.ConnectorPersonAlias.Person.FirstName,
+                            FirstName = a.ConnectorPersonAlias.Person.NickName,
                             LastName = a.ConnectorPersonAlias.Person.LastName,
                             PhotoUrl = MobileHelper.BuildPublicApplicationRootUrl( a.ConnectorPersonAlias.Person.PhotoUrl )
                         }
@@ -427,6 +431,7 @@ namespace Rock.Blocks.Types.Mobile.Connection
 
             var viewModel = new RequestViewModel
             {
+                DueStatus = GetRequestDueStatus( request ),
                 ActivityContent = activityContent,
                 Attributes = GetPublicAttributeValues( request ),
                 CampusGuid = request.Campus?.Guid,
@@ -466,6 +471,51 @@ namespace Rock.Blocks.Types.Mobile.Connection
             return viewModel;
         }
 
+        private DueStatus GetRequestDueStatus( ConnectionRequest request )
+        {
+            var now = RockDateTime.Now.Date;
+            var dueDate = request.DueDate;
+            var connectionState = request.ConnectionState;
+            var completedDateTime = request.ConnectedDateTime;
+            var dueSoonDate = request.DueSoonDate;
+
+            if ( !dueDate.HasValue || connectionState == ConnectionState.Inactive )
+            {
+                return DueStatus.DueLater;
+            }
+
+            var due = dueDate.Value.Date;
+
+            if ( connectionState == ConnectionState.Connected )
+            {
+                if ( !completedDateTime.HasValue )
+                {
+                    return DueStatus.DueLater;
+                }
+
+                var completedDate = completedDateTime.Value.Date;
+
+                if ( completedDate > due )
+                {
+                    return DueStatus.Overdue;
+                }
+
+                return DueStatus.DueLater;
+            }
+
+            if ( now > due )
+            {
+                return DueStatus.Overdue;
+            }
+
+            if ( dueSoonDate.HasValue && now >= dueSoonDate.Value.Date )
+            {
+                return DueStatus.DueSoon;
+            }
+
+            return DueStatus.DueLater;
+        }
+
         /// <summary>
         /// Gets the request edit view model that represents the request in a way
         /// the client can use to display an edit interface.
@@ -488,6 +538,7 @@ namespace Rock.Blocks.Types.Mobile.Connection
                 Comments = request.Comments,
                 ConnectorGuid = request.ConnectorPersonAlias?.Person.Guid,
                 PlacementGroupGuid = request.AssignedGroup?.Guid,
+                States = GetOpportunityStateListItems( request.ConnectionOpportunity ),
                 State = request.ConnectionState,
                 FutureFollowUpDate = request.FollowupDate?.ToRockDateTimeOffset(),
                 StatusGuid = request.ConnectionStatus.Guid,
@@ -667,7 +718,6 @@ namespace Rock.Blocks.Types.Mobile.Connection
         {
             return connectionType.ConnectionStatuses
                 .OrderBy( s => s.Order )
-                .OrderByDescending( s => s.IsDefault )
                 .ThenBy( s => s.Name )
                 .Select( s => new ListItemBag
                 {
@@ -675,6 +725,21 @@ namespace Rock.Blocks.Types.Mobile.Connection
                     Text = s.Name
                 } )
                 .ToList();
+        }
+
+        private static List<ListItemBag> GetOpportunityStateListItems( ConnectionOpportunity connectionOpportunity )
+        {
+            var states = Enum.GetValues( typeof( ConnectionState ) )
+                .Cast<ConnectionState>()
+                .Where( s => !( s == ConnectionState.Connected && !connectionOpportunity.ShowConnectButton ) )
+                .Select( s => new ListItemBag
+                {
+                    Value = s.ToString(),
+                    Text = s.ToString()
+                } )
+                .ToList();
+
+            return states;
         }
 
         /// <summary>
@@ -1975,20 +2040,28 @@ namespace Rock.Blocks.Types.Mobile.Connection
                     return ActionBadRequest( "Unable to find that connection activity type." );
                 }
 
-                if ( !activity.ConnectorGuid.HasValue )
-                {
-                    return ActionBadRequest( "Invalid connector was specified." );
+                int? connectorAliasId = null;
 
-                }
-                var connectorAliasId = personAliasService.GetPrimaryAliasId( activity.ConnectorGuid.Value );
-
-                if ( !connectorAliasId.HasValue )
+                // Load the connector primary alias from the database and verify
+                // that it is valid option.
+                if ( activity.ConnectorGuid.HasValue )
                 {
-                    return ActionBadRequest( "Invalid connector was specified." );
+                    var connectors = GetAvailableConnectors( request, rockContext );
+
+                    if ( !connectors.Any( c => c.Guid == activity.ConnectorGuid.Value ) )
+                    {
+                        return ActionBadRequest( "Invalid connector was specified." );
+                    }
+
+                    connectorAliasId = personAliasService.GetPrimaryAliasId( activity.ConnectorGuid.Value );
+
+                    if ( !connectorAliasId.HasValue )
+                    {
+                        return ActionBadRequest( "Invalid connector was specified." );
+                    }
                 }
 
                 activityToUpdate.ConnectionActivityTypeId = connectionActivityType.Id;
-                activityToUpdate.ConnectorPersonAliasId = RequestContext.CurrentPerson?.PrimaryAliasId;
                 var mentionedPersonIds = noteService.GetNewPersonIdsMentionedInContent( activity.Note, activityToUpdate.Note );
                 activityToUpdate.Note = activity.Note;
                 activityToUpdate.ConnectorPersonAliasId = connectorAliasId;
@@ -2017,45 +2090,64 @@ namespace Rock.Blocks.Types.Mobile.Connection
         /// </summary>
         /// <param name="activityGuid">The activity unique identifier.</param>
         /// <param name="connectionRequestGuid">The connection request unique identifier.</param>
-        /// <param name="currentPersonAliasId">The current person alias identifier.</param>
         /// <returns>The view model data that should be displayed.</returns>
         [BlockAction]
-        public BlockActionResult DeleteActivity( Guid activityGuid, string connectionRequestGuid, int currentPersonAliasId )
+        public BlockActionResult DeleteActivity( Guid activityGuid, string connectionRequestGuid )
         {
             using ( var rockContext = new RockContext() )
             {
-                // only allow deleting if current user created the activity, and not a system activity
+                // Only allow deleting if the current person created the activity or
+                // is its connector, has EDIT on the request, and it is not a system activity.
                 var connectionRequestActivityService = new ConnectionRequestActivityService( rockContext );
                 var connectionRequestService = new ConnectionRequestService( rockContext );
 
-                var activity = connectionRequestActivityService.Get( activityGuid );
-
                 var disablePredictableIds = this.PageCache.Layout.Site.DisablePredictableIds;
-                var request = connectionRequestService.Get( connectionRequestGuid, !disablePredictableIds );
 
-                if ( activity == null )
-                {
-                    return ActionNotFound( "Unable to find that specific activity." );
-                }
+                // Load the connection request. Include the connection opportunity
+                // and type for security check.
+                var request = connectionRequestService.GetQueryableByKey( connectionRequestGuid, !disablePredictableIds )
+                    .Include( r => r.ConnectionOpportunity.ConnectionType )
+                    .FirstOrDefault();
 
                 if ( request == null )
                 {
                     return ActionNotFound( "Unable to find that specific connection request." );
                 }
 
-                // Make sure we have permission to delete this activity.
-                if ( ( activity.CreatedByPersonAliasId.Equals( currentPersonAliasId )
-                    || activity.ConnectorPersonAliasId.Equals( currentPersonAliasId ) )
-                    && activity.ConnectionActivityType.ConnectionTypeId.HasValue )
+                if ( !request.IsAuthorized( Authorization.EDIT, RequestContext.CurrentPerson ) )
                 {
-                    connectionRequestActivityService.Delete( activity );
-                    rockContext.SaveChanges();
+                    return ActionUnauthorized();
                 }
-                // If we don't have permission.
-                else
+
+                var activity = connectionRequestActivityService.Get( activityGuid );
+
+                // Only accept an activity that this request's detail view lists.
+                if ( activity == null || !GetConnectionRequestActivities( request, rockContext ).Any( a => a.Id == activity.Id ) )
+                {
+                    return ActionNotFound( "Unable to find that specific activity." );
+                }
+
+                // The activity may belong to a sibling request when the full
+                // activity list is enabled, so check EDIT on that request too.
+                if ( activity.ConnectionRequestId != request.Id )
+                {
+                    var activityRequest = connectionRequestService.Queryable()
+                        .Include( r => r.ConnectionOpportunity.ConnectionType )
+                        .FirstOrDefault( r => r.Id == activity.ConnectionRequestId );
+
+                    if ( activityRequest == null || !activityRequest.IsAuthorized( Authorization.EDIT, RequestContext.CurrentPerson ) )
+                    {
+                        return ActionUnauthorized();
+                    }
+                }
+
+                if ( !IsActivityModifiable( activity ) )
                 {
                     return ActionForbidden( "You don't have permission to delete that activity." );
                 }
+
+                connectionRequestActivityService.Delete( activity );
+                rockContext.SaveChanges();
 
                 return ActionOk( GetRequestViewModel( request, rockContext ) );
             }
@@ -2544,6 +2636,11 @@ namespace Rock.Blocks.Types.Mobile.Connection
         public class RequestViewModel : RequestViewModelBase
         {
             /// <summary>
+            /// Gets or sets the due status of the request.
+            /// </summary>
+            public Common.Mobile.Enums.DueStatus DueStatus { get; set; }
+
+            /// <summary>
             /// Gets or sets the content of the header.
             /// </summary>
             /// <value>
@@ -2843,6 +2940,11 @@ namespace Rock.Blocks.Types.Mobile.Connection
             /// The placement groups available to pick from.
             /// </value>
             public List<PlacementGroupItemViewModel> PlacementGroups { get; set; }
+
+            /// <summary>
+            /// Gets or sets the states available to pick from.
+            /// </summary>
+            public List<ListItemBag> States { get; set; }
 
             /// <summary>
             /// Gets or sets the statuses available to pick from.

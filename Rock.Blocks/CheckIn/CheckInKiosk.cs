@@ -187,13 +187,15 @@ WHERE [RT].[Guid] = '" + SystemGuid.DefinedValue.PERSON_RECORD_TYPE_RESTUSER + "
             return new KioskConfigurationBag
             {
                 Kiosk = CheckInKioskSetup.GetKioskBag( kiosk ),
+                CampusId = kiosk.GetCampusId(),
                 Areas = areas.Where( a => savedConfiguration.AreaIds.Contains( a.IdKey ) )
                     .Select( a => new CheckInItemBag
                     {
                         Id = a.IdKey,
                         Name = a.Name
                     } ).ToList(),
-                Template = template
+                Template = template,
+                TemplateId = templateGroupType.Id,
             };
         }
 
@@ -282,7 +284,7 @@ WHERE [RT].[Guid] = '" + SystemGuid.DefinedValue.PERSON_RECORD_TYPE_RESTUSER + "
                 }
             }
 
-            var attendanceQry = CheckInDirector.GetCurrentAttendanceQuery( now, RockContext );
+            var attendanceQry = CheckInDirector.GetDailyAttendanceQuery( now, RockContext );
 
             if ( campusId.HasValue )
             {
@@ -373,6 +375,38 @@ WHERE [RT].[Guid] = '" + SystemGuid.DefinedValue.PERSON_RECORD_TYPE_RESTUSER + "
         }
 
         /// <summary>
+        /// Determines whether the attendance record is one of the current
+        /// attendance records that can be reprinted, using the same rules as
+        /// <see cref="GetCurrentAttendanceForReprint(int?)"/>.
+        /// </summary>
+        /// <param name="attendanceId">The attendance identifier.</param>
+        /// <param name="campusId">The campus to limit the attendance records to and determine the current timestamp.</param>
+        /// <returns><c>true</c> if the attendance record can be reprinted; otherwise <c>false</c>.</returns>
+        private bool IsAttendanceAvailableForReprint( int attendanceId, int? campusId )
+        {
+            var now = RockDateTime.Now;
+
+            if ( campusId.HasValue )
+            {
+                var campus = CampusCache.Get( campusId.Value );
+
+                if ( campus != null )
+                {
+                    now = campus.CurrentDateTime;
+                }
+            }
+
+            var attendanceQry = CheckInDirector.GetDailyAttendanceQuery( now, RockContext );
+
+            if ( campusId.HasValue )
+            {
+                attendanceQry = attendanceQry.Where( a => a.CampusId.HasValue && a.CampusId.Value == campusId.Value );
+            }
+
+            return attendanceQry.Any( a => a.Id == attendanceId );
+        }
+
+        /// <summary>
         /// Gets the curent attendance to be used with calculation room counts.
         /// </summary>
         /// <param name="locationIds">The locations to query to get attendance.</param>
@@ -384,7 +418,9 @@ WHERE [RT].[Guid] = '" + SystemGuid.DefinedValue.PERSON_RECORD_TYPE_RESTUSER + "
             var now = campus?.CurrentDateTime ?? RockDateTime.Now;
 
             // Load only the required properties for the current attendance.
-            return CheckInDirector.GetCurrentAttendance( now, locationIds, RockContext )
+            var attendance = CheckInDirector.GetCurrentAttendance( now, locationIds, RockContext );
+
+            return CheckInDirector.FilterToCurrentlyCheckedIn( attendance, RockContext )
                 .Select( a => new ActiveAttendanceBag
                 {
                     Id = a.AttendanceId,
@@ -403,6 +439,7 @@ WHERE [RT].[Guid] = '" + SystemGuid.DefinedValue.PERSON_RECORD_TYPE_RESTUSER + "
         private List<GroupOpportunityBag> GetGroupsAndLocationsForAreas( List<int> areaIds )
         {
             var groupLocationQry = new GroupLocationService( RockContext ).Queryable()
+                .Where( gl => gl.Schedules.Any( s => s.IsActive ) )
                 .Select( gl => new
                 {
                     gl.LocationId,
@@ -412,7 +449,9 @@ WHERE [RT].[Guid] = '" + SystemGuid.DefinedValue.PERSON_RECORD_TYPE_RESTUSER + "
             // Load all groups for these areas and the associated location identifiers.
             var groupsAndLocations = new GroupService( RockContext )
                 .Queryable()
-                .Where( g => areaIds.Contains( g.GroupTypeId ) )
+                .Where( g => areaIds.Contains( g.GroupTypeId )
+                    && g.IsActive
+                    && !g.IsArchived )
                 .GroupJoin( groupLocationQry, g => g.Id, gl => gl.GroupId, ( g, gl ) => new
                 {
                     Group = g,
@@ -444,6 +483,7 @@ WHERE [RT].[Guid] = '" + SystemGuid.DefinedValue.PERSON_RECORD_TYPE_RESTUSER + "
                         } )
                         .ToList()
                 } )
+                .Where( g => g.Locations.Any() )
                 .ToList();
         }
 
@@ -622,6 +662,7 @@ WHERE [RT].[Guid] = '" + SystemGuid.DefinedValue.PERSON_RECORD_TYPE_RESTUSER + "
         /// <returns>An instance of <see cref="PrintResponseBag"/> that contains the result of the operation.</returns>
         private PrintResponseBag PrintLegacyLabelsForAttendanceId( int attendanceId )
         {
+#if NET472_OR_GREATER
             var attendance = new AttendanceService( RockContext ).Get( attendanceId );
             var attendanceIds = new List<int> { attendance.Id };
             var possibleLabels = ZebraPrint.GetLabelTypesForPerson( attendance.PersonAlias.PersonId, attendanceIds );
@@ -644,6 +685,13 @@ WHERE [RT].[Guid] = '" + SystemGuid.DefinedValue.PERSON_RECORD_TYPE_RESTUSER + "
                 ErrorMessages = errorMessages,
                 LegacyLabels = legacyClientLabelBags
             };
+#else
+            return new PrintResponseBag
+            {
+                ErrorMessages = new List<string> { "Legacy labels are not supported." },
+                LegacyLabels = new List<LegacyClientLabelBag>(),
+            };
+#endif
         }
 
         /// <summary>
@@ -804,7 +852,10 @@ WHERE [RT].[Guid] = '" + SystemGuid.DefinedValue.PERSON_RECORD_TYPE_RESTUSER + "
 
             if ( familyId.IsNotNullOrWhiteSpace() )
             {
+                var familyGroupTypeId = GroupTypeCache.GetFamilyGroupType( rockContext ).Id;
+
                 group = new GroupService( rockContext ).GetQueryableByKey( familyId, false )
+                    .Where( g => g.GroupTypeId == familyGroupTypeId )
                     .Include( g => g.Members.Select( gm => gm.Person ) )
                     .FirstOrDefault();
 
@@ -895,6 +946,7 @@ WHERE [RT].[Guid] = '" + SystemGuid.DefinedValue.PERSON_RECORD_TYPE_RESTUSER + "
                 IsSmsButtonVisible = template.IsSmsButtonVisible,
                 IsSmsButtonCheckedByDefault = template.IsSmsButtonCheckedByDefault,
                 IsCheckInAfterRegistrationAllowed = template.IsCheckInAfterRegistrationAllowed,
+                DisplayAddressOnFamilies = template.DisplayAddressOnFamilies,
                 DisplayBirthdateForAdults = template.DisplayBirthdateForAdults,
                 DisplayBirthdateForChildren = template.DisplayBirthdateForChildren,
                 DisplayEthnicityForAdults = template.DisplayEthnicityForAdults,
@@ -1262,11 +1314,23 @@ WHERE [RT].[Guid] = '" + SystemGuid.DefinedValue.PERSON_RECORD_TYPE_RESTUSER + "
                 return ActionBadRequest( "Location not found." );
             }
 
+            // Only allow changing the status of locations that are attached
+            // to a device, which is where the kiosk gets its list of locations.
+            var isDeviceLocation = DeviceCache.All( RockContext )
+                .Any( d => d.GetAllLocationIds().Contains( location.Id ) );
+
+            if ( !isDeviceLocation )
+            {
+                return ActionBadRequest( "Location not found." );
+            }
+
             location.IsActive = isOpen;
             RockContext.SaveChanges();
 
+#if NET472_OR_GREATER
             // Clear the old v1 cache to match functionality.
             Rock.CheckIn.KioskDevice.Clear();
+#endif
 
             return ActionOk();
         }
@@ -1331,6 +1395,13 @@ WHERE [RT].[Guid] = '" + SystemGuid.DefinedValue.PERSON_RECORD_TYPE_RESTUSER + "
             var attendanceIdNumber = IdHasher.Instance.GetId( attendanceId );
 
             if ( !attendanceIdNumber.HasValue )
+            {
+                return ActionBadRequest( "Invalid attendance." );
+            }
+
+            // Only allow printing attendance records that would be shown
+            // in the reprint list for this kiosk.
+            if ( !IsAttendanceAvailableForReprint( attendanceIdNumber.Value, kiosk.GetCampusId() ) )
             {
                 return ActionBadRequest( "Invalid attendance." );
             }
@@ -1543,8 +1614,10 @@ WHERE [RT].[Guid] = '" + SystemGuid.DefinedValue.PERSON_RECORD_TYPE_RESTUSER + "
 
             if ( RockContext.SaveChanges() > 0 )
             {
+#if NET472_OR_GREATER
                 // Temporary until legacy check-in is removed.
                 KioskDevice.Clear();
+#endif
             }
 
             return ActionOk();
@@ -1615,6 +1688,50 @@ WHERE [RT].[Guid] = '" + SystemGuid.DefinedValue.PERSON_RECORD_TYPE_RESTUSER + "
                 return ActionBadRequest( "This kiosk does not support family registration." );
             }
 
+            // Existing people may only be the ones that EditFamily returned
+            // for this family: the family members and the people that can
+            // check in with the family.
+            var allowedPersonIds = new HashSet<int>();
+
+            if ( familyId.IsNotNullOrWhiteSpace() )
+            {
+                var group = new GroupService( RockContext ).Get( familyId, false );
+
+                if ( group == null || group.GroupTypeId != GroupTypeCache.GetFamilyGroupType( RockContext ).Id )
+                {
+                    return ActionBadRequest( "Family not found." );
+                }
+
+                allowedPersonIds.UnionWith( group.Members.Select( gm => gm.PersonId ) );
+
+                var canCheckInPersonIds = new CheckInDirector( RockContext )
+                    .CreateSession( template )
+                    .SearchProvider
+                    .GetCanCheckInFamilyMembersQuery( group.IdKey )
+                    .Select( gm => gm.PersonId )
+                    .ToList();
+
+                allowedPersonIds.UnionWith( canCheckInPersonIds );
+            }
+
+            var personService = new PersonService( RockContext );
+            var postedPersonIdKeys = ( options.People ?? new List<ValidPropertiesBox<RegistrationPersonBag>>() )
+                .Select( p => p?.Bag?.Id )
+                .Concat( options.RemovedPersonIds ?? new List<string>() )
+                .Where( id => id.IsNotNullOrWhiteSpace() )
+                .Distinct()
+                .ToList();
+
+            foreach ( var personIdKey in postedPersonIdKeys )
+            {
+                var personId = personService.Get( personIdKey, false )?.Id;
+
+                if ( personId.HasValue && !allowedPersonIds.Contains( personId.Value ) )
+                {
+                    return ActionBadRequest( "Invalid person." );
+                }
+            }
+
             var registration = new FamilyRegistration( RockContext, RequestContext.CurrentPerson, template );
             var result = registration.SaveRegistration( options.Family, options.People, kiosk.GetCampusId(), options.RemovedPersonIds );
 
@@ -1622,7 +1739,7 @@ WHERE [RT].[Guid] = '" + SystemGuid.DefinedValue.PERSON_RECORD_TYPE_RESTUSER + "
 
             var response = new SaveFamilyResponseBag
             {
-                FamilyId = result.PrimaryFamily.IdKey,
+                FamilyId = result.PrimaryFamily?.IdKey,
                 IsCheckInAllowed = template.IsCheckInAfterRegistrationAllowed,
                 IsSuccess = result.IsSuccess,
                 ErrorMessage = result.ErrorMessage
@@ -1658,6 +1775,29 @@ WHERE [RT].[Guid] = '" + SystemGuid.DefinedValue.PERSON_RECORD_TYPE_RESTUSER + "
                 return ActionBadRequest( "Missing family identifier." );
             }
 
+            var family = new GroupService( RockContext ).GetNoTracking( options.FamilyId, false );
+
+            if ( family == null || family.GroupTypeId != GroupTypeCache.GetFamilyGroupType( RockContext ).Id )
+            {
+                return ActionBadRequest( "Family not found." );
+            }
+
+            // Make the same kiosk check that BeginAddIndividual makes.
+            var addMode = kiosk.GetAttributeValue( SystemKey.DeviceAttributeKey.DEVICE_KIOSK_ALLOW_ADDING_INDIVIDUALS_TO_EXISTING_FAMILIES ).ConvertToEnum<AdultsOrChildrenSelectionMode>();
+
+            if ( addMode == AdultsOrChildrenSelectionMode.None )
+            {
+                return ActionBadRequest( "This kiosk does not support individual registration." );
+            }
+
+            // Adding an individual always creates (or matches) a new family
+            // member, so an existing person identifier is never sent. Without
+            // this check a posted identifier would update that person.
+            if ( options.Person?.Bag?.Id.IsNotNullOrWhiteSpace() == true )
+            {
+                return ActionBadRequest( "Invalid person." );
+            }
+
             var registration = new FamilyRegistration( RockContext, RequestContext.CurrentPerson, template );
             var result = registration.AddIndividual( options.FamilyId, options.Person, kiosk.GetCampusId() );
 
@@ -1665,7 +1805,7 @@ WHERE [RT].[Guid] = '" + SystemGuid.DefinedValue.PERSON_RECORD_TYPE_RESTUSER + "
 
             var response = new SaveFamilyResponseBag
             {
-                FamilyId = result.PrimaryFamily.IdKey,
+                FamilyId = result.PrimaryFamily?.IdKey,
                 IsCheckInAllowed = true,
                 IsSuccess = result.IsSuccess,
                 ErrorMessage = result.ErrorMessage

@@ -21,9 +21,11 @@ using System.Linq;
 
 using Rock.Attribute;
 using Rock.ClientService.Core.Note;
+#if REVIEW_WEBFORMS
 using Rock.Common.Mobile;
 using Rock.Common.Mobile.Blocks.WorkflowEntry;
 using Rock.Common.Mobile.Enums;
+#endif
 using Rock.Data;
 using Rock.Enums.Cms;
 using Rock.Enums.Workflow;
@@ -37,6 +39,7 @@ using Rock.ViewModels.Rest.Controls;
 using Rock.ViewModels.Workflow;
 using Rock.Web;
 using Rock.Web.Cache;
+using Rock.Web.UI.Controls;
 using Rock.Workflow;
 
 namespace Rock.Blocks.Workflow
@@ -74,7 +77,6 @@ namespace Rock.Blocks.Workflow
         Description = "Lava template for determining the title of the block. If not specified, the name of the Workflow Type will be shown.",
         Key = AttributeKey.BlockTitleTemplate,
         EditorMode = Rock.Web.UI.Controls.CodeEditorMode.Lava,
-        EditorTheme = Rock.Web.UI.Controls.CodeEditorTheme.Rock,
         EditorHeight = 100,
         IsRequired = false,
         SiteTypes = SiteTypeFlags.Web,
@@ -361,6 +363,11 @@ namespace Rock.Blocks.Workflow
                 return null;
             }
 
+            if ( workflow.Id == 0 )
+            {
+                SetInitialWorkflowAttributes( workflow, null );
+            }
+
             // If the workflow type was not configured by block setting
             // or if the block is configured to always use the form name for the page title and the workflow type uses a form,
             // then update the page title to match the workflow type name.
@@ -375,7 +382,7 @@ namespace Rock.Blocks.Workflow
 
             return new WorkflowEntryOptionsBag
             {
-                IsCaptchaEnabled = !GetAttributeValue( AttributeKey.DisableCaptchaSupport ).AsBoolean(),
+                IsCaptchaEnabled = !Captcha.CaptchaService.ShouldDisableCaptcha( GetAttributeValue( AttributeKey.DisableCaptchaSupport ).AsBoolean() ),
                 InitialAction = initialAction
             };
         }
@@ -512,7 +519,7 @@ namespace Rock.Blocks.Workflow
                 {
                     Type = InteractiveMessageType.Warning,
                     Title = "Sorry",
-                    Content = "You are not authorized to view this typ eof workflow."
+                    Content = "You are not authorized to view this type of workflow."
                 };
 
                 return null;
@@ -590,6 +597,7 @@ namespace Rock.Blocks.Workflow
             // Set initial values from the page parameters.
             foreach ( var pageParameter in RequestContext.PageParameters )
             {
+                ValidateAttributeValue( workflow, pageParameter.Key, pageParameter.Value );
                 workflow.SetAttributeValue( pageParameter.Key, pageParameter.Value );
             }
 
@@ -598,7 +606,48 @@ namespace Rock.Blocks.Workflow
             {
                 foreach ( var field in fields )
                 {
+                    ValidateAttributeValue( workflow, field.Key, field.Value );
                     workflow.SetAttributeValue( field.Key, field.Value );
+                }
+            }
+        }
+
+        /// <summary>
+        /// Validates the value of an attribute against the rules defined for the
+        /// field type of the attribute.
+        /// </summary>
+        /// <param name="entity">The entity to retrieve the attribute field definition from.</param>
+        /// <param name="key">The key of the attribute</param>
+        /// <param name="value">The value to validate</param>
+        private static void ValidateAttributeValue( IHasAttributes entity, string key, string value )
+        {
+            if ( !entity.Attributes.TryGetValue( key, out var attribute ) )
+            {
+                return;
+            }
+
+            var field = attribute.FieldType.Field;
+            var rules = field.GetValidationRules( attribute.ConfigurationValues );
+
+            try
+            {
+                StringValueValidator.Validate( value, rules, typeof( AttributeValue ), nameof( AttributeValue.Value ) );
+            }
+            catch ( PropertyValidationException ex )
+            {
+                if ( DbContext.EnableStringValidation )
+                {
+                    throw new AttributeValueValidationException( attribute, entity.Id, ex.Reason, null );
+                }
+                else
+                {
+                    // Captures the full current call stack, all callers
+                    // included so that we get more information about
+                    // where this happened in the log.
+                    var stack = new System.Diagnostics.StackTrace( true ).ToString();
+                    var ex2 = new AttributeValueValidationException( attribute, entity.Id, ex.Reason, stack );
+
+                    ExceptionLogService.LogException( ex2, System.Web.HttpContext.Current );
                 }
             }
         }
@@ -1251,7 +1300,7 @@ namespace Rock.Blocks.Workflow
             }
 
             // Admin doesn't want to use captcha on the site.
-            if ( GetAttributeValue( AttributeKey.DisableCaptchaSupport ).AsBoolean() )
+            if ( Captcha.CaptchaService.ShouldDisableCaptcha( GetAttributeValue( AttributeKey.DisableCaptchaSupport ).AsBoolean() ) )
             {
                 return true;
             }
@@ -1274,7 +1323,11 @@ namespace Rock.Blocks.Workflow
 
             if ( isLoginRequired && RequestContext.CurrentPerson == null )
             {
+#if REVIEW_WEBFORMS
                 PageCache.Layout.Site.RedirectToLoginPage( true );
+#else
+                throw new NotImplementedException();
+#endif
                 return true;
             }
 
@@ -1285,6 +1338,7 @@ namespace Rock.Blocks.Workflow
 
         #region Legacy Mobile Methods
 
+#if REVIEW_WEBFORMS
         /// <summary>
         /// Gets the person entry details to be sent to the shell.
         /// </summary>
@@ -1329,18 +1383,6 @@ namespace Rock.Blocks.Workflow
                 mobileAddress = familyLocation != null ? Rock.Mobile.MobileHelper.GetMobileAddress( familyLocation ) : null;
             }
 
-            Guid? maritalStatusGuid;
-
-            if ( personEntryPerson != null )
-            {
-                maritalStatusGuid = personEntryPerson.MaritalStatusValue?.Guid;
-            }
-            else
-            {
-                // default to Married if this is a new person
-                maritalStatusGuid = Rock.SystemGuid.DefinedValue.PERSON_MARITAL_STATUS_MARRIED.AsGuid();
-            }
-
             return new WorkflowFormPersonEntry
             {
                 PreHtml = form.PersonEntryPreHtml.ResolveMergeFields( mergeFields ),
@@ -1359,7 +1401,7 @@ namespace Rock.Blocks.Workflow
                     Person = mobilePerson,
                     Spouse = mobileSpouse,
                     Address = mobileAddress,
-                    MaritalStatusGuid = maritalStatusGuid
+                    MaritalStatusGuid = personEntryPerson?.MaritalStatusValue?.Guid
                 }
             };
         }
@@ -1601,6 +1643,7 @@ namespace Rock.Blocks.Workflow
 
             return values;
         }
+#endif
 
         #endregion
 
@@ -1800,6 +1843,7 @@ namespace Rock.Blocks.Workflow
             return ActionOk();
         }
 
+#if REVIEW_WEBFORMS
         /// <summary>
         /// Gets the next form to display for the workflow. The form may be either
         /// an entry form or just the text or redirect that should be performed.
@@ -1912,6 +1956,7 @@ namespace Rock.Blocks.Workflow
 
             return GetLegacyMobileWorkflowForm( action, workflow, currentPerson, useClientValues );
         }
+#endif
 
         #endregion
     }

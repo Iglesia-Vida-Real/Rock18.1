@@ -2,7 +2,8 @@
     <div class="upAdd">
         <Panel title="Add Prayer Request" titleIconCssClass="ti ti-pray" type="block">
             <template #default>
-                <RockForm v-if="!isEntryHidden" @submit="onSubmitted">
+                <NotificationBox v-if="config.errorMessage" alertType="warning">{{ config.errorMessage }}</NotificationBox>
+                <RockForm v-else-if="!isEntryHidden" @submit="onSubmitted">
                     <NotificationBox v-if="errors.length" id="nbWarningMessage" alertType="warning" label="Warning">
                         <ul>
                             <li v-for="error in errors">{{ error }}</li>
@@ -25,7 +26,6 @@
                                      :rules="config.isLastNameRequired ? ['required', 'nospecialcharacters', 'noemojisorspecialfonts'] : ['nospecialcharacters', 'noemojisorspecialfonts']" />
 
                             <EmailBox v-model="email"
-                                      autocomplete="email"
                                       :disabled="isSaving || isNavigating"
                                       label="Email" />
 
@@ -92,12 +92,14 @@
                     </fieldset>
 
                     <div class="captcha-container">
-                        <Captcha v-if="!config.disableCaptchaSupport" ref="captchaElement" validationTitle="Captcha" />
+                        <div v-if="!config.disableCaptchaSupport" v-show="!isCaptchaComplete">
+                            <Captcha ref="captchaElement" validationTitle="Captcha" />
+                        </div>
                     </div>
 
-                    <RockButton shortcutKey="s"
+                    <RockButton v-if="isCaptchaComplete || config.disableCaptchaSupport" shortcutKey="s"
                                 btnType="primary"
-                                :disabled="isSaving || isNavigating || !isCaptchaComplete"
+                                :disabled="isSaving || isNavigating"
                                 type="submit">{{ saveButtonText }}</RockButton>
                 </RockForm>
                 <template v-else>
@@ -174,7 +176,6 @@
     const campusStatusFilter = ref<string[] | undefined>(config.campusStatusFilter ?? undefined);
 
     const captchaElement = ref<InstanceType<typeof Captcha> | undefined>();
-    const captchaToken = ref<string | undefined>();
     const isCaptchaComplete = ref(false);
 
     //#endregion
@@ -199,8 +200,8 @@
     /**
      * Event handler for the "Add Another Request" button being clicked.
      */
-    function onAddAnotherRequestClicked(): void {
-        resetToAddAnotherRequest();
+    async function onAddAnotherRequestClicked(): Promise<void> {
+        await resetToAddAnotherRequest();
     }
 
     /**
@@ -222,7 +223,6 @@
 
         const token = await captchaElement.value.getToken();
         isCaptchaComplete.value = !!token;
-        captchaToken.value = token;
     }
 
     /**
@@ -247,7 +247,7 @@
     /**
      * Resets the block to handle another prayer request entry.
      */
-    function resetToAddAnotherRequest(): void {
+    async function resetToAddAnotherRequest(): Promise<void> {
         // Only reset values that the individual may want to change for the next request.
         request.value = "";
         internalIsUrgent.value = false;
@@ -256,12 +256,21 @@
         attributeValues.value = {};
         isEntryHidden.value = false;
 
+        const shouldValidateCaptcha = !config.disableCaptchaSupport;
+        if (shouldValidateCaptcha) {
+            isCaptchaComplete.value = false;
+        }
+
+        await nextTick();
+
         // Automatically set focus to the Request textarea after the template is rendered.
-        nextTick(() => {
-            if (requestInput.value) {
-                requestInput.value.focus();
-            }
-        });
+        if (requestInput.value) {
+            requestInput.value.focus();
+        }
+
+        if (shouldValidateCaptcha) {
+            await waitForCaptcha();
+        }
     }
 
     /**
@@ -288,14 +297,10 @@
 
             const actionContext: BlockActionContextBag = {};
             if (!config.disableCaptchaSupport && captchaElement.value) {
-                actionContext.captcha = captchaToken.value;
+                actionContext.captcha = await captchaElement.value.getToken();
             }
 
             const result = await invokeBlockAction<PrayerRequestEntrySaveResponseBag>("Save", { bag }, actionContext);
-
-            if (!config.disableCaptchaSupport && captchaElement.value) {
-                captchaElement.value.refreshToken();
-            }
 
             if (!result?.isSuccess || !result.data) {
                 errors.value = [result.errorMessage || "An unexpected error occurred."];

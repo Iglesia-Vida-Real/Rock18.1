@@ -560,7 +560,7 @@
             }
 
             const bytes = base64ToBytes(response.data.base64);
-            const blob = new Blob([bytes], {
+            const blob = new Blob([bytes as BlobPart], {
                 type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             });
             downloadBlob(blob, response.data.fileName);

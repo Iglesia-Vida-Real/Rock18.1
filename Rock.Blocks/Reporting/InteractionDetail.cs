@@ -42,7 +42,6 @@ namespace Rock.Blocks.Reporting
     [CodeEditorField( "Default Template",
         Description = "The Lava template to use as default.",
         EditorMode = Rock.Web.UI.Controls.CodeEditorMode.Lava,
-        EditorTheme = Rock.Web.UI.Controls.CodeEditorTheme.Rock,
         EditorHeight = 300,
         IsRequired = false,
         Order = 2,
@@ -172,8 +171,10 @@ namespace Rock.Blocks.Reporting
         /// <returns>A string of the Interaction HTML Content</returns>
         private string GetInteractionContent()
         {
-            var interactionId = PageParameter( PageParameterKey.InteractionId ).AsInteger();
-            var interaction = new InteractionService( RockContext ).Get( interactionId );
+            var interaction = new InteractionService( RockContext ).Get(
+                PageParameter( PageParameterKey.InteractionId ),
+                !PageCache.Layout.Site.DisablePredictableIds
+            );
 
             if ( interaction != null )
             {
@@ -201,9 +202,20 @@ namespace Rock.Blocks.Reporting
 
                 mergeFields.Add( MergeFieldKeys.Interaction, interaction );
 
+                /*
+                    10/19/2026 - MSE
+
+                    Interaction data, summaries, person names, device text and component names
+                    can be set by anonymous visitors, signed-in people and mobile or TV apps.
+                    Render the channel template and the Default Template with {{ }} output values
+                    HTML encoded, while keeping the template's own markup. This also covers
+                    saved and custom templates without changing any saved setting.
+
+                    Reason: Prevent stored interaction values from rendering as HTML in the interaction detail.
+                */
                 return interaction.InteractionComponent.InteractionChannel.InteractionDetailTemplate.IsNotNullOrWhiteSpace() ?
-                    interaction.InteractionComponent.InteractionChannel.InteractionDetailTemplate.ResolveMergeFields( mergeFields ) :
-                    GetAttributeValue( AttributeKey.DefaultTemplate ).ResolveMergeFields( mergeFields );
+                    interaction.InteractionComponent.InteractionChannel.InteractionDetailTemplate.ResolveMergeFields( mergeFields, encodeStrings: true ) :
+                    GetAttributeValue( AttributeKey.DefaultTemplate ).ResolveMergeFields( mergeFields, encodeStrings: true );
             }
             return string.Empty;
         }

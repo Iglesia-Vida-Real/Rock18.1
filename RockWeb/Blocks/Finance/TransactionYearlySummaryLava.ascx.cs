@@ -38,8 +38,15 @@ namespace RockWeb.Blocks.Finance
     [Description( "Presents a summary of financial transactions broke out by year and account using lava" )]
 
     [ContextAware( typeof( Person ) )]
-    [CodeEditorField( "Lava Template", "The lava template to use to format the transaction summary.", CodeEditorMode.Lava, CodeEditorTheme.Rock, 400, true, "{% include '~~/Assets/Lava/TransactionYearlySummary.lava' %}", "", 1 )]
+    [CodeEditorField( "Lava Template",
+        Description = "The lava template to use to format the transaction summary.",
+        EditorMode = CodeEditorMode.Lava,
+        EditorHeight = 400,
+        IsRequired = true,
+        DefaultValue = "{% include '~~/Assets/Lava/TransactionYearlySummary.lava' %}",
+        Order = 1 )]
     [AccountsField( "Accounts", "Limit the results to transactions that match the selected accounts.", false, "", "", 2 )]
+    [Rock.Cms.DefaultBlockRole( Rock.Enums.Cms.BlockRole.Secondary )]
     [Rock.SystemGuid.BlockTypeGuid( "535307C8-77D1-44F8-AD4D-1577572B6D26" )]
     public partial class TransactionYearlySummaryLava : RockBlock, ISecondaryBlock
     {
@@ -87,7 +94,7 @@ namespace RockWeb.Blocks.Finance
         }
 
         /// <summary>
-        /// 
+        ///
         /// </summary>
         private class SummaryRecord
         {
@@ -101,6 +108,8 @@ namespace RockWeb.Blocks.Finance
         /// </summary>
         private void BindGrid()
         {
+            nbNotAuthorized.Visible = false;
+
             var contributionType = DefinedValueCache.Get( Rock.SystemGuid.DefinedValue.TRANSACTION_TYPE_CONTRIBUTION.AsGuid() );
             if ( contributionType != null )
             {
@@ -114,6 +123,15 @@ namespace RockWeb.Blocks.Finance
                 var targetPerson = this.ContextEntity<Person>();
                 if ( targetPerson != null )
                 {
+                    // Don't show the summary if the current person is not
+                    // allowed to view the context person's giving.
+                    if ( !IsAuthorizedForPerson( targetPerson ) )
+                    {
+                        lLavaOutput.Text = string.Empty;
+                        nbNotAuthorized.Visible = true;
+                        return;
+                    }
+
                     qry = qry.Where( t => t.Transaction.AuthorizedPersonAlias.Person.GivingId == targetPerson.GivingId );
                 }
 
@@ -174,6 +192,35 @@ namespace RockWeb.Blocks.Finance
         #endregion
 
         #region Internal Methods
+
+        /// <summary>
+        /// Determines whether the current person is allowed to view the giving of
+        /// the specified person. This is allowed if the person is the current person,
+        /// shares the same giving unit, is one of the current person's businesses, or
+        /// the current person is authorized to view financial transactions.
+        /// </summary>
+        /// <param name="person">The person whose giving will be displayed.</param>
+        /// <returns><c>true</c> if the current person is allowed to view the giving; otherwise, <c>false</c>.</returns>
+        private bool IsAuthorizedForPerson( Person person )
+        {
+            var currentPerson = CurrentPerson;
+
+            if ( currentPerson == null )
+            {
+                return false;
+            }
+
+            var isCurrentPerson = person.Id == currentPerson.Id;
+            var isInGivingUnit = person.GivingId.IsNotNullOrWhiteSpace()
+                && person.GivingId == currentPerson.GivingId;
+
+            if ( isCurrentPerson || isInGivingUnit || currentPerson.GetBusinesses().Any( b => b.Id == person.Id ) )
+            {
+                return true;
+            }
+
+            return new FinancialTransaction().IsAuthorized( Authorization.VIEW, currentPerson );
+        }
 
         /// <summary>
         /// Hook so that other blocks can set the visibility of all ISecondaryBlocks on it's page

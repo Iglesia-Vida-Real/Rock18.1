@@ -28,6 +28,9 @@ import { Guid } from "@Obsidian/Types";
  * the GroupTypePicker control.
  */
 export type GroupTypePickerGetGroupTypesOptionsBag = {
+    /** List of GUIDs for the group types we want to exclude */
+    excludeGroupTypes?: Guid[] | null;
+
     /** List of GUIDs for the group types we want to retrieve */
     groupTypes?: Guid[] | null;
 
@@ -36,4 +39,10 @@ export type GroupTypePickerGetGroupTypesOptionsBag = {
 
     /** Whether or not to filter out the group types that aren't flagged to be on the group list */
     onlyGroupListItems: boolean;
+
+    /**
+     * Gets or sets the security grant token to use when performing
+     * authorization checks.
+     */
+    securityGrantToken?: string | null;
 };

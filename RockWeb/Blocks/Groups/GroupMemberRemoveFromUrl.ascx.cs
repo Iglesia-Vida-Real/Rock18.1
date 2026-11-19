@@ -35,15 +35,33 @@ namespace RockWeb.Blocks.Groups
     [DisplayName( "Group Member RemoveFrom URL" )]
     [Category( "Groups" )]
     [Description( "Removes a person from a group based on inputs from the URL query string (GroupId, PersonGuid)." )]
+
     [GroupField("Default Group", "The default group to use if one is not passed through the query string (optional).", false, order:0)]
-    [CodeEditorField("Success Message", "Lava template to display when person has been added to the group.", CodeEditorMode.Lava, CodeEditorTheme.Rock, 300, true, @"<div class='alert alert-success'>
+
+    [CodeEditorField("Success Message",
+        Description = "Lava template to display when person has been added to the group.",
+        EditorMode = CodeEditorMode.Lava,
+        EditorHeight = 300,
+        IsRequired = true,
+        DefaultValue = @"<div class='alert alert-success'>
     {{ Person.NickName }} has been removed from the group '{{ Group.Name }}'.
-</div>", order: 1)]
-    [CodeEditorField( "Not In Group Message", "Lava template to display when person is not in the group.", CodeEditorMode.Lava, CodeEditorTheme.Rock, 300, true, @"<div class='alert alert-warning'>
+</div>",
+        Order = 1)]
+
+    [CodeEditorField( "Not In Group Message",
+        Description = "Lava template to display when person is not in the group.",
+        EditorMode = CodeEditorMode.Lava,
+        EditorHeight = 300,
+        IsRequired = true,
+        DefaultValue = @"<div class='alert alert-warning'>
     {{ Person.NickName }} was not in the group '{{ Group.Name }}'.
-</div>", order: 2 )]
+</div>",
+        Order = 2 )]
+
     [BooleanField("Warn When Not In Group", "Determines if the 'Not In Group Message' should be shown if the person is not in the group. Otherwise the success message will be shown", true, order: 3)]
     [BooleanField("Inactivate Instead of Remove", "Inactivates the person in the group instead of removing them.", false, key:"Inactivate", order: 4)]
+
+    [GroupTypesField( "Limit Group Type", "The group types that people can be removed from by a link. Required: when blank, the block removes no one. Security role groups are not supported.", true, order: 5, key: "LimitGroupType" )]
     [Rock.SystemGuid.BlockTypeGuid( "0159CE20-7B41-4D53-985C-81877ED75767" )]
     public partial class GroupMemberRemoveFromUrl : Rock.Web.UI.RockBlock
     {
@@ -86,6 +104,31 @@ namespace RockWeb.Blocks.Groups
             {
                 RockContext rockContext = new RockContext();
 
+                /*
+                    10/19/2026 - MSE
+
+                    Limit Group Type is required. The block removes no one until an administrator
+                    selects the group types it may remove people from, and it never accepts the
+                    Security Role group type. These checks run before any value from the URL
+                    is read so a misconfigured block makes no changes.
+
+                    Reason: Only remove people from group types an administrator has allowed.
+                */
+                var allowedGroupTypeGuids = GetAttributeValue( "LimitGroupType" ).SplitDelimitedValues().AsGuidList();
+                if ( !allowedGroupTypeGuids.Any() )
+                {
+                    lAlerts.Text = "This block is not configured. An administrator must select one or more group types in the Limit Group Type setting.";
+                    base.OnLoad( e );
+                    return;
+                }
+
+                if ( allowedGroupTypeGuids.Contains( Rock.SystemGuid.GroupType.GROUPTYPE_SECURITY_ROLE.AsGuid() ) )
+                {
+                    lAlerts.Text = "Security role groups are not supported by this block. An administrator must remove the Security Role group type from the Limit Group Type setting.";
+                    base.OnLoad( e );
+                    return;
+                }
+
                 Group group = null;
                 Guid personGuid = Guid.Empty;
 
@@ -111,6 +154,23 @@ namespace RockWeb.Blocks.Groups
                 if ( group == null )
                 {
                     lAlerts.Text = "Could not determine the group to add to.";
+                    base.OnLoad( e );
+                    return;
+                }
+
+                /*
+                    10/19/2026 - MSE
+
+                    The group, whether it came from the URL or the Default Group setting,
+                    must be of one of the allowed group types, and it must never be a
+                    security role group, whatever the block settings say.
+
+                    Reason: Only remove people from allowed groups, never from security roles.
+                */
+                var groupTypeGuid = GroupTypeCache.Get( group.GroupTypeId )?.Guid;
+                if ( !groupTypeGuid.HasValue || !allowedGroupTypeGuids.Contains( groupTypeGuid.Value ) || group.IsSecurityRoleOrSecurityGroupType() )
+                {
+                    lAlerts.Text = "Invalid group specified.";
                     base.OnLoad( e );
                     return;
                 }

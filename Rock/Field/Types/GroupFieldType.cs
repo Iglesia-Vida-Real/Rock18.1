@@ -23,6 +23,8 @@ using System.Web.UI;
 using Rock.Attribute;
 using Rock.Data;
 using Rock.Model;
+using Rock.Security;
+using Rock.Security.SecurityGrantRules;
 using Rock.ViewModels.Utility;
 using Rock.Web.Cache;
 using Rock.Web.UI.Controls;
@@ -36,7 +38,7 @@ namespace Rock.Field.Types
     [FieldTypeUsage( FieldTypeUsage.Administrative )]
     [RockPlatformSupport( Utility.RockPlatform.WebForms, Utility.RockPlatform.Obsidian )]
     [Rock.SystemGuid.FieldTypeGuid( Rock.SystemGuid.FieldType.GROUP )]
-    public class GroupFieldType : FieldType, IEntityFieldType, IEntityReferenceFieldType
+    public class GroupFieldType : FieldType, IEntityFieldType, IEntityReferenceFieldType, IPublicSecurityGrantFieldType
     {
         #region Formatting
 
@@ -145,27 +147,7 @@ namespace Rock.Field.Types
         /// <inheritdoc/>
         public override PersistedValues GetPersistedValues( string privateValue, Dictionary<string, string> privateConfigurationValues, IDictionary<string, object> cache )
         {
-            if ( string.IsNullOrWhiteSpace( privateValue ) )
-            {
-                return new PersistedValues
-                {
-                    TextValue = string.Empty,
-                    CondensedTextValue = string.Empty,
-                    HtmlValue = string.Empty,
-                    CondensedHtmlValue = string.Empty
-                };
-            }
-
-            var textValue = GetTextValue( privateValue, privateConfigurationValues );
-            var condensedTextValue = textValue.Truncate( CondensedTruncateLength );
-
-            return new PersistedValues
-            {
-                TextValue = textValue,
-                CondensedTextValue = condensedTextValue,
-                HtmlValue = textValue,
-                CondensedHtmlValue = condensedTextValue
-            };
+            return GetSimpleTextPersistedValues( privateValue, privateConfigurationValues );
         }
 
         #endregion
@@ -211,6 +193,28 @@ namespace Rock.Field.Types
 
         #endregion
 
+        #region Value Hinting
+
+        /// <inheritdoc/>
+        internal override FieldTypeHints GetFieldHints( Dictionary<string, string> privateConfigurationValues )
+        {
+            return new FieldTypeHints
+            {
+                ValueFormat = $"A guid that represents a single entity from the Group table.",
+            };
+        }
+
+        #endregion
+
+        #region IPublicSecurityGrantFieldType
+
+        /// <inheritdoc/>
+        public void AddRulesToSecurityGrant( SecurityGrant grant, Dictionary<string, string> privateConfigurationValues )
+        {
+            grant.AddRule( new GroupPickerSecurityGrantRule() );
+        }
+
+        #endregion
 
         #region WebForms
 #if WEBFORMS

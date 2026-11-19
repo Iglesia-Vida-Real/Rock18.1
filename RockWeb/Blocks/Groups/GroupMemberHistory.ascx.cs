@@ -37,10 +37,18 @@ namespace RockWeb.Blocks.Groups
     [Category( "Groups" )]
     [Description( "Displays a timeline of history for a group member. If only GroupId is specified, a list of group members that have been in the group will be shown first." )]
 
-    [CodeEditorField( "Timeline Lava Template", "The Lava Template to use when rendering the timeline view of the history.", CodeEditorMode.Lava, CodeEditorTheme.Rock, 100, false, @"{% include '~~/Assets/Lava/GroupHistoryTimeline.lava' %}", order: 1 )]
+    [CodeEditorField( "Timeline Lava Template",
+        Description = "The Lava Template to use when rendering the timeline view of the history.",
+        EditorMode = CodeEditorMode.Lava,
+        EditorHeight = 100,
+        IsRequired = false,
+        DefaultValue = @"{% include '~~/Assets/Lava/GroupHistoryTimeline.lava' %}",
+        Order = 1 )]
+
     [LinkedPage( "Group History Grid Page", defaultValue: Rock.SystemGuid.Page.GROUP_HISTORY_GRID, required: true, order: 2 )]
     [LinkedPage( "Group Member History Page", defaultValue: Rock.SystemGuid.Page.GROUP_MEMBER_HISTORY, required: true, order: 3 )]
     [BooleanField( "Show Members Grid", "Show Members Grid if GroupMemberId is not specified in the URL", true, order: 4 )]
+
     [Rock.SystemGuid.BlockTypeGuid( "EA6EA2E7-6504-41FE-AB55-0B1E7D04B226" )]
     public partial class GroupMemberHistory : RockBlock, ICustomGridColumns, ISecondaryBlock
     {
@@ -197,7 +205,7 @@ namespace RockWeb.Blocks.Groups
             if ( groupMember != null )
             {
                 lPersonNameHtml.Text = string.Format( photoFormat, groupMember.PersonId, groupMember.Person.PhotoUrl, ResolveUrl( "~/Assets/Images/person-no-photo-unknown.svg" ) )
-                    + groupMember.ToString();
+                    + groupMember.ToString().EncodeHtml();
 
                 string personUrl = this.ResolveUrl( string.Format( "~/Person/{0}", groupMember.PersonId ) );
                 lPersonProfileLink.Text = string.Format( @"<a href='{0}'><div class='btn btn-default btn-sm'><i class='ti ti-user'></i></div></a>", personUrl );

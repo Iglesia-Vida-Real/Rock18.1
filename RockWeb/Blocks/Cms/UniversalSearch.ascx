@@ -9,6 +9,7 @@
 <script>
     Sys.Application.add_load( function () {
         $("div.photo-round").lazyload({
+            container: $('#content-wrapper')[0] || window,
             effect: "fadeIn"
         });
     });
@@ -87,6 +88,7 @@
                                     <Rock:RockCheckBox ID="cbShowScores" runat="server" Label="Show Scores" Help="Enables the display of scores for help with debugging." />
                                     <Rock:RockCheckBox ID="cbUseCustomResults" runat="server" Label="Use Custom Results Template" Help="Determines if the custom Lava results template should be used." />
                                     <Rock:RockCheckBox ID="cbShowFilter" runat="server" Label="Show Model Filter" />
+                                    <Rock:RockCheckBox ID="cbAllowSmartSearchRequests" runat="server" Label="Allow Smart Search Requests" Help="When enabled, requests from the Smart Search (SmartSearch page parameter) use the global Smart Search settings instead of this block's models and filters. Only enable this on the internal Smart Search results page; on a public page it lets any visitor search every Smart Search entity type, including people." />
                                 </div>
                                 <div class="col-md-6">
                                     <Rock:RockTextBox ID="tbBaseFieldFilters" runat="server" Label="Base Field Filters" Help="These field filters will always be enabled and will not be changeable by the individual. Uses the same syntax as the lava command." />
@@ -95,16 +97,16 @@
                             </div>
                             <div class="row">
                                 <div class="col-md-12">
-                                    <Rock:CodeEditor ID="ceCustomResultsTemplate" runat="server" Label="Custom Results Template" EditorMode="Lava" EditorTheme="Rock" />
+                                    <Rock:CodeEditor ID="ceCustomResultsTemplate" runat="server" Label="Custom Results Template" EditorMode="Lava" />
                                     <Rock:RockCheckBoxList ID="cblLavaCommands" runat="server" RepeatDirection="Horizontal" Label="Custom Results Lava Commands" />
                                 </div>
                             </div>
                             <div class="row">
                                 <div class="col-md-6">
-                                    <Rock:CodeEditor ID="cePreHtml" runat="server" Label="Search Input Pre-HTML" Help="Custom Lava to place before the search input (for styling)." EditorMode="Lava" EditorTheme="Rock" />
+                                    <Rock:CodeEditor ID="cePreHtml" runat="server" Label="Search Input Pre-HTML" Help="Custom Lava to place before the search input (for styling)." EditorMode="Lava" />
                                 </div>
                                 <div class="col-md-6">
-                                    <Rock:CodeEditor ID="cePostHtml" runat="server" Label="Search Input Post-HTML" Help="Custom Lava to place after the search input (for styling)." EditorMode="Lava" EditorTheme="Rock" />
+                                    <Rock:CodeEditor ID="cePostHtml" runat="server" Label="Search Input Post-HTML" Help="Custom Lava to place after the search input (for styling)." EditorMode="Lava" />
                                 </div>
                             </div>
                         </ContentTemplate>

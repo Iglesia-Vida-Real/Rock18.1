@@ -74,7 +74,6 @@ namespace RockWeb.Blocks.Prayer
         Key = AttributeKey.PrayerPersonLava,
         DefaultValue = PrayerPersonLavaDefaultValue,
         EditorMode = CodeEditorMode.Lava,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 200,
         IsRequired = true,
         Order = 4 )]
@@ -84,7 +83,6 @@ namespace RockWeb.Blocks.Prayer
         Key = AttributeKey.PrayerDisplayLava,
         DefaultValue = PrayerDisplayLavaDefaultValue,
         EditorMode = CodeEditorMode.Lava,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 200,
         IsRequired = true,
         Order = 5 )]
@@ -473,6 +471,14 @@ namespace RockWeb.Blocks.Prayer
         protected void mdFlag_SaveClick( object sender, EventArgs e )
         {
             int prayerRequestId = hfIdValue.ValueAsInt();
+
+            // Only allow flagging a prayer request that is part of this prayer session.
+            var prayerRequestIds = this.PrayerRequestIds;
+            if ( prayerRequestIds == null || !prayerRequestIds.Contains( prayerRequestId ) )
+            {
+                mdFlag.Hide();
+                return;
+            }
 
             var rockContext = new RockContext();
             var service = new PrayerRequestService( rockContext );

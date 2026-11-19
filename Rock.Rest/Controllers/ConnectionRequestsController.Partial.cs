@@ -24,6 +24,7 @@ using System.Web.Http;
 using Rock.Data;
 using Rock.Model;
 using Rock.Rest.Filters;
+using Rock.Web.Cache;
 using Rock.Web.UI.Controls;
 
 namespace Rock.Rest.Controllers
@@ -98,6 +99,15 @@ namespace Rock.Rest.Controllers
             var rockContext = ( RockContext ) Service.Context;
             var list = new List<TreeViewItem>();
 
+            /*
+                10/18/2026 - MSE
+
+                The tree view (rockTree.js) renders node names as HTML, and requester names can be
+                set by anonymous visitors through public forms. Opportunity, requester and connection
+                type names are HTML encoded, the same as other tree endpoints such as LocationsController.
+
+                Reason: Prevent stored XSS in the Connection Request picker.
+            */
             if ( id.StartsWith( "T" ) )
             {
                 int connectionTypeId = id.Substring( 1 ).AsInteger();
@@ -108,7 +118,7 @@ namespace Rock.Rest.Controllers
                 {
                     var item = new TreeViewItem();
                     item.Id = string.Format( "O{0}", opportunity.Id );
-                    item.Name = opportunity.Name;
+                    item.Name = System.Web.HttpUtility.HtmlEncode( opportunity.Name );
                     item.HasChildren = opportunity.ConnectionRequests
                         .Any( r =>
                             r.ConnectionState == ConnectionState.Active ||
@@ -132,7 +142,7 @@ namespace Rock.Rest.Controllers
                 {
                     var item = new TreeViewItem();
                     item.Id = request.Id.ToString();
-                    item.Name = request.PersonAlias.Person.FullName;
+                    item.Name = System.Web.HttpUtility.HtmlEncode( request.PersonAlias.Person.FullName );
                     item.HasChildren = false;
                     item.IconCssClass = "ti ti-user";
                     list.Add( item );
@@ -150,7 +160,7 @@ namespace Rock.Rest.Controllers
                     {
                         var item = new TreeViewItem();
                         item.Id = string.Format( "T{0}", connectionType.Id );
-                        item.Name = connectionType.Name;
+                        item.Name = System.Web.HttpUtility.HtmlEncode( connectionType.Name );
                         item.HasChildren = connectionType.ConnectionOpportunities.Any();
                         item.IconCssClass = connectionType.IconCssClass;
                         list.Add( item );
@@ -180,6 +190,48 @@ namespace Rock.Rest.Controllers
         {
             var connectionRequestService = Service as ConnectionRequestService;
             return connectionRequestService.DoesStatusChangeCauseWorkflows( connectionOpportunityId, fromStatusId, toStatusId );
+        }
+
+        /// <summary>
+        /// Is the status change allowed?
+        /// </summary>
+        /// <param name="connectionRequestId">The connection request identifier.</param>
+        /// <param name="toStatusId">To status identifier.</param>
+        /// <returns>Whether the status change is allowed.</returns>
+        /// <exception cref="HttpResponseException"></exception>
+        [Authenticate, Secured, HttpGet]
+        [System.Web.Http.Route( "api/ConnectionRequests/IsStatusChangeAllowed/{connectionRequestId}/{toStatusId}" )]
+        [Rock.SystemGuid.RestActionGuid( "065A042C-2492-4A76-BC2A-19B38AFA2D3D" )]
+        public bool IsStatusChangeAllowed( int connectionRequestId, int toStatusId )
+        {
+            var connectionRequestService = Service as ConnectionRequestService;
+            var currentStatus = connectionRequestService
+                .Queryable()
+                .Where( cr => cr.Id == connectionRequestId )
+                .Select( cr => new
+                {
+                    cr.ConnectionStatusId,
+                    cr.ConnectionOpportunity.ConnectionTypeId
+                } )
+                .FirstOrDefault();
+
+            if ( currentStatus == null )
+            {
+                return false;
+            }
+
+            var connectionTypeCache = ConnectionTypeCache.Get( currentStatus.ConnectionTypeId );
+            if ( connectionTypeCache == null )
+            {
+                return false;
+            }
+
+            if ( !connectionTypeCache.IsSequentialStatusEnforced )
+            {
+                return true;
+            }
+
+            return connectionTypeCache.IsNextSequentialActiveStatus( currentStatus.ConnectionStatusId, toStatusId );
         }
 
         /// <summary>

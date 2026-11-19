@@ -111,6 +111,11 @@ namespace Rock.SystemGuid
         public const string SAME_SITE_COOKIE_SETTING = "03F55022-C1E0-45F3-84E1-C2BE8C38E22B";
 
         /// <summary>
+        /// The Site attribute listing the external domains the browser may be redirected to (e.g. after login).
+        /// </summary>
+        public const string SITE_ALLOWED_REDIRECT_DOMAINS = "F2EAB603-7412-46BF-A13D-5A451C4D8E1C";
+
+        /// <summary>
         /// The Active attribute for the observability HTTP filter.
         /// </summary>
         [RockObsolete( "17.0" )]
@@ -516,6 +521,11 @@ namespace Rock.SystemGuid
         /// </summary>
         public const string DEFINED_TYPE_FINANCIAL_FREQUENCY_INTERVAL_DAYS = "E18CB1D2-08A9-4D12-BCEA-33369193C869";
 
+        /// <summary>
+        /// The Display Location of the Color Picker Swatches Defined Type.
+        /// </summary>
+        public const string DEFINED_TYPE_COLOR_PICKER_SWATCHES_DISPLAY_LOCATION = "2B3F5FD0-52C1-48BD-B633-FA565E886A74";
+        
         #endregion
 
         #region Device Type Attributes

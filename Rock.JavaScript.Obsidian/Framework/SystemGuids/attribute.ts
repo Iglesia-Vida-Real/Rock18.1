@@ -93,6 +93,8 @@ export const Attribute = {
     CurrencyCodePosition: "909B35DA-5B14-42FF-90E5-328033A07415",
     /** The currency code symbol */
     CurrencyCodeSymbol: "1268AD58-5459-4C1C-A036-B7A6D948198F",
+    /** The Display Location of the Color Picker Swatches Defined Type. */
+    DefinedTypeColorPickerSwatchesDisplayLocation: "2B3F5FD0-52C1-48BD-B633-FA565E886A74",
     /** The Currency type DefinedType &gt; IconCssClass DefinedValue Attribute Guid */
     DefinedTypeCurrencyTypeIconcssclass: "CB1E9401-E1FD-4DBB-B15F-4E6994602723",
     /** The Financial Frequency DefinedType &gt; Interval Days DefinedValue Attribute Guid */
@@ -376,6 +378,8 @@ export const Attribute = {
     PhoneNumberVerificationTimeLimit: "4569E05C-DE8F-40D4-8DF7-4DE6A564FF6E",
     /** The same site cookie setting */
     SameSiteCookieSetting: "03F55022-C1E0-45F3-84E1-C2BE8C38E22B",
+    /** The Site attribute listing the external domains the browser may be redirected to (e.g. after login). */
+    SiteAllowedRedirectDomains: "F2EAB603-7412-46BF-A13D-5A451C4D8E1C",
     /** The statement generator configuration */
     StatementGeneratorConfig: "3C6B81A5-63AB-4EA7-A671-836505B9E444",
     /** The streak achievement number to achieve */

@@ -14,7 +14,7 @@
 // limitations under the License.
 // </copyright>
 //
-import { computed, defineComponent, PropType, ref, watch } from "vue";
+import { computed, defineComponent, onBeforeUnmount, PropType, ref, watch } from "vue";
 import Panel from "@Obsidian/Controls/panel.obs";
 import Modal from "@Obsidian/Controls/modal.obs";
 import { Guid } from "@Obsidian/Types";
@@ -27,6 +27,7 @@ import { FollowingSetFollowingOptionsBag } from "@Obsidian/ViewModels/Rest/Contr
 import AuditDetail from "@Obsidian/Controls/auditDetail.obs";
 import BadgeList from "@Obsidian/Controls/badgeList.obs";
 import EntityTagList from "@Obsidian/Controls/tagList.obs";
+import ExperienceModePicker from "@Obsidian/Controls/experienceModePicker.obs";
 import RockButton from "@Obsidian/Controls/rockButton.obs";
 import RockForm from "@Obsidian/Controls/rockForm.obs";
 import RockSuspense from "@Obsidian/Controls/rockSuspense.obs";
@@ -36,7 +37,7 @@ import { makeUrlRedirectSafe } from "@Obsidian/Utility/url";
 import { asBooleanOrNull } from "@Obsidian/Utility/booleanUtils";
 import { splitCase } from "@Obsidian/Utility/stringUtils";
 import { areEqual, emptyGuid } from "@Obsidian/Utility/guid";
-import { hideBlockRole, showBlockRole, useBlockBrowserBus, useEntityTypeGuid, useEntityTypeName } from "@Obsidian/Utility/block";
+import { hideBlockRole, showBlockRole, useBlockBrowserBus, useEntityTypeGuid, useEntityTypeName, useReloadBlock } from "@Obsidian/Utility/block";
 import { BlockMessages } from "@Obsidian/Utility/browserBus";
 import { BlockRole } from "@Obsidian/Enums/Cms/blockRole";
 
@@ -47,6 +48,7 @@ export default defineComponent({
     components: {
         AuditDetail,
         EntityTagList,
+        ExperienceModePicker,
         Modal,
         Panel,
         RockButton,
@@ -180,6 +182,16 @@ export default defineComponent({
         },
 
         /**
+         * When true, the `labels` render inside the panel header (next to the
+         * title) rather than in the default sub-header row. Opt-in so existing
+         * blocks keep their current placement.
+         */
+        showLabelsInHeader: {
+            type: Boolean as PropType<boolean>,
+            default: false
+        },
+
+        /**
          * Additional actions to display in the footer of the panel. These are
          * currently displayed as full buttons on the left of the footer.
          */
@@ -264,16 +276,25 @@ export default defineComponent({
             default: false
         },
 
+        /**
+         * Shows the experience mode picker for this block.
+         */
+        showExperienceMode: {
+            type: Boolean as PropType<boolean>,
+            default: false
+        }
     },
 
     emits: {
-        "update:mode": (_value: DetailPanelMode) => true
+        "update:mode": (_value: DetailPanelMode) => true,
+        "update:isFullscreen": (_value: boolean) => true
     },
 
     setup(props, { emit }) {
         // #region Values
 
         const http = useHttp();
+        const reloadBlock = useReloadBlock();
         const internalMode = ref(props.mode);
         const isEditModeLoading = ref(false);
         const isEntityFollowed = ref<boolean | null>(null);
@@ -464,7 +485,7 @@ export default defineComponent({
          * @returns A string that contains the CSS classes to apply to the DOM element.
          */
         const getClassForIconAction = (action: PanelAction): string => {
-            let cssClass = action.handler ? "action clickable" : "action";
+            let cssClass = action.handler ? "btn btn-panel-action" : "btn btn-panel-action not-clickable";
 
             if (action.type !== "default" && action.type !== "link") {
                 cssClass += ` text-${action.type}`;
@@ -772,6 +793,38 @@ export default defineComponent({
             showAuditDetailsModal.value = true;
         };
 
+        /**
+         * Called when the page is shown.
+         *
+         * @param event The page transition event.
+         */
+        const onPageShow = (event: PageTransitionEvent): void => {
+            // When in auto-edit mode, detect when the page is being restored
+            // from the back/forward cache (bfcache) so we can reload the block
+            // to ensure we have fresh data.
+            if (!isAutoEditMode.value) {
+                return;
+            }
+
+            // event.persisted is true when restored from bfcache (common case).
+            // nav.type === "back_forward" covers some browsers that don't set
+            // persisted reliably.
+            let isBackForward = event.persisted;
+            if (!isBackForward) {
+                try {
+                    const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+                    isBackForward = nav?.type === "back_forward";
+                }
+                catch {
+                    // Fail silently.
+                }
+            }
+
+            if (isBackForward) {
+                reloadBlock();
+            }
+        };
+
         // #endregion
 
         watch(() => props.mode, () => {
@@ -786,7 +839,7 @@ export default defineComponent({
             // If the edit mode state changed then we need to either hide or
             // show the secondary blocks. This is rare but can happen if the
             // parent component decides to manually change the mode.
-            if (wasEditMode != newEditMode) {
+            if (wasEditMode !== newEditMode) {
                 if (newEditMode) {
                     hideBlockRole(BlockRole.Secondary);
                 }
@@ -827,6 +880,12 @@ export default defineComponent({
             hideBlockRole(BlockRole.Secondary);
         }
 
+        window.addEventListener("pageshow", onPageShow);
+
+        onBeforeUnmount(() => {
+            window.removeEventListener("pageshow", onPageShow);
+        });
+
         return {
             editForm,
             entityTypeName,
@@ -865,30 +924,44 @@ export default defineComponent({
     :titleIconCssClass="panelTitleIconCssClass"
     :hasFullscreen="isFullScreenVisible"
     :worksurfaceMode="worksurfaceMode"
-    :headerSecondaryActions="internalHeaderSecondaryActions">
+    :headerSecondaryActions="internalHeaderSecondaryActions"
+    @update:isFullscreen="$emit('update:isFullscreen', $event)">
 
     <template v-if="$slots.sidebar" #sidebar>
         <slot name="sidebar" />
     </template>
 
     <template #headerActions>
+        <div v-if="showExperienceMode" class="panel-experience-mode">
+            <ExperienceModePicker />
+        </div>
+
         <span v-for="action in headerActions" :class="getClassForIconAction(action)" :title="action.title" @click="onActionClick(action, $event)">
             <i :class="getActionIconCssClass(action)"></i>
         </span>
     </template>
 
-    <template v-if="showLabels || showTags" #subheaderLeft>
+    <template v-if="showLabels && showLabelsInHeader" #panelLabels>
+        <div class="label-group">
+            <span v-for="action in labels" :class="getClassForLabelAction(action)" @click="onActionClick(action, $event)">
+                <template v-if="action.title">{{ action.title }}</template>
+                <i v-else :class="action.iconCssClass"></i>
+            </span>
+        </div>
+    </template>
+
+    <template v-if="(showLabels && !showLabelsInHeader) || showTags" #subheaderLeft>
         <div class="d-flex">
-            <div v-if="showLabels" class="label-group">
+            <div v-if="showLabels && !showLabelsInHeader" class="label-group">
                 <span v-for="action in labels" :class="getClassForLabelAction(action)" @click="onActionClick(action, $event)">
                     <template v-if="action.title">{{ action.title }}</template>
                     <i v-else :class="action.iconCssClass"></i>
                 </span>
             </div>
 
-            <div v-if="showTags && showLabels" style="width: 2px; background-color: #eaedf0; margin: 0px 12px;"></div>
+            <div v-if="showTags && showLabels && !showLabelsInHeader" style="width: 2px; background-color: #eaedf0; margin: 0px 12px;"></div>
 
-            <div v-if="showTags" class="flex-grow-1">
+            <div v-if="showTags" class="flex-grow-1 d-flex">
                 <EntityTagList :entityTypeGuid="entityTypeGuid" :entityKey="entityKey" />
             </div>
         </div>
@@ -930,6 +1003,9 @@ export default defineComponent({
         <v-style>
             .panel-flex .label-group > .label + * {
                 margin-left: 8px;
+            }
+            .panel-flex > .panel-header > .panel-labels {
+                margin-right: 8px;
             }
         </v-style>
 

@@ -205,7 +205,7 @@ namespace RockWeb.Blocks.Communication
 
         private static class PageParameterKey
         {
-            public const string Communication = "Communication";
+            // Allows Communication Id, Guid, or IdKey values.
             public const string CommunicationId = "CommunicationId";
             public const string Edit = "Edit";
             public const string Person = "Person";
@@ -223,6 +223,13 @@ namespace RockWeb.Blocks.Communication
         private bool _emailTransportEnabled = false;
         private bool _pushTransportEnabled = false;
         private bool _isBulkCommunicationForced = false;
+
+        /// <summary>
+        /// Whether the current person is editing a communication that is pending
+        /// approval. This is calculated during OnLoad so it can be used by the
+        /// background send task, which can not access the request.
+        /// </summary>
+        private bool _isEditingApproved = false;
 
         #endregion
 
@@ -333,23 +340,7 @@ namespace RockWeb.Blocks.Communication
             RaisePropertyChanged( nameof( IndividualRecipientPersonIds ) );
         }
 
-        private string CommunicationOrCommunicationIdPageParameter
-        {
-            get
-            {
-                var communicationPageParameter = PageParameter( PageParameterKey.Communication );
-
-                if ( communicationPageParameter.IsNotNullOrWhiteSpace() )
-                {
-                    return communicationPageParameter;
-                }
-                else
-                {
-                    // Only allow the CommunicationId to contain an ID, but return it as a string so it can be used as an entity key.
-                    return PageParameter( PageParameterKey.CommunicationId ).AsIntegerOrNull()?.ToString();
-                }
-            }
-        }
+        private string CommunicationIdPageParameter => PageParameter( PageParameterKey.CommunicationId );
 
         private int? _communicationId = null;
         private int? CommunicationId
@@ -359,7 +350,7 @@ namespace RockWeb.Blocks.Communication
                 if ( !_communicationId.HasValue )
                 {
                     var communicationId = new CommunicationService( new RockContext() )
-                        .GetQueryableByKey( CommunicationOrCommunicationIdPageParameter, !this.PageCache.Layout.Site.DisablePredictableIds )
+                        .GetQueryableByKey( CommunicationIdPageParameter, !this.PageCache.Layout.Site.DisablePredictableIds )
                         .Select( c => c.Id )
                         .FirstOrDefault();
 
@@ -515,6 +506,8 @@ function onTaskCompleted( resultData )
             this.OnPropertyChanged -= CommunicationEntryWizard_OnPropertyChanged;
             this.OnPropertyChanged += CommunicationEntryWizard_OnPropertyChanged;
 
+            _isEditingApproved = PageParameter( PageParameterKey.Edit ).AsBoolean() && IsUserAuthorized( "Approve" );
+
             // register navigation event to enable support for the back button
             var scriptManager = ScriptManager.GetCurrent( Page );
             scriptManager.Navigate += scriptManager_Navigate;
@@ -571,7 +564,7 @@ function onTaskCompleted( resultData )
                     Dictionary<string, string> qryParams = new Dictionary<string, string>();
                     if ( hfCommunicationId.Value != "0" )
                     {
-                        qryParams.Add( PageParameterKey.Communication, hfCommunicationId.Value );
+                        qryParams.Add( PageParameterKey.CommunicationId, IdHasher.Instance.GetHash( hfCommunicationId.Value.AsInteger() ) );
                     }
 
                     this.NavigateToCurrentPageReference( qryParams );
@@ -2638,6 +2631,13 @@ function onTaskCompleted( resultData )
         /// <param name="e">The <see cref="FileUploaderEventArgs"/> instance containing the event data.</param>
         protected void fupEmailAttachments_FileUploaded( object sender, FileUploaderEventArgs e )
         {
+            // The uploaded file id comes from the client, so make sure it is
+            // a file that was just uploaded by the current person.
+            if ( !new BinaryFileService( new RockContext() ).IsUploadedBinaryFileAllowedForPerson( fupEmailAttachments.BinaryFileId, null, CurrentPerson ) )
+            {
+                fupEmailAttachments.BinaryFileId = null;
+            }
+
             UpdateEmailAttachedFiles( true );
         }
 
@@ -2771,6 +2771,14 @@ function onTaskCompleted( resultData )
         /// <param name="e">The <see cref="FileUploaderEventArgs"/> instance containing the event data.</param>
         protected void fupMobileAttachment_FileUploaded( object sender, FileUploaderEventArgs e )
         {
+            // The uploaded file id comes from the client, so make sure it is
+            // a file that was just uploaded by the current person before it
+            // is resized.
+            if ( !new BinaryFileService( new RockContext() ).IsUploadedBinaryFileAllowedForPerson( fupMobileAttachment.BinaryFileId, null, CurrentPerson ) )
+            {
+                fupMobileAttachment.BinaryFileId = null;
+            }
+
             UpdateMobileAttachedFiles( true );
         }
 
@@ -2856,7 +2864,7 @@ function onTaskCompleted( resultData )
                     imgSMSImageAttachment.Width = new Unit( 50, System.Web.UI.WebControls.UnitType.Percentage );
 
                     imgConfirmationSmsImageAttachment.ImageUrl = FileUrlHelper.GetImageUrl( binaryFile.Guid, options );
-                    divConfirmationSmsImageAttachmentLoadError.InnerText = "Unable to load attachment from " + imgSMSImageAttachment.ImageUrl;
+                    divConfirmationSmsImageAttachmentLoadError.InnerText = "Unable to load attachment from " + imgConfirmationSmsImageAttachment.ImageUrl;
                     imgConfirmationSmsImageAttachment.Visible = true;
                     imgConfirmationSmsImageAttachment.Width = new Unit( 50, System.Web.UI.WebControls.UnitType.Percentage );
 
@@ -2877,19 +2885,16 @@ function onTaskCompleted( resultData )
                     }
 
                     string publicAppRoot = GlobalAttributesCache.Get().GetValue( "PublicApplicationRoot" );
-                    var options = new GetImageUrlOptions
-                    {
-                        PublicAppRoot = publicAppRoot
-                    };
                     imgSMSImageAttachment.ImageUrl = virtualThumbnailFilePath.Replace( "~/", publicAppRoot );
                     divAttachmentLoadError.InnerText = "Unable to load preview icon from " + imgSMSImageAttachment.ImageUrl;
                     imgSMSImageAttachment.Visible = true;
                     imgSMSImageAttachment.Width = new Unit( 10, System.Web.UI.WebControls.UnitType.Percentage );
 
-                    imgConfirmationSmsImageAttachment.ImageUrl = FileUrlHelper.GetImageUrl( binaryFile.Guid, options );
-                    divConfirmationSmsImageAttachmentLoadError.InnerText = "Unable to load attachment from " + imgSMSImageAttachment.ImageUrl;
+                    // Non-image files can't be served by GetImage, so show the same file type icon as the editor.
+                    imgConfirmationSmsImageAttachment.ImageUrl = imgSMSImageAttachment.ImageUrl;
+                    divConfirmationSmsImageAttachmentLoadError.InnerText = "Unable to load preview icon from " + imgConfirmationSmsImageAttachment.ImageUrl;
                     imgConfirmationSmsImageAttachment.Visible = true;
-                    imgConfirmationSmsImageAttachment.Width = new Unit( 50, System.Web.UI.WebControls.UnitType.Percentage );
+                    imgConfirmationSmsImageAttachment.Width = new Unit( 10, System.Web.UI.WebControls.UnitType.Percentage );
                 }
 
                 if ( Rock.Communication.Transport.Twilio.SupportedMimeTypes.Any( a => binaryFile.MimeType.Equals( a, StringComparison.OrdinalIgnoreCase ) ) )
@@ -3271,7 +3276,7 @@ function onTaskCompleted( resultData )
                     }
                 }
 
-                dynamic result = new { ViewCommunicationUrl = _viewCommunicationTemplateUrl.Replace( _viewCommunicationIdPlaceholder, communication.Id.ToString() ) };
+                dynamic result = new { ViewCommunicationUrl = _viewCommunicationTemplateUrl.Replace( _viewCommunicationIdPlaceholder, communication.IdKey ) };
 
                 progressReporter.StopTask( finalMessage, false, false, result );
             } );
@@ -3297,14 +3302,7 @@ function onTaskCompleted( resultData )
 
             // Store the absolute page URL before the request terminates.
             // Set a placeholder value for the navigation URL, to be replaced using client-side script when the task completed notification is sent.
-            if ( this.CurrentPageReference.Parameters.ContainsKey( PageParameterKey.CommunicationId ) )
-            {
-                this.CurrentPageReference.Parameters.AddOrReplace( PageParameterKey.CommunicationId, _viewCommunicationIdPlaceholder );
-            }
-            else
-            {
-                this.CurrentPageReference.Parameters.AddOrReplace( PageParameterKey.Communication, _viewCommunicationIdPlaceholder );
-            }
+            this.CurrentPageReference.Parameters.AddOrReplace( PageParameterKey.CommunicationId, _viewCommunicationIdPlaceholder );
 
             var uri = new Uri( Request.UrlProxySafe().ToString() );
 
@@ -3411,7 +3409,7 @@ function onTaskCompleted( resultData )
 
             TaskActivityNotificationBox.Text = message;
 
-            CurrentPageReference.Parameters.AddOrReplace( PageParameterKey.CommunicationId, communication.Id.ToString() );
+            CurrentPageReference.Parameters.AddOrReplace( PageParameterKey.CommunicationId, communication.IdKey );
             hlViewCommunication.NavigateUrl = CurrentPageReference.BuildUrl();
 
             // only show the Link if there is a CommunicationDetail block type on this page
@@ -3764,6 +3762,69 @@ function onTaskCompleted( resultData )
         #endregion
 
         /// <summary>
+        /// Determines whether the current person is allowed to edit the specified
+        /// communication with this block. This mirrors the checks in <see cref="ShowDetail(int)"/>.
+        /// </summary>
+        /// <param name="communication">The communication.</param>
+        /// <returns><c>true</c> if the communication can be edited; otherwise <c>false</c>.</returns>
+        private bool CanEditCommunication( Rock.Model.Communication communication )
+        {
+            var editingApproved = _isEditingApproved;
+
+            CommunicationStatus[] editableStatuses = new CommunicationStatus[] { CommunicationStatus.Transient, CommunicationStatus.Draft, CommunicationStatus.Denied };
+            if ( !editableStatuses.Contains( communication.Status ) && !( communication.Status == CommunicationStatus.PendingApproval && editingApproved ) )
+            {
+                return false;
+            }
+
+            bool isAuthorizedEditor = communication.IsAuthorized( Rock.Security.Authorization.EDIT, CurrentPerson );
+            bool isCreator = communication.CreatedByPersonAlias != null && CurrentPersonId.HasValue && communication.CreatedByPersonAlias.PersonId == CurrentPersonId.Value;
+            bool isApprovalEditor = communication.Status == CommunicationStatus.PendingApproval && editingApproved;
+
+            return isAuthorizedEditor || isCreator || isApprovalEditor;
+        }
+
+        /// <summary>
+        /// Gets the binary file identifiers that may be attached to the communication
+        /// without being a new upload: the files already attached to the existing
+        /// communication and the files attached to the selected template. The
+        /// template is only used if it passes the same active and VIEW filter
+        /// that the template picker uses.
+        /// </summary>
+        /// <param name="communicationId">The existing communication identifier, which has already been checked with <see cref="CanEditCommunication(Rock.Model.Communication)"/>.</param>
+        /// <param name="communicationTemplateId">The selected communication template identifier.</param>
+        /// <param name="rockContext">The rock context.</param>
+        /// <returns>The set of binary file identifiers that are allowed.</returns>
+        private HashSet<int> GetAllowedAttachmentBinaryFileIds( int? communicationId, int? communicationTemplateId, RockContext rockContext )
+        {
+            var allowedBinaryFileIds = new HashSet<int>();
+
+            if ( communicationId.HasValue && communicationId.Value > 0 )
+            {
+                var communication = new CommunicationService( rockContext ).Get( communicationId.Value );
+
+                if ( communication != null )
+                {
+                    allowedBinaryFileIds.UnionWith( communication.Attachments.Select( a => a.BinaryFileId ) );
+                }
+            }
+
+            if ( communicationTemplateId.HasValue )
+            {
+                var communicationTemplate = new CommunicationTemplateService( rockContext ).Get( communicationTemplateId.Value );
+
+                if ( communicationTemplate != null
+                    && communicationTemplate.IsActive
+                    && communicationTemplate.IsAuthorized( Rock.Security.Authorization.VIEW, this.CurrentPerson ) )
+                {
+                    allowedBinaryFileIds.UnionWith( communicationTemplate.Attachments.Select( a => a.BinaryFileId ) );
+                }
+            }
+
+            return allowedBinaryFileIds;
+        }
+
+        /// <summary>
         /// Create or update a Communication by applying the current selections and settings.
         /// </summary>
         /// <param name="rockContext"></param>
@@ -3775,6 +3836,19 @@ function onTaskCompleted( resultData )
             var settings = new CommunicationOperationsService.CommunicationProperties();
 
             settings.CommunicationId = hfCommunicationId.Value.AsInteger();
+
+            // The communication id comes from a hidden field, so make sure the
+            // current person is still allowed to edit that communication. If
+            // not, ignore the value and treat this as a new communication.
+            if ( settings.CommunicationId.Value > 0 )
+            {
+                var existingCommunication = new CommunicationService( rockContext ).Get( settings.CommunicationId.Value );
+
+                if ( existingCommunication == null || !CanEditCommunication( existingCommunication ) )
+                {
+                    settings.CommunicationId = 0;
+                }
+            }
 
             settings.SenderPersonAliasId = CurrentPersonAliasId;
             settings.EnabledLavaCommands = GetAttributeValue( AttributeKey.EnabledLavaCommands );
@@ -3795,11 +3869,21 @@ function onTaskCompleted( resultData )
 
             settings.CommunicationTemplateId = hfSelectedCommunicationTemplateId.Value.AsIntegerOrNull();
 
-            settings.EmailBinaryFileIds = hfEmailAttachedBinaryFileIds.Value.SplitDelimitedValues().AsIntegerList();
+            // The attachment ids come from the client, so only keep the files
+            // that are already attached to the communication, belong to the
+            // selected template, or were uploaded by the current person.
+            var allowedAttachmentBinaryFileIds = GetAllowedAttachmentBinaryFileIds( settings.CommunicationId, settings.CommunicationTemplateId, rockContext );
+            var binaryFileService = new BinaryFileService( rockContext );
 
-            if ( fupMobileAttachment.BinaryFileId.HasValue )
+            settings.EmailBinaryFileIds = hfEmailAttachedBinaryFileIds.Value.SplitDelimitedValues().AsIntegerList()
+                .Where( id => allowedAttachmentBinaryFileIds.Contains( id ) || binaryFileService.IsUploadedBinaryFileAllowedForPerson( id, null, CurrentPerson ) )
+                .ToList();
+
+            var smsBinaryFileId = fupMobileAttachment.BinaryFileId;
+            if ( smsBinaryFileId.HasValue
+                && ( allowedAttachmentBinaryFileIds.Contains( smsBinaryFileId.Value ) || binaryFileService.IsUploadedBinaryFileAllowedForPerson( smsBinaryFileId, null, CurrentPerson ) ) )
             {
-                settings.SmsBinaryFileIds = new List<int> { fupMobileAttachment.BinaryFileId.Value };
+                settings.SmsBinaryFileIds = new List<int> { smsBinaryFileId.Value };
             }
 
             if ( chkSendImmediately.Checked )

@@ -84,7 +84,6 @@ namespace Rock.Cms.ContentCollection.Indexers
             var now = RockDateTime.Now;
             List<ContentChannelItem> items;
             Dictionary<int, int> trending;
-            List<int> unapprovedItems = new List<int>();
 
             // Make sure the source is valid.
             if ( contentCollectionSourceCache == null || contentCollectionSourceCache.EntityTypeId != contentChannelEntityTypeId )
@@ -115,57 +114,43 @@ namespace Rock.Cms.ContentCollection.Indexers
                     ? GetTrendingRanksLookup( contentCollectionSourceCache, rockContext )
                     : null;
 
-                foreach( var item in items )
+                // Process all items while the RockContext is still available
+                // so that lazy load properties can be used in custom fields.
+                // This also requires that we process items sequentially since
+                // EF contexts are not thread-safe.
+                foreach ( var item in items )
                 {
-                    // If the content channel item is not approved, set "IsApproved" to false.
-                    if ( item.ContentChannel != null )
+                    try
                     {
-                        // If the content channel item is not approved, set "IsApproved" to false.
-                        if ( item.ContentChannel.RequiresApproval && item.ApprovedDateTime == null && !item.ContentChannelType.DisableStatus )
+                        var document = await ContentChannelItemDocument.LoadByModelAsync( item, contentCollectionSourceCache );
+
+                        if ( trending != null )
                         {
-                            unapprovedItems.Add( item.Id );
+                            document.IsTrending = trending.ContainsKey( document.EntityId );
+                            document.TrendingRank = document.IsTrending ? trending[document.EntityId] : 0;
                         }
+
+                        document.IsApproved = GetIsApproved( item );
+
+                        await ContentIndexContainer.IndexDocumentAsync( document );
+                    }
+                    catch ( Exception ex )
+                    {
+                        // If a single item fails, log the exception and continue processing.
+                        ExceptionLogService.LogException( ex );
                     }
                 }
+
+                return items.Count;
             }
-
-            // The RockContext is now closed. Any navigation properties that are
-            // used by the indexer must be included in the query itself and
-            // eager loaded. Navigation properties that lazy load are not
-            // thread-safe.
-            var processor = new ParallelProcessor( options.MaxConcurrency );
-
-            await processor.ExecuteAsync( items, async contentChannelItem =>
-            {
-                var document = await ContentChannelItemDocument.LoadByModelAsync( contentChannelItem, contentCollectionSourceCache );
-
-                if ( trending != null )
-                {
-                    document.IsTrending = trending.ContainsKey( document.EntityId );
-                    document.TrendingRank = document.IsTrending ? trending[document.EntityId] : 0;
-                }
-
-                if ( unapprovedItems.Contains( document.EntityId ) )
-                {
-                    document.IsApproved = false;
-                }
-
-                await ContentIndexContainer.IndexDocumentAsync( document );
-            } );
-
-            return items.Count;
         }
 
         /// <inheritdoc/>
         public async Task<int> IndexContentCollectionDocumentAsync( int id, IndexDocumentOptions options )
         {
-            ContentChannelItem itemEntity;
-
-            var isApproved = true;
-
             using ( var rockContext = new RockContext() )
             {
-                itemEntity = new ContentChannelItemService( rockContext ).GetInclude( id, ci => ci.ContentChannelItemSlugs );
+                var itemEntity = new ContentChannelItemService( rockContext ).GetInclude( id, ci => ci.ContentChannelItemSlugs );
                 var now = RockDateTime.Now;
 
                 // If entity wasn't found or isn't visible yet then don't index.
@@ -180,42 +165,73 @@ namespace Rock.Cms.ContentCollection.Indexers
                     return 0;
                 }
 
-                // If the content channel item is not approved, set "IsApproved" to false.
-                if ( itemEntity.ContentChannel != null )
-                {
-                    // If the content channel item is not approved, set "IsApproved" to false.
-                    if ( itemEntity.ContentChannel.RequiresApproval && itemEntity.ApprovedDateTime == null && !itemEntity.ContentChannelType.DisableStatus )
-                    {
-                        isApproved = false;
-                    }
-                }
+                var isApproved = GetIsApproved( itemEntity );
 
                 itemEntity.LoadAttributes( rockContext );
+
+                // Create or update any indexed documents for content collection sources.
+                var contentChannelEntityTypeId = EntityTypeCache.Get<ContentChannel>().Id;
+                var sources = ContentCollectionSourceCache.All()
+                    .Where( s => s.EntityTypeId == contentChannelEntityTypeId
+                        && s.EntityId == itemEntity.ContentChannelId )
+                    .ToList();
+
+                foreach ( var source in sources )
+                {
+                    try
+                    {
+                        var document = await ContentChannelItemDocument.LoadByModelAsync( itemEntity, source );
+                        document.IsApproved = isApproved;
+
+                        await ContentIndexContainer.IndexDocumentAsync( document );
+                    }
+                    catch ( Exception ex )
+                    {
+                        // If a single item fails, log the exception and continue processing.
+                        ExceptionLogService.LogException( ex );
+                    }
+
+                }
+
+                return sources.Count;
+            }
+        }
+
+        /// <summary>
+        /// Determines the approved state of the item. This requires a bit more
+        /// complex logic than normal in order to account for the various ways
+        /// that an item can be considered approved.
+        /// </summary>
+        /// <param name="item">The content channel item to check.</param>
+        /// <returns><c>true</c> if it is considered approved; otherwise <c>false</c>.</returns>
+        private static bool GetIsApproved( ContentChannelItem item )
+        {
+            // If the item is explicitly approved, then it is approved.
+            if ( item.Status == ContentChannelItemStatus.Approved )
+            {
+                return true;
             }
 
-            // The RockContext is now closed. Any navigation properties that are
-            // used by the indexer must be included in the query itself and
-            // eager loaded. Navigation properties that lazy load are not
-            // thread-safe.
-
-            // Create or update any indexed documents for content collection sources.
-            var contentChannelEntityTypeId = EntityTypeCache.Get<ContentChannel>().Id;
-            var sources = ContentCollectionSourceCache.All()
-                .Where( s => s.EntityTypeId == contentChannelEntityTypeId
-                    && s.EntityId == itemEntity.ContentChannelId )
-                .ToList();
-
-            var processor = new ParallelProcessor( options.MaxConcurrency );
-
-            await processor.ExecuteAsync( sources, async source =>
+            // If there is no content channel, assume it is approved.
+            if ( item.ContentChannel == null )
             {
-                var document = await ContentChannelItemDocument.LoadByModelAsync( itemEntity, source );
-                document.IsApproved = isApproved;
+                return true;
+            }
 
-                await ContentIndexContainer.IndexDocumentAsync( document );
-            } );
+            // If the channel doesn't require approval, then the item is approved.
+            if ( !item.ContentChannel.RequiresApproval )
+            {
+                return true;
+            }
 
-            return sources.Count;
+            // If the channel type is configured to disable status, then consider
+            // the item to be approved.
+            if ( item.ContentChannelType != null && item.ContentChannelType.DisableStatus )
+            {
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>

@@ -20,13 +20,16 @@ import { defineAsyncComponent } from "@Obsidian/Utility/component";
 import { FieldTypeBase } from "./fieldType";
 import { escapeHtml } from "@Obsidian/Utility/stringUtils";
 
-export const enum ConfigurationValueKey {
+export const enum ConfigurationKey {
     FileName = "fileName",
     MimeType = "mimeType",
     FilePath = "filePath",
     FileGuid = "fileGuid",
     BinaryFileType = "binaryFileType"
 }
+
+/** Matches a plain video MIME type, such as video/mp4, with no parameters. */
+const videoMimeTypePattern = /^video\/[a-z0-9][a-z0-9.+-]{0,126}$/i;
 
 // The edit component can be quite large, so load it only as needed.
 const editComponent = defineAsyncComponent(async () => {
@@ -48,14 +51,25 @@ export class VideoFileFieldType extends FieldTypeBase {
     }
 
     public override getHtmlValue(value: string, configurationValues: Record<string, string>, isEscaped: boolean = false): string {
-        const filePath = configurationValues[ConfigurationValueKey.FilePath];
-        const mimeType = configurationValues[ConfigurationValueKey.MimeType];
-        const fileGuid = configurationValues[ConfigurationValueKey.FileGuid];
+        const filePath = configurationValues[ConfigurationKey.FilePath];
+        const mimeType = configurationValues[ConfigurationKey.MimeType];
+        const fileGuid = configurationValues[ConfigurationKey.FileGuid];
+
+        /*
+            10/16/2026 - MSE
+
+            The MIME type comes from the Content-Type the client sent with the
+            upload, and this HTML is displayed with v-html. Only a plain video
+            type is placed in the type attribute, and every value is encoded.
+
+            Reason: The stored MimeType was rendered as raw HTML.
+        */
+        const safeMimeType = mimeType && videoMimeTypePattern.test(mimeType) ? mimeType : "";
 
         const html = `<video
-        src='${filePath}?guid=${fileGuid}'
+        src='${escapeHtml(filePath ?? "")}?guid=${escapeHtml(fileGuid ?? "")}'
         class='js-media-video'
-        type='${mimeType}'
+        type='${escapeHtml(safeMimeType)}'
         controls='controls'
         style='width:100%;height:100%;'
         width='100%'
@@ -76,8 +90,17 @@ export class VideoFileFieldType extends FieldTypeBase {
     }
 
     public override getCondensedHtmlValue(value: string, configurationValues: Record<string, string>, isEscaped: boolean = false): string {
-        const fileGuid = configurationValues[ConfigurationValueKey.FileGuid];
-        const html = `<a href="/GetFile.ashx?guid=${fileGuid}">${value}</a>`;
+        const fileGuid = configurationValues[ConfigurationKey.FileGuid];
+
+        /*
+            10/16/2026 - MSE
+
+            The file name comes from the upload and this HTML is displayed
+            with v-html, so every value is encoded.
+
+            Reason: The file name was rendered as raw HTML.
+        */
+        const html = `<a href="/GetFile.ashx?guid=${escapeHtml(fileGuid ?? "")}">${escapeHtml(value ?? "")}</a>`;
 
         if (isEscaped) {
             return escapeHtml(html);

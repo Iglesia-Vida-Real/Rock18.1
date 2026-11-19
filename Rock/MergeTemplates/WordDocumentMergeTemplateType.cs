@@ -27,6 +27,7 @@ using DocumentFormat.OpenXml.Wordprocessing;
 
 using OpenXmlPowerTools;
 
+using Rock.Configuration;
 using Rock.Data;
 using Rock.Lava;
 using Rock.Model;
@@ -112,7 +113,7 @@ namespace Rock.MergeTemplates
             try
             {
                 // Save the Word document stream to a new persisted binary file object.
-                var rockContext = new RockContext();
+                var rockContext = RockApp.Current.CreateRockContext();
                 var binaryFileService = new BinaryFileService( rockContext );
 
                 var templateBinaryFile = binaryFileService.Get( mergeTemplate.TemplateBinaryFileId );
@@ -139,6 +140,38 @@ namespace Rock.MergeTemplates
             {
                 outputDocStream.Dispose();
             }
+        }
+
+        /// <inheritdoc/>
+        [Rock.Attribute.RockInternal( "17.12" )]
+        public override MergeTemplateDocument CreateDocumentForDownload( MergeTemplate mergeTemplate, List<object> mergeObjectList, Dictionary<string, object> globalMergeFields )
+        {
+            /*
+                10/21/2026 - MSE
+
+                Return the merged Word stream directly instead of saving it as a
+                temporary BinaryFile under the unsecured default file type, which
+                GetFile.ashx would serve to anyone by Id. The stream is not disposed
+                here because the caller sends it to the browser.
+
+                Reason: Merged documents must not be saved where they can be downloaded by Id.
+            */
+            var outputDocStream = GetMergedDocumentOutputStream( mergeTemplate, mergeObjectList, globalMergeFields );
+            if ( outputDocStream == null )
+            {
+                return null;
+            }
+
+            var templateBinaryFile = new BinaryFileService( RockApp.Current.CreateRockContext() ).Get( mergeTemplate.TemplateBinaryFileId );
+            if ( templateBinaryFile == null )
+            {
+                outputDocStream.Dispose();
+                return null;
+            }
+
+            return new MergeTemplateDocument( outputDocStream,
+                "MergeTemplateOutput" + Path.GetExtension( templateBinaryFile.FileName ),
+                templateBinaryFile.MimeType );
         }
 
         /// <summary>
@@ -173,11 +206,11 @@ namespace Rock.MergeTemplates
             return xdoc;
         }
 
-        private MemoryStream GetMergedDocumentOutputStream( MergeTemplate mergeTemplate, List<object> mergeObjectList, Dictionary<string, object> globalMergeFields )
+        internal MemoryStream GetMergedDocumentOutputStream( MergeTemplate mergeTemplate, List<object> mergeObjectList, Dictionary<string, object> globalMergeFields )
         {
             this.Exceptions = new List<Exception>();
 
-            var rockContext = new RockContext();
+            var rockContext = RockApp.Current.CreateRockContext();
             var binaryFileService = new BinaryFileService( rockContext );
 
             var templateBinaryFile = binaryFileService.Get( mergeTemplate.TemplateBinaryFileId );
@@ -525,28 +558,31 @@ namespace Rock.MergeTemplates
         /// <param name="globalMergeHash">The global merge hash.</param>
         private void HeaderFooterGlobalMerge( WordprocessingDocument outputDoc, LavaDataDictionary globalMergeHash )
         {
-            // make sure that all proof codes get removed so that the lava can be found
             MarkupSimplifier.SimplifyMarkup( outputDoc, new SimplifyMarkupSettings { RemoveProof = true } );
 
-            // update the doc headers and footers for any Lava having to do with Global merge fields
-            // from http://stackoverflow.com/a/19012057/1755417
-            foreach( var headerFooterPart in outputDoc.MainDocumentPart.HeaderParts.OfType<OpenXmlPart>().Union(outputDoc.MainDocumentPart.FooterParts))
+            var headerFooterParts = outputDoc.MainDocumentPart
+                .HeaderParts
+                .OfType<OpenXmlPart>()
+                .Union( outputDoc.MainDocumentPart.FooterParts );
+
+            foreach ( var headerFooterPart in headerFooterParts )
             {
-                foreach (var currentParagraph in headerFooterPart.RootElement.Descendants<DocumentFormat.OpenXml.Wordprocessing.Paragraph>())
+                // Use GetXDocument() instead of RootElement to stay in the
+                // XDocument world. Otherwise the changes are not saved.
+                var xdoc = headerFooterPart.GetXDocument();
+
+                foreach ( var textNode in xdoc.Descendants().Where( e => e.Name.LocalName == "t" ) )
                 {
-                    foreach ( var currentRun in currentParagraph.Descendants<DocumentFormat.OpenXml.Wordprocessing.Run>())
+                    var nodeText = textNode.Value.ReplaceWordChars();
+                    if ( lavaRegEx.IsMatch( nodeText ) )
                     {
-                        foreach ( var currentText in currentRun.Descendants<DocumentFormat.OpenXml.Wordprocessing.Text>() )
-                        {
-                            var nodeText = currentText.Text.ReplaceWordChars();
-                            if ( lavaRegEx.IsMatch( nodeText ) )
-                            {
-                                nodeText = nodeText.ResolveMergeFields( globalMergeHash, encodeStrings: false, throwExceptionOnErrors: true );
-                                currentText.Text = nodeText;
-                            }
-                        }
+                        nodeText = nodeText.ResolveMergeFields( globalMergeHash, encodeStrings: false, throwExceptionOnErrors: true );
+                        textNode.Value = nodeText;
                     }
                 }
+
+                // Mark the XDocument as dirty so OpenXmlPowerTools writes it back.
+                headerFooterPart.PutXDocument();
             }
         }
 

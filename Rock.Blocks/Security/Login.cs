@@ -85,7 +85,6 @@ namespace Rock.Blocks.Security
         Key = AttributeKey.ConfirmCaption,
         Description = "The text (HTML) to display when a individual's account needs to be confirmed.",
         EditorMode = CodeEditorMode.Html,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 100,
         IsRequired = false,
         DefaultValue = "Thank you for logging in, however, we need to confirm the email associated with this account belongs to you. We've sent you an email that contains a link for confirming.  Please click the link in your email to continue.",
@@ -114,7 +113,6 @@ namespace Rock.Blocks.Security
         Key = AttributeKey.LockedOutCaption,
         Description = "The text (HTML) to display when a individual's account has been locked. <span class='tip tip-lava'></span>",
         EditorMode = CodeEditorMode.Html,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 100,
         IsRequired = false,
         DefaultValue = LockedOutCaptionDefaultValue,
@@ -142,7 +140,6 @@ namespace Rock.Blocks.Security
         Key = AttributeKey.NoAccountText,
         Description = "The text to show when no account exists. <span class='tip tip-lava'></span>",
         EditorMode = CodeEditorMode.Html,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 100,
         IsRequired = false,
         DefaultValue = "We couldn't find an account with that username and password combination. Can we help you recover your <a href='{{HelpPage}}'>account information</a>?",
@@ -154,7 +151,6 @@ namespace Rock.Blocks.Security
         Key = AttributeKey.RemoteAuthorizationPromptMessage,
         Description = "Optional text (HTML) to display above remote authorization options.",
         EditorMode = CodeEditorMode.Html,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 100,
         IsRequired = false,
         Category = AttributeCategory.Captions,
@@ -186,7 +182,6 @@ namespace Rock.Blocks.Security
         Key = AttributeKey.PromptMessage,
         Description = "Optional text (HTML) to display above username and password fields.",
         EditorMode = CodeEditorMode.Html,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 100,
         IsRequired = false,
         Category = AttributeCategory.Captions,
@@ -205,7 +200,6 @@ namespace Rock.Blocks.Security
         Key = AttributeKey.InvalidPersonTokenText,
         Description = "The text to show when an individual is logged out due to an invalid persontoken. <span class='tip tip-lava'></span>",
         EditorMode = CodeEditorMode.Html,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 100,
         IsRequired = false,
         DefaultValue = "<div class='alert alert-warning'>The login token you provided is no longer valid. Please log in below.</div>",
@@ -217,7 +211,6 @@ namespace Rock.Blocks.Security
         Key = AttributeKey.ContentText,
         Description = "Lava template to show below the 'Log in' button. <span class='tip tip-lava'></span>",
         EditorMode = CodeEditorMode.Lava,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 100,
         IsRequired = false,
         DefaultValue = "<div>By signing in, I agree to {{ 'Global' | Attribute:'OrganizationName' }}'s <a href='/terms'>Terms of Use</a> and <a href='/privacy'>Privacy Policy</a>.</div>",
@@ -238,7 +231,6 @@ namespace Rock.Blocks.Security
         Key = AttributeKey.TwoFactorEmailPhoneRequired,
         Description = "Lava template to show when email or mobile phone is required for 2FA. <span class='tip tip-lava'></span>",
         EditorMode = CodeEditorMode.Lava,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 100,
         IsRequired = false,
         DefaultValue = "<div class=\"alert alert-warning\">Your current security access level requires you to complete a Two-Factor Authentication login in order to proceed. This additional layer of security is necessary to ensure the protection of your account and the sensitive data it contains.<br><br>To continue, please provide your email or mobile phone below.</div>",
@@ -250,7 +242,6 @@ namespace Rock.Blocks.Security
         Key = AttributeKey.TwoFactorEmailPhoneNotAvailable,
         Description = "Lava template to show when email or mobile phone is required for 2FA but missing on the account. <span class='tip tip-lava'></span>",
         EditorMode = CodeEditorMode.Lava,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 100,
         IsRequired = false,
         DefaultValue = "<div class=\"alert alert-warning\">Your current security access level requires you to complete a Two-Factor Authentication login in order to proceed. This additional layer of security is necessary to ensure the protection of your account and the sensitive data it contains.<br><br>Your account does not currently have an email address or mobile phone. Please contact us to assist you in configuring this.</div>",
@@ -262,7 +253,6 @@ namespace Rock.Blocks.Security
         Key = AttributeKey.TwoFactorLoginRequired,
         Description = "Lava template to show when database login is required for 2FA. <span class='tip tip-lava'></span>",
         EditorMode = CodeEditorMode.Lava,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 100,
         IsRequired = false,
         DefaultValue = "<div class=\"alert alert-warning\">Your current security access level requires you to complete a Two-Factor Authentication login in order to proceed. This additional layer of security is necessary to ensure the protection of your account and the sensitive data it contains.<br><br>To continue, please provide your email or mobile phone below.</div>",
@@ -274,7 +264,6 @@ namespace Rock.Blocks.Security
         Key = AttributeKey.TwoFactorLoginNotAvailable,
         Description = "Lava template to show when database login is required for 2FA but not available. <span class='tip tip-lava'></span>",
         EditorMode = CodeEditorMode.Lava,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 100,
         IsRequired = false,
         DefaultValue = "<div class=\"alert alert-warning\">Your current security access level requires you to complete a Two-Factor Authentication login in order to proceed. This additional layer of security is necessary to ensure the protection of your account and the sensitive data it contains.<br><br>Your account does not currently have a username or password configured. Please contact us to assist you in configuring this.</div>",
@@ -286,7 +275,6 @@ namespace Rock.Blocks.Security
         Key = AttributeKey.TwoFactorNotSupportedByAuthenticationMethod,
         Description = "Lava template to show when 2FA is not supported by the authentication method. <span class='tip tip-lava'></span>",
         EditorMode = CodeEditorMode.Lava,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 100,
         IsRequired = false,
         DefaultValue = "<div class=\"alert alert-warning\">Your login attempt requires Two-Factor Authentication for enhanced security. However, the authentication method you used does not support 2FA. Please use a supported method or contact us for assistance.</div>",
@@ -1146,7 +1134,7 @@ namespace Rock.Blocks.Security
                 return returnUrl;
             }
 
-            if ( thirdPartyReturnUrl.IsNotNullOrWhiteSpace() )
+            if ( PageCache.Layout.Site.IsSafeRedirectUrl( thirdPartyReturnUrl, RequestContext.RequestUri ) )
             {
                 return thirdPartyReturnUrl;
             }
@@ -1167,10 +1155,7 @@ namespace Rock.Blocks.Security
 
             var decodedUrl = url.GetFullyUrlDecodedValue();
 
-            // Remove the http and https schemes before checking if URL contains XSS objects.
-            if ( decodedUrl.Replace( "https://", string.Empty )
-                .Replace( "http://", string.Empty )
-                .RedirectUrlContainsXss() )
+            if ( !PageCache.Layout.Site.IsSafeRedirectUrl( decodedUrl, RequestContext.RequestUri ) )
             {
                 return null;
             }
@@ -1972,6 +1957,18 @@ namespace Rock.Blocks.Security
             var mfaTicket = MultiFactorAuthenticationTicket.Decrypt( bag?.MfaTicket );
             var isFromMfa = mfaTicket != null;
 
+            if ( !isFromMfa && bag?.MfaTicket.IsNotNullOrWhiteSpace() == true )
+            {
+                // A ticket was sent but could not be read; refuse it instead of silently continuing as a fresh attempt.
+                var errorMessage = "The two-factor authentication session has expired. Please sign in again.";
+
+                return Response(
+                    ResponseHelper.PasswordlessLogin.Error( errorMessage ),
+                    LoginFailureReason.RequiresVerification,
+                    errorMessage
+                );
+            }
+
             if ( !isPasswordlessLoginEnabled && !isFromMfa )
             {
                 // A passwordless confirmation link was clicked after Passwordless was disabled in the block.
@@ -2296,6 +2293,11 @@ namespace Rock.Blocks.Security
         private class MultiFactorAuthenticationTicket
         {
             /// <summary>
+            /// Purpose string that binds this ticket's authenticated encryption to this block.
+            /// </summary>
+            private const string EncryptionPurpose = "Rock.Blocks.Security.Login.MultiFactorAuthenticationTicket";
+
+            /// <summary>
             /// Gets or sets the auth cookie settings.
             /// </summary>
             /// <value>
@@ -2304,12 +2306,14 @@ namespace Rock.Blocks.Security
             public AuthCookieSettings AuthCookieSettings { get; set; }
 
             /// <summary>
-            /// Gets the expiration date and time for the ticket.
+            /// Gets the expiration date and time for the ticket. Set once when the ticket is first
+            /// created and restored from the ticket on every decrypt.
             /// </summary>
             /// <value>
             /// The expiration date and time for the ticket.
             /// </value>
-            public DateTimeOffset ExpiresOn { get; } = RockDateTime.Now.AddHours( 1 );
+            [Newtonsoft.Json.JsonProperty]
+            public DateTimeOffset ExpiresOn { get; private set; } = RockDateTime.Now.AddHours( 1 );
 
             /// <summary>
             /// Unique identifier for this MFA state.
@@ -2412,7 +2416,7 @@ namespace Rock.Blocks.Security
             /// <returns>The decrypted <see cref="MultiFactorAuthenticationTicket"/> or null if not valid.</returns>
             public static MultiFactorAuthenticationTicket Decrypt( string encryptedMfaTicket )
             {
-                return Encryption.DecryptString( encryptedMfaTicket )?.FromJsonOrNull<MultiFactorAuthenticationTicket>();
+                return Encryption.DecryptStringForPurpose( encryptedMfaTicket, EncryptionPurpose )?.FromJsonOrNull<MultiFactorAuthenticationTicket>();
             }
 
             /// <summary>
@@ -2421,7 +2425,7 @@ namespace Rock.Blocks.Security
             /// <returns>This MFA ticket as an encrypted string.</returns>
             public string Encrypt()
             {
-                return Encryption.EncryptString( this.ToJson() );
+                return Encryption.EncryptStringForPurpose( this.ToJson(), EncryptionPurpose );
             }
         }
 

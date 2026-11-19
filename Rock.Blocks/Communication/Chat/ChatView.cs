@@ -514,6 +514,16 @@ namespace Rock.Blocks.Communication.Chat
                 }
 
                 var chatUserAuth = await chatHelper.GetChatUserAuthenticationAsync( person.Id, true );
+                var dataViewGuid = ChatHelper.GetChatConfiguration().DirectMessageAccessDataViewGuid;
+
+                bool dmAllowed = true;
+                if (dataViewGuid.HasValue)
+                {
+                    var dmDataView = DataViewCache.Get( dataViewGuid.Value, RockContext );
+                    var personIds = dmDataView.GetEntityIds();
+
+                    dmAllowed = personIds.Contains( person.Id );
+                }
 
                 return ActionOk( new ChatPersonDataBag
                 {
@@ -522,7 +532,8 @@ namespace Rock.Blocks.Communication.Chat
                     IsAgeVerificationRequired = false,
                     HasFailedAgeVerification = false,
                     AgeRestrictionTemplate = string.Empty,
-                    AgeVerificationTemplate = string.Empty
+                    AgeVerificationTemplate = string.Empty,
+                    IsDirectMessagingAllowed = dmAllowed,
                 } );
             }
         }
@@ -539,6 +550,18 @@ namespace Rock.Blocks.Communication.Chat
             if ( currentPerson == null )
             {
                 return ActionUnauthorized( "You must be logged in to update your birth date." );
+            }
+
+            // Age verification only asks for a birth date when the person does
+            // not already have one, so don't allow an existing one to be replaced.
+            if ( currentPerson.Age != null )
+            {
+                return ActionBadRequest( "Your birth date has already been provided." );
+            }
+
+            if ( birthDate == null )
+            {
+                return ActionBadRequest( "A birth date is required." );
             }
 
             var birthDateTime = new DateTime( birthDate.Year, birthDate.Month, birthDate.Day );

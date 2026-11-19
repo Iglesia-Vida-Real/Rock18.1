@@ -15,24 +15,22 @@
 // </copyright>
 //
 
-using Rock.Attribute;
-using Rock.Communication;
-using Rock.Constants;
-using Rock.Crm.RecordSource;
-using Rock.Data;
-using Rock.Model;
-using Rock.Utility;
-using Rock.ViewModels.Blocks;
-using Rock.ViewModels.Blocks.Finance.FinancialPledgeEntry;
-using Rock.ViewModels.Utility;
-using Rock.Web.Cache;
-using Rock.Web.UI;
-using Rock.Web.UI.Controls;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data.Entity;
 using System.Linq;
+
+using Rock.Attribute;
+using Rock.Communication;
+using Rock.Crm.RecordSource;
+using Rock.Data;
+using Rock.Model;
+using Rock.ViewModels.Blocks;
+using Rock.ViewModels.Blocks.Finance.FinancialPledgeEntry;
+using Rock.ViewModels.Utility;
+using Rock.Web.Cache;
+using Rock.Web.UI.Controls;
 
 namespace Rock.Blocks.Finance
 {
@@ -117,7 +115,6 @@ namespace Rock.Blocks.Finance
         Key = AttributeKey.ReceiptText,
         Description = "The text (or HTML) to display as the pledge receipt. <span class='tip tip-lava'></span> <span class='tip tip-html'>",
         EditorMode = CodeEditorMode.Lava,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 200,
         Order = 10,
         DefaultValue =
@@ -407,8 +404,7 @@ namespace Rock.Blocks.Finance
 
             if ( pledgeDateRange.IsNotNullOrWhiteSpace() )
             {
-                var dateRangePicker = new DateRangePicker() { DelimitedValues = pledgeDateRange };
-                var dateRange = dateRangePicker.DateRange;
+                var dateRange = DateRange.FromDelimitedValues( pledgeDateRange );
 
                 entityBag.StartDate = dateRange.Start;
                 entityBag.EndDate = dateRange.End;
@@ -681,6 +677,48 @@ namespace Rock.Blocks.Finance
             return financialAccount;
         }
 
+        /// <summary>
+        /// Determines whether the group is one of the groups that would be
+        /// offered to the current person for selection.
+        /// </summary>
+        /// <param name="groupId">The group identifier.</param>
+        /// <returns><c>true</c> if the group can be associated with the pledge; otherwise, <c>false</c>.</returns>
+        private bool IsGroupAllowed( int groupId )
+        {
+            var groupTypeGuid = GetAttributeValue( AttributeKey.SelectGroupType ).AsGuidOrNull();
+            var currentPerson = GetCurrentPerson();
+
+            if ( !groupTypeGuid.HasValue || currentPerson == null )
+            {
+                return false;
+            }
+
+            return new GroupMemberService( RockContext )
+                .Queryable()
+                .Any( m => m.GroupId == groupId
+                    && m.Group.GroupType.Guid == groupTypeGuid.Value
+                    && m.PersonId == currentPerson.Id
+                    && m.GroupMemberStatus == GroupMemberStatus.Active
+                    && m.Group.IsActive && !m.Group.IsArchived );
+        }
+
+        /// <summary>
+        /// Determines whether the defined value is one of the pledge
+        /// frequencies that would be offered for selection.
+        /// </summary>
+        /// <param name="definedValueId">The defined value identifier.</param>
+        /// <returns><c>true</c> if the frequency is valid; otherwise, <c>false</c>.</returns>
+        private bool IsPledgeFrequencyAllowed( int definedValueId )
+        {
+            var frequencyType = DefinedTypeCache.Get( Rock.SystemGuid.DefinedType.FINANCIAL_FREQUENCY.AsGuid() );
+            var definedValue = DefinedValueCache.Get( definedValueId );
+
+            return frequencyType != null
+                && definedValue != null
+                && definedValue.DefinedTypeId == frequencyType.Id
+                && definedValue.IsActive;
+        }
+
         #endregion
 
         #region Block Actions
@@ -733,6 +771,17 @@ namespace Rock.Blocks.Finance
                 return ActionBadRequest( "Invalid data." );
             }
 
+            // Only allow the groups and frequencies that were offered.
+            if ( entity.GroupId.HasValue && !IsGroupAllowed( entity.GroupId.Value ) )
+            {
+                return ActionBadRequest( "Invalid group." );
+            }
+
+            if ( entity.PledgeFrequencyValueId.HasValue && !IsPledgeFrequencyAllowed( entity.PledgeFrequencyValueId.Value ) )
+            {
+                return ActionBadRequest( "Invalid pledge frequency." );
+            }
+
             entity.PersonAliasId = person.PrimaryAliasId;
 
             var financialAccount = GetFinancialAccount();
@@ -741,7 +790,8 @@ namespace Rock.Blocks.Finance
                 entity.AccountId = financialAccount.Id;
             }
 
-            if ( box.Entity.SaveButtonText == GetAttributeValue( AttributeKey.SaveButtonText ) )
+            if ( GetCurrentPerson() != null
+                && box.Entity.SaveButtonText == GetAttributeValue( AttributeKey.SaveButtonText ) )
             {
                 var duplicatePledges = entityService.Queryable()
                     .Where( a => a.PersonAlias.PersonId == person.Id )

@@ -24,6 +24,8 @@ using System.Web.UI;
 using Rock.Attribute;
 using Rock.Data;
 using Rock.Model;
+using Rock.Security;
+using Rock.Security.SecurityGrantRules;
 using Rock.ViewModels.Utility;
 using Rock.Web.Cache;
 using Rock.Web.UI.Controls;
@@ -37,7 +39,7 @@ namespace Rock.Field.Types
     [FieldTypeUsage( FieldTypeUsage.System )]
     [RockPlatformSupport( Utility.RockPlatform.WebForms, Utility.RockPlatform.Obsidian )]
     [Rock.SystemGuid.FieldTypeGuid( Rock.SystemGuid.FieldType.GROUP_TYPE_GROUP )]
-    public class GroupTypeGroupFieldType : FieldType, IEntityReferenceFieldType
+    public class GroupTypeGroupFieldType : FieldType, IEntityReferenceFieldType, IPublicSecurityGrantFieldType
     {
         #region Configuration
 
@@ -58,9 +60,9 @@ namespace Rock.Field.Types
                 return string.Empty;
             }
 
-            using ( var rockContext = new RockContext() )
+            if ( groupGuid.HasValue )
             {
-                if ( groupGuid.HasValue )
+                using ( var rockContext = new RockContext() )
                 {
                     var groupName = new GroupService( rockContext ).GetSelect( groupGuid.Value, g => g.Name );
 
@@ -69,14 +71,14 @@ namespace Rock.Field.Types
                         return $"Group: {groupName}";
                     }
                 }
-                else if ( groupTypeGuid.HasValue )
-                {
-                    var groupTypeName = new GroupTypeService( rockContext ).GetSelect( groupTypeGuid.Value, gt => gt.Name );
+            }
+            else if ( groupTypeGuid.HasValue )
+            {
+                var groupTypeName = GroupTypeCache.Get( groupTypeGuid.Value )?.Name;
 
-                    if ( groupTypeName != null )
-                    {
-                        return $"Group type: {groupTypeName}";
-                    }
+                if ( groupTypeName != null )
+                {
+                    return $"Group type: {groupTypeName}";
                 }
             }
 
@@ -157,6 +159,16 @@ namespace Rock.Field.Types
 
         #endregion
 
+        #region Persistence
+
+        /// <inheritdoc/>
+        public override PersistedValues GetPersistedValues( string privateValue, Dictionary<string, string> privateConfigurationValues, IDictionary<string, object> cache )
+        {
+            return GetSimpleTextPersistedValues( privateValue, privateConfigurationValues );
+        }
+
+        #endregion
+
         #region IEntityReferenceFieldType
 
         /// <inheritdoc/>
@@ -211,6 +223,16 @@ namespace Rock.Field.Types
                 new ReferencedProperty( EntityTypeCache.GetId<GroupType>().Value, nameof( GroupType.Name ) ),
                 new ReferencedProperty( EntityTypeCache.GetId<Group>().Value, nameof( Group.Name ) )
             };
+        }
+
+        #endregion
+
+        #region IPublicSecurityGrantFieldType
+
+        /// <inheritdoc/>
+        public void AddRulesToSecurityGrant( SecurityGrant grant, Dictionary<string, string> privateConfigurationValues )
+        {
+            grant.AddRule( new GroupListPickerSecurityGrantRule() );
         }
 
         #endregion

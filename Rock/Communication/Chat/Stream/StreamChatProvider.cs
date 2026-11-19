@@ -43,14 +43,14 @@ namespace Rock.Communication.Chat
     /// A <see cref="IChatProvider"/> implementation for interacting with the Stream chat provider.
     /// </summary>
     [RockLoggingCategory]
-    internal class StreamChatProvider : IChatProvider
+    internal class StreamChatProvider : IChatProvider, IDisposable
     {
         #region Keys & Constants
 
         /// <summary>
         /// Custom HTTP header names.
         /// </summary>
-        private static class HttpHeaderName
+        internal static class HttpHeaderName
         {
             public const string XApiKey = "X-Api-Key";
             public const string XSignature = "X-Signature";
@@ -60,9 +60,9 @@ namespace Rock.Communication.Chat
         /// <summary>
         /// Custom HTTP header values.
         /// </summary>
-        private static class HttpHeaderValue
+        internal static class HttpHeaderValue
         {
-            public const string XStreamExt = "rock-stream-chat-provider";
+            public const string IgnoreWebhooks = "rock-stream-chat-ignore-webhooks";
         }
 
         /// <summary>
@@ -111,6 +111,7 @@ namespace Rock.Communication.Chat
             public const string ChannelLastReadAt = "channel_last_read_at";
             public const string ChannelRole = "channel_role";
             public const string ChannelType = "channel_type";
+            public const string Cid = "cid";
             public const string Disabled = "disabled";
             public const string Ext = "ext";
             public const string Id = "id";
@@ -180,9 +181,21 @@ namespace Rock.Communication.Chat
         // All client instances can be used as a singleton for the lifetime of your application as they don't maintain state.
 
         /// <summary>
-        /// Provides access to the <see cref="StreamClientFactory"/> for creating specific API clients.
+        /// An <see cref="HttpClient"/> instance to use for requests whose resulting Stream webhooks should be ignored.
         /// </summary>
-        private Lazy<StreamClientFactory> _clientFactory;
+        private HttpClient _httpClientIgnoreWebhooks;
+
+        /// <summary>
+        /// Provides access to the <see cref="StreamClientFactory"/> for creating specific API clients.
+        /// Rock will ignore Stream webhooks that are triggered by requests made from these clients.
+        /// </summary>
+        private Lazy<StreamClientFactory> _clientFactoryIgnoreWebhooks;
+
+        /// <summary>
+        /// Provides access to the <see cref="StreamClientFactory"/> for creating specific API clients.
+        /// Rock will handle Stream webhooks that are triggered by requests made from these clients.
+        /// </summary>
+        private Lazy<StreamClientFactory> _clientFactoryHandleWebhooks;
 
         /// <summary>
         /// The backing field for the <see cref="AppClient"/> property.
@@ -213,6 +226,11 @@ namespace Rock.Communication.Chat
         /// The backing field for the <see cref="MessageClient"/> property.
         /// </summary>
         private Lazy<IMessageClient> _messageClient;
+
+        /// <summary>
+        /// The backing field for the <see cref="MessageClientHandleWebhooks"/> property.
+        /// </summary>
+        private Lazy<IMessageClient> _messageClientHandleWebhooks;
 
         // The best way to see default app-scoped permission grants is to query Stream's "GetApp" Swagger endpoint while
         // targeting a newly-created, unmodified app.
@@ -602,37 +620,64 @@ namespace Rock.Communication.Chat
         /// Gets the <see cref="IAppClient"/> that should be used to manage the app within the external Stream chat
         /// system.
         /// </summary>
+        /// <remarks>
+        /// Rock will ignore Stream webhooks that are triggered by requests made from this client.
+        /// </remarks>
         private IAppClient AppClient => _appClient.Value;
 
         /// <summary>
         /// Gets the <see cref="IPermissionClient"/> that should be used to manage roles and permissions within the
         /// external Stream chat system.
         /// </summary>
+        /// <remarks>
+        /// Rock will ignore Stream webhooks that are triggered by requests made from this client.
+        /// </remarks>
         private IPermissionClient PermissionClient => _permissionClient.Value;
 
         /// <summary>
         /// Gets the <see cref="IChannelTypeClient"/> that should be used to manage channel types within the external
         /// Stream chat system.
         /// </summary>
+        /// <remarks>
+        /// Rock will ignore Stream webhooks that are triggered by requests made from this client.
+        /// </remarks>
         private IChannelTypeClient ChannelTypeClient => _channelTypeClient.Value;
 
         /// <summary>
         /// Gets the <see cref="IChannelClient"/> that should be used to manage channels within the external Stream chat
         /// system.
         /// </summary>
+        /// <remarks>
+        /// Rock will ignore Stream webhooks that are triggered by requests made from this client.
+        /// </remarks>
         private IChannelClient ChannelClient => _channelClient.Value;
 
         /// <summary>
         /// Gets the <see cref="IUserClient"/> that should be used to manage users within the external Stream chat
         /// system.
         /// </summary>
+        /// <remarks>
+        /// Rock will ignore Stream webhooks that are triggered by requests made from this client.
+        /// </remarks>
         private IUserClient UserClient => _userClient.Value;
 
         /// <summary>
         /// Gets the <see cref="IMessageClient"/> that should be used to manage messages within the external Stream chat
         /// system.
         /// </summary>
+        /// <remarks>
+        /// Rock will ignore Stream webhooks that are triggered by requests made from this client.
+        /// </remarks>
         private IMessageClient MessageClient => _messageClient.Value;
+
+        /// <summary>
+        /// Gets the <see cref="IMessageClient"/> that should be used to manage messages within the external Stream chat
+        /// system.
+        /// </summary>
+        /// <remarks>
+        /// Rock will handle Stream webhooks that are triggered by requests made from this client.
+        /// </remarks>
+        private IMessageClient MessageClientHandleWebhooks => _messageClientHandleWebhooks.Value;
 
         /// <summary>
         /// Gets the default, app-scoped permission grants by role.
@@ -664,7 +709,7 @@ namespace Rock.Communication.Chat
 
         #endregion Properties
 
-        #region Constructors
+        #region Con/Destructors
 
         /// <summary>
         /// Initializes an instance of the <see cref="StreamChatProvider"/> class.
@@ -678,7 +723,16 @@ namespace Rock.Communication.Chat
             Initialize();
         }
 
-        #endregion Constructors
+        /// <inheritdoc/>
+        public void Dispose()
+        {
+            if ( _httpClientIgnoreWebhooks != null )
+            {
+                _httpClientIgnoreWebhooks.Dispose();
+            }
+        }
+
+        #endregion Con/Destructors
 
         #region IChatProvider Implementation
 
@@ -689,7 +743,24 @@ namespace Rock.Communication.Chat
         {
             lock ( _initializationLock )
             {
-                _clientFactory = new Lazy<StreamClientFactory>( () =>
+                if ( _httpClientIgnoreWebhooks == null )
+                {
+                    HttpMessageHandler innerHandler = null;
+
+                    // Mimic the way Stream creates its default HttpClient instance.
+                    // https://github.com/GetStream/stream-chat-net/blob/560ce882fa3dda2dbb739d9135ddb02405b018c6/src/Models/ClientOptions.cs#L25-L34
+#if NETCOREAPP2_1_OR_GREATER
+                    // AWS load balancer disconnects in 60 seconds, so let's make it 59.
+                    innerHandler = new SocketsHttpHandler
+                    {
+                        PooledConnectionLifetime = TimeSpan.FromSeconds( 59 )
+                    };
+#endif
+
+                    _httpClientIgnoreWebhooks = new HttpClient( new StreamIgnoreWebhooksHandler( innerHandler ) );
+                }
+
+                _clientFactoryIgnoreWebhooks = new Lazy<StreamClientFactory>( () =>
                 {
                     var chatConfiguration = ChatHelper.GetChatConfiguration();
                     return new StreamClientFactory(
@@ -697,32 +768,33 @@ namespace Rock.Communication.Chat
                         chatConfiguration.ApiSecret,
                         config =>
                         {
-                            // We're adding this custom header value so Stream will send it back to us on webhook requests
-                            // that are triggered by this provider code. This way, we can know to ignore such webhooks,
-                            // while only paying attention to those webhooks that are truly relevant.
-                            //
-                            // While this double-check locking pattern is not ideal, it's the most predictable way to ensure
-                            // only one instance of the header gets added to Stream's underlying HttpClient singleton.
-                            if ( !config.HttpClient.DefaultRequestHeaders.Contains( HttpHeaderName.XStreamExt ) )
-                            {
-                                lock ( _initializationLock )
-                                {
-                                    if ( !config.HttpClient.DefaultRequestHeaders.Contains( HttpHeaderName.XStreamExt ) )
-                                    {
-                                        config.HttpClient.DefaultRequestHeaders.Add( HttpHeaderName.XStreamExt, HttpHeaderValue.XStreamExt );
-                                    }
-                                }
-                            }
+                            // We'll add a custom header value to each request sent by this client (via the handler),
+                            // trusting that Stream will send it back to us on webhook requests that are triggered by
+                            // this provider code. This way, we can know to ignore such webhooks, while only paying
+                            // attention to those webhooks that are truly relevant.
+                            config.HttpClient = _httpClientIgnoreWebhooks;
                         }
                     );
                 } );
 
-                _appClient = new Lazy<IAppClient>( () => _clientFactory.Value.GetAppClient() );
-                _permissionClient = new Lazy<IPermissionClient>( () => _clientFactory.Value.GetPermissionClient() );
-                _channelTypeClient = new Lazy<IChannelTypeClient>( () => _clientFactory.Value.GetChannelTypeClient() );
-                _channelClient = new Lazy<IChannelClient>( () => _clientFactory.Value.GetChannelClient() );
-                _userClient = new Lazy<IUserClient>( () => _clientFactory.Value.GetUserClient() );
-                _messageClient = new Lazy<IMessageClient>( () => _clientFactory.Value.GetMessageClient() );
+                _appClient = new Lazy<IAppClient>( () => _clientFactoryIgnoreWebhooks.Value.GetAppClient() );
+                _permissionClient = new Lazy<IPermissionClient>( () => _clientFactoryIgnoreWebhooks.Value.GetPermissionClient() );
+                _channelTypeClient = new Lazy<IChannelTypeClient>( () => _clientFactoryIgnoreWebhooks.Value.GetChannelTypeClient() );
+                _channelClient = new Lazy<IChannelClient>( () => _clientFactoryIgnoreWebhooks.Value.GetChannelClient() );
+                _userClient = new Lazy<IUserClient>( () => _clientFactoryIgnoreWebhooks.Value.GetUserClient() );
+                _messageClient = new Lazy<IMessageClient>( () => _clientFactoryIgnoreWebhooks.Value.GetMessageClient() );
+
+                _clientFactoryHandleWebhooks = new Lazy<StreamClientFactory>( () =>
+                {
+                    var chatConfiguration = ChatHelper.GetChatConfiguration();
+                    // Use Stream's default HttpClient which will lead to Rock handling any resulting webhooks.
+                    return new StreamClientFactory(
+                        chatConfiguration.ApiKey,
+                        chatConfiguration.ApiSecret
+                    );
+                } );
+
+                _messageClientHandleWebhooks = new Lazy<IMessageClient>( () => _clientFactoryHandleWebhooks.Value.GetMessageClient() );
 
                 _defaultAppGrantsByRole = GetOrCreateDefaultAppGrantsByRole();
                 _defaultChannelTypeGrantsByRole = GetOrCreateDefaultChannelTypeGrantsByRole();
@@ -1592,6 +1664,55 @@ namespace Rock.Communication.Chat
             }
 
             return await DeleteChatChannelsAsync( chatChannelQueryableKeys );
+        }
+
+        /// <inheritdoc/>
+        public async Task<GetChatChannelsResult> GetOrCreateDirectMessageChatChannelAsync( List<string> chatUserKeys )
+        {
+            var result = new GetChatChannelsResult();
+
+            if ( chatUserKeys?.Any() != true )
+            {
+                return result;
+            }
+
+            var operationName = nameof( GetOrCreateDirectMessageChatChannelAsync ).SplitCase();
+
+            var channelRequest = new ChannelRequest
+            {
+                CreatedBy = TryConvertToStreamUserRequest( ChatHelper.GetChatSystemUser() ),
+                Members = chatUserKeys
+                    .Distinct()
+                    .Select( k => new ChannelMember { UserId = k } )
+            };
+
+            var request = new ChannelGetRequest
+            {
+                Data = channelRequest
+            };
+
+            try
+            {
+                var channelGetResponse = await RetryAsync(
+                    async () => await ChannelClient.GetOrCreateAsync(
+                        ChatHelper.GetChatChannelTypeKey( ChatHelper.ChatDirectMessageGroupTypeId ),
+                        request
+                    ),
+                    operationName
+                );
+
+                var chatChannel = TryConvertToChatChannel( channelGetResponse );
+                if ( chatChannel != null )
+                {
+                    result.ChatChannels.Add( chatChannel );
+                }
+            }
+            catch ( Exception ex )
+            {
+                result.Exception = ex;
+            }
+
+            return result;
         }
 
         #endregion Chat Channels
@@ -2894,6 +3015,98 @@ namespace Rock.Communication.Chat
         #region Messages
 
         /// <inheritdoc/>
+        public void ResolveMentionedChatUsers( RockChatMessage rockChatMessage, Dictionary<int, RockChatUserKey> rockChatUserKeys )
+        {
+            if ( ( rockChatMessage?.MessageText ).IsNullOrWhiteSpace() )
+            {
+                // No work to do.
+                return;
+            }
+
+            /*
+                10/28/2025 - JPH
+
+                The way mentions work with Stream is difficult. In the message itself, the mention token needs to be in
+                the body of the message with the person's name like:
+
+                @Ted Decker hope you're having a great day!
+
+                This seems odd, especially with the space in the name, but that is what it is wanting. We also need to
+                reference the mentioned chat user keys in the "mentioned_users" array.
+
+                Reason: Explain unusual mentions pattern.
+            */
+
+            // Find/replace the mentioned person ID with their name.
+            string ReplaceMention( Match match )
+            {
+                var unknown = "@Unknown";
+                var mentionedPersonId = match.Groups[1].Value.AsInteger();
+                if ( mentionedPersonId <= 0 )
+                {
+                    return unknown;
+                }
+
+                if ( rockChatUserKeys == null
+                    || !rockChatUserKeys.TryGetValue( mentionedPersonId, out var rockChatUser )
+                    || rockChatUser == null )
+                {
+                    return unknown;
+                }
+
+                rockChatMessage.MentionedChatUserKeys.Add( rockChatUser.ChatUserKey );
+
+                return $"@{rockChatUser.NickName} {rockChatUser.LastName}";
+            }
+
+            var resolvedMessageText = ChatHelper.PersonMentionsRegex
+                .Replace(
+                    rockChatMessage.MessageText,
+                    new MatchEvaluator( ReplaceMention )
+                );
+
+            rockChatMessage.MessageText = resolvedMessageText;
+        }
+
+        /// <inheritdoc/>
+        public async Task<SendChatMessageResult> SendChatChannelMessageAsync( string chatChannelTypeKey, string chatChannelKey, string senderChatUserKey, RockChatMessage rockChatMessage )
+        {
+            var result = new SendChatMessageResult();
+
+            var operationName = nameof( SendChatChannelMessageAsync ).SplitCase();
+
+            var request = TryConvertToStreamMessageRequest( rockChatMessage );
+            if ( request == null )
+            {
+                return result;
+            }
+
+            try
+            {
+                // Note that Rock will handle any webhook requests that are triggered by this Rock-to-Chat request.
+                // This is to support features such as Fallback Chat Notifications.
+                await RetryAsync(
+                    async () => await MessageClientHandleWebhooks.SendMessageAsync(
+                        chatChannelTypeKey,
+                        chatChannelKey,
+                        request,
+                        senderChatUserKey
+                    ),
+                    operationName
+                );
+            }
+            catch ( Exception ex )
+            {
+                result.Exception = ex;
+            }
+
+            // If an exception wasn't thrown, assume the message was sent.
+            result.WasMessageSent = !result.HasException;
+
+            return result;
+        }
+
+        /// <inheritdoc/>
         public async Task<ChatUserMessageCountsByChatChannelResult> GetChatUserMessageCountsByChatChannelKeyAsync( DateTime messageDate )
         {
             var result = new ChatUserMessageCountsByChatChannelResult();
@@ -3182,9 +3395,9 @@ namespace Rock.Communication.Chat
                 try
                 {
                     var json = JObject.Parse( payload );
-                    if ( json[WebhookJsonProperty.RequestInfo]?[WebhookJsonProperty.Ext]?.ToString() == HttpHeaderValue.XStreamExt )
+                    if ( json[WebhookJsonProperty.RequestInfo]?[WebhookJsonProperty.Ext]?.ToString() == HttpHeaderValue.IgnoreWebhooks )
                     {
-                        // This webhook was triggered by a request to Stream from within this provider code; ignore it.
+                        // This webhook was triggered by a request made from a client that indicated webhooks should be ignored.
                         continue;
                     }
 
@@ -3406,7 +3619,7 @@ namespace Rock.Communication.Chat
                                 var personAliasGuid = ChatHelper.GetPersonAliasGuid( deleteCommand.ChatPersonKey );
 
                                 throw new ChatSyncException(
-                                    $"Chat Person with key '{deleteCommand.ChatPersonKey}' no longer exists in Stream; Rock will now clear the corresponding Person Alias Name and Foreign Key values to prevent repeated failures (where Person Alias GUID = '{personAliasGuid}'). The previous chat sync request has been cancelled as it's unrecoverable. Run the 'Chat Sync' Job to ensure Rock is in sync with Stream.",
+                                    $"Chat Person with key '{deleteCommand.ChatPersonKey}' no longer exists in Stream; Rock will now mark the corresponding Person Alias as deleted to prevent repeated failures (where Person Alias GUID = '{personAliasGuid}'). The previous chat sync request has been cancelled as it's unrecoverable. Run the 'Chat Sync' Job to ensure Rock is in sync with Stream.",
                                     streamChatException
                                 );
                             }
@@ -3628,6 +3841,68 @@ namespace Rock.Communication.Chat
             return request;
         }
 
+        /// <summary>
+        /// Tries to convert a <see cref="RockChatMessage"/> to a <see cref="MessageRequest"/>.
+        /// </summary>
+        /// <param name="rockChatMessage">The <see cref="RockChatMessage"/> to convert.</param>
+        /// <returns>A <see cref="MessageRequest"/> or <see langword="null"/> if unable to convert.</returns>
+        private MessageRequest TryConvertToStreamMessageRequest( RockChatMessage rockChatMessage )
+        {
+            if ( ( rockChatMessage?.MessageText ).IsNullOrWhiteSpace() )
+            {
+                return null;
+            }
+
+            var request = new MessageRequest
+            {
+                Text = rockChatMessage.MessageText
+            };
+
+            if ( rockChatMessage.MentionedChatUserKeys.Any() )
+            {
+                request.MentionedUsers = rockChatMessage.MentionedChatUserKeys.ToList();
+            }
+
+            if ( rockChatMessage.Attachments.Any() )
+            {
+                request.Attachments = rockChatMessage.Attachments
+                    .Select( a => TryConvertToStreamAttachment( a ) )
+                    .Where( a => a != null )
+                    .ToList();
+            }
+
+            return request;
+        }
+
+        /// <summary>
+        /// Tries to convert a <see cref="RockChatMessageAttachment"/> to a <see cref="Attachment"/>.
+        /// </summary>
+        /// <param name="rockChatMessageAttachment">The <see cref="RockChatMessageAttachment"/> to convert.</param>
+        /// <returns>A <see cref="Attachment"/> or <see langword="null"/> if unable to convert.</returns>
+        private Attachment TryConvertToStreamAttachment( RockChatMessageAttachment rockChatMessageAttachment )
+        {
+            if ( ( rockChatMessageAttachment?.Url ).IsNullOrWhiteSpace() )
+            {
+                return null;
+            }
+
+            var attachment = new Attachment
+            {
+                Type = rockChatMessageAttachment.Type.GetDescription(),
+            };
+
+            if ( rockChatMessageAttachment.Type == ChatAttachmentType.Image )
+            {
+                attachment.ImageUrl = rockChatMessageAttachment.Url;
+            }
+            else
+            {
+                attachment.AssetUrl = rockChatMessageAttachment.Url;
+            }
+
+            return attachment;
+        }
+
         #endregion Converters: From Rock Chat DTOs to Stream DTOs
 
         #region Converters: From Stream DTOs to Rock Chat DTOs
@@ -3774,7 +4049,7 @@ namespace Rock.Communication.Chat
             channelSyncCommand.GroupId = chatGroupIdentifiers.GroupId;
 
             // Ensure the payload contains a channel type.
-            var channelType = json[WebhookJsonProperty.ChannelType]?.ToString();
+            var channelType = chatGroupIdentifiers.ChannelTypeKey;
             if ( channelType.IsNullOrWhiteSpace() )
             {
                 throw new ChatWebhookParseException( $"{PayloadPropMissingMsgPrefix} '{WebhookJsonProperty.ChannelType}'." );
@@ -3870,6 +4145,7 @@ namespace Rock.Communication.Chat
         {
             var syncCommand = new SyncChatChannelMemberToRockCommand( chatSyncType )
             {
+                ChatChannelTypeKey = chatGroupIdentifiers.ChannelTypeKey,
                 ChatChannelKey = chatGroupIdentifiers.ChannelKey,
                 GroupId = chatGroupIdentifiers.GroupId
             };
@@ -3943,9 +4219,12 @@ namespace Rock.Communication.Chat
             {
                 ChannelIdProperty = WebhookJsonProperty.Id,
                 ChannelIdPath = $"{WebhookJsonProperty.Mute}.{WebhookJsonProperty.Channel}.{WebhookJsonProperty.Id}",
+                ChannelTypeProperty = WebhookJsonProperty.Type,
+                ChannelTypePath = $"{WebhookJsonProperty.Mute}.{WebhookJsonProperty.Channel}.{WebhookJsonProperty.Type}",
             };
 
             var chatGroupIdentifiers = TryGetChatGroupIdentifiers( muteChannelJson, config );
+            syncCommand.ChatChannelTypeKey = chatGroupIdentifiers.ChannelTypeKey;
             syncCommand.ChatChannelKey = chatGroupIdentifiers.ChannelKey;
             syncCommand.GroupId = chatGroupIdentifiers.GroupId;
 
@@ -3970,6 +4249,7 @@ namespace Rock.Communication.Chat
 
             var syncCommand = new SyncChatBannedStatusToRockCommand( chatSyncType )
             {
+                ChatChannelTypeKey = chatGroupIdentifiers.ChannelTypeKey,
                 ChatChannelKey = chatGroupIdentifiers.ChannelKey,
                 GroupId = chatGroupIdentifiers.GroupId
             };
@@ -4059,7 +4339,7 @@ namespace Rock.Communication.Chat
         /// <param name="config">The optional configuration object for how to parse <see cref="Group"/> identifiers.</param>
         /// <returns>A <see cref="ChatGroupIdentifiers"/>.</returns>
         /// <exception cref="ChatWebhookParseException">If unable to parse the identifiers.</exception>
-        private ChatGroupIdentifiers TryGetChatGroupIdentifiers( JObject json, TryGetChatGroupIdentifiersConfig config = null )
+        internal static ChatGroupIdentifiers TryGetChatGroupIdentifiers( JObject json, TryGetChatGroupIdentifiersConfig config = null )
         {
             var chatGroupIdentifiers = new ChatGroupIdentifiers();
 
@@ -4083,6 +4363,31 @@ namespace Rock.Communication.Chat
             // Assign the channel key.
             chatGroupIdentifiers.ChannelKey = channelId;
 
+            /*
+                10/15/2026 - MSE
+
+                A Stream channel is uniquely identified by its type and ID together, and any chat user who creates a
+                channel chooses its ID. Read the channel type next to the ID so ChatHelper can confirm the channel is
+                exactly the one Rock uses for the group before syncing anything to it.
+
+                Reason: Prevent a channel of another type with a look-alike ID from targeting a Rock group.
+            */
+            var channelType = json[config.ChannelTypeProperty]?.ToString();
+            if ( channelType.IsNullOrWhiteSpace() )
+            {
+                // Fall back to the type part of the Stream-issued "type:id" channel cid, but only when its id part is
+                // this same channel ID. Never guess a type otherwise.
+                channelType = GetChannelTypeFromCid( json[config.ChannelCidProperty]?.ToString(), channelId );
+            }
+
+            if ( channelType.IsNullOrWhiteSpace() && config.ShouldThrowIfMissing )
+            {
+                throw new ChatWebhookParseException( $"{PayloadPropMissingMsgPrefix} '{config.ChannelTypePath}'." );
+            }
+
+            // Assign the channel type key.
+            chatGroupIdentifiers.ChannelTypeKey = channelType;
+
             // Does the channel ID contain an embedded Rock group ID?
             var groupId = ChatHelper.GetGroupId( channelId );
             if ( groupId.HasValue )
@@ -4092,6 +4397,37 @@ namespace Rock.Communication.Chat
             }
 
             return chatGroupIdentifiers;
+        }
+
+        /// <summary>
+        /// Gets the channel type from a Stream channel cid in the form "type:id", if the cid's id part exactly matches
+        /// the provided channel ID.
+        /// </summary>
+        /// <param name="cid">The Stream channel cid.</param>
+        /// <param name="channelId">The channel ID that the cid must refer to.</param>
+        /// <returns>The channel type or <see langword="null"/> if the cid is missing, malformed or for another channel.</returns>
+        private static string GetChannelTypeFromCid( string cid, string channelId )
+        {
+            if ( cid.IsNullOrWhiteSpace() || channelId.IsNullOrWhiteSpace() )
+            {
+                return null;
+            }
+
+            var separatorIndex = cid.IndexOf( ':' );
+            if ( separatorIndex <= 0 )
+            {
+                return null;
+            }
+
+            var channelType = cid.Substring( 0, separatorIndex );
+            var cidChannelId = cid.Substring( separatorIndex + 1 );
+
+            if ( channelType.IsNullOrWhiteSpace() || !string.Equals( cidChannelId, channelId, StringComparison.Ordinal ) )
+            {
+                return null;
+            }
+
+            return channelType;
         }
 
         #endregion Converters: From Stream Webhook Payload To Rock Sync Commands
@@ -4251,7 +4587,7 @@ namespace Rock.Communication.Chat
         /// <summary>
         /// A configuration object for how to parse <see cref="Group"/> identifiers from a Stream webhook payload.
         /// </summary>
-        private class TryGetChatGroupIdentifiersConfig
+        internal class TryGetChatGroupIdentifiersConfig
         {
             /// <summary>
             /// Gets or sets the name of the channel ID property within the root of the provided <see cref="JObject"/>.
@@ -4267,6 +4603,27 @@ namespace Rock.Communication.Chat
             public string ChannelIdPath { get; set; } = WebhookJsonProperty.ChannelId;
 
             /// <summary>
+            /// Gets or sets the name of the channel type property within the root of the provided <see cref="JObject"/>.
+            /// </summary>
+            public string ChannelTypeProperty { get; set; } = WebhookJsonProperty.ChannelType;
+
+            /// <summary>
+            /// Gets or sets the full, top-down path to the channel type property within the Stream webhook payload.
+            /// </summary>
+            /// <remarks>
+            /// This will only be used when reporting exceptions, if a channel type property is not found at <see cref="ChannelTypeProperty"/>.
+            /// </remarks>
+            public string ChannelTypePath { get; set; } = WebhookJsonProperty.ChannelType;
+
+            /// <summary>
+            /// Gets or sets the name of the channel cid ("type:id") property within the root of the provided <see cref="JObject"/>.
+            /// </summary>
+            /// <remarks>
+            /// This will only be used to get the channel type if a channel type property is not found at <see cref="ChannelTypeProperty"/>.
+            /// </remarks>
+            public string ChannelCidProperty { get; set; } = WebhookJsonProperty.Cid;
+
+            /// <summary>
             /// Gets or sets whether to throw an exception if the identifiers are missing.
             /// </summary>
             public bool ShouldThrowIfMissing { get; set; } = true;
@@ -4275,7 +4632,7 @@ namespace Rock.Communication.Chat
         /// <summary>
         /// Represents a <see cref="Group"/>'s identifiers parsed from a Stream webhook payload.
         /// </summary>
-        private class ChatGroupIdentifiers
+        internal class ChatGroupIdentifiers
         {
             /// <summary>
             /// Gets or sets the <see cref="ChatChannel.Key"/>.
@@ -4284,6 +4641,11 @@ namespace Rock.Communication.Chat
             /// This will be defined for all channels - created within both Rock and Stream.
             /// </remarks>
             public string ChannelKey { get; set; }
+
+            /// <summary>
+            /// Gets or sets the <see cref="ChatChannelType.Key"/>.
+            /// </summary>
+            public string ChannelTypeKey { get; set; }
 
             /// <summary>
             /// Gets or sets the <see cref="Group"/> identifier.

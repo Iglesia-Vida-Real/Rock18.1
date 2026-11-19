@@ -33,11 +33,13 @@
                 </ul>
             </div>
 
-            <Captcha v-if="!disableCaptchaSupport" ref="captchaElement" />
+            <div v-if="!disableCaptchaSupport" v-show="!isCaptchaComplete">
+                <Captcha ref="captchaElement" />
+            </div>
 
             <NotificationBox v-if="submitErrorMessage" alertType="danger">{{ submitErrorMessage }}</NotificationBox>
 
-            <div class="actions text-right">
+            <div v-if="isCaptchaComplete || disableCaptchaSupport" class="actions text-right">
                 <RockButton v-if="viewModel.allowRegistrationUpdates" class="pull-left" btnType="default" @click="onPrevious" :isLoading="loading" autoDisable>
                     {{ t("actionPrevious") }}
                 </RockButton>
@@ -49,7 +51,7 @@
     </div>
 </template>
 <script setup lang="ts">
-    import { computed, ref } from "vue";
+    import { computed, ref, onMounted } from "vue";
     import CostSummary from "./costSummary.partial.obs";
     import DiscountCodeForm from "./discountCodeForm.partial.obs";
     import Registrar from "./registrar.partial.obs";
@@ -78,6 +80,7 @@
     const t = getRegistrationEntryText;
     const disableCaptchaSupport = ref(registrationEntryState.viewModel.disableCaptchaSupport);
     const captchaElement = ref<InstanceType<typeof Captcha> | undefined>();
+    const isCaptchaComplete = ref(false);
     const persistSession = use(PersistSession);
     const registrationEntryTerms = use(RegistrationEntryTerms);
 
@@ -208,35 +211,40 @@
 
     /** User clicked the "finish" button */
     async function onNext(): Promise<void> {
-        loading.value = true;
+        try {
+            loading.value = true;
 
-        if (isMakingPayment.value) {
-            // Use the gateway for payment.
-            await persistSession(true);
+            if (isMakingPayment.value) {
+                // Use the gateway for payment.
+                await persistSession(true);
 
-            if (viewModel.value.isRedirectGateway) {
-                const redirectUrl = await getPaymentRedirect();
+                if (viewModel.value.isRedirectGateway) {
+                    const redirectUrl = await getPaymentRedirect();
 
-                if (redirectUrl) {
-                    location.href = redirectUrl;
+                    if (redirectUrl) {
+                        location.href = redirectUrl;
+                    }
+                    else {
+                        // Error is shown by getPaymentRedirect method
+                        loading.value = false;
+                    }
                 }
                 else {
-                    // Error is shown by getPaymentRedirect method
                     loading.value = false;
+                    emit("next");
                 }
             }
             else {
+                const success = await submit();
                 loading.value = false;
-                emit("next");
+
+                if (success) {
+                    emit("next");
+                }
             }
         }
-        else {
-            const success = await submit();
+        catch {
             loading.value = false;
-
-            if (success) {
-                emit("next");
-            }
         }
     }
 
@@ -248,12 +256,20 @@
 
         if (captchaElement.value) {
             actionContext.captcha = await captchaElement.value.getToken();
-            captchaElement.value.refreshToken();
         }
 
         const result = await invokeBlockAction<RegistrationEntrySuccessBag>("SubmitRegistration", {
             args: getRegistrationEntryBlockArgs()
         }, actionContext);
+
+        if (result.isError && result.statusCode === 409) {
+            // The registration is full. Display special error message.
+            submitErrorMessage.value = result.errorMessage || "Unknown error";
+            registrationEntryState.isCapacityFull = true;
+
+            // Return true so the next step can be shown.
+            return true;
+        }
 
         if (result.isError || !result.data) {
             submitErrorMessage.value = result.errorMessage || t("messageUnexpectedError");
@@ -282,7 +298,20 @@
         return result.data || "";
     }
 
+    async function waitForCaptcha(): Promise<void> {
+        if (disableCaptchaSupport.value || !captchaElement.value) {
+            isCaptchaComplete.value = true;
+            return;
+        }
+        const token = await captchaElement.value.getToken();
+        isCaptchaComplete.value = !!token;
+    }
+
     // #endregion
+
+    onMounted(() => {
+        waitForCaptcha();
+    });
 
     if (!hasPaymentCost.value) {
         registrationEntryState.amountToPayToday = 0;

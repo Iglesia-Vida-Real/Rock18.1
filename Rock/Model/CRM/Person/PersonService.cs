@@ -3740,14 +3740,15 @@ namespace Rock.Model
                         }
 
                         RemoveAnonymousGiverUserLogins( userLoginService, rockContext );
+
+                        // Run merge proc to merge all associated data
+                        var parms = new Dictionary<string, object>();
+                        parms.Add( "OldId", personId );
+                        parms.Add( "NewId", anonymousPersonId.Value );
+                        DbService.ExecuteCommand( "spCrm_PersonMerge", CommandType.StoredProcedure, parms );
                     }
                 } );
 
-                // Run merge proc to merge all associated data
-                var parms = new Dictionary<string, object>();
-                parms.Add( "OldId", personId );
-                parms.Add( "NewId", anonymousPersonId.Value );
-                DbService.ExecuteCommand( "spCrm_PersonMerge", CommandType.StoredProcedure, parms );
             }
             catch ( Exception ex )
             {
@@ -4268,6 +4269,16 @@ namespace Rock.Model
                 return string.Empty;
             }
 
+            // Get the mime type from the photo's contents. The caller doesn't
+            // send one, and GetImage.ashx won't serve a file unless its mime
+            // type is an image type. If it isn't an image we can read, fail.
+            var mimeType = FileUtilities.GetImageMimeType( new MemoryStream( photoBytes ) );
+
+            if ( mimeType.IsNullOrWhiteSpace() )
+            {
+                return string.Empty;
+            }
+
             // Get the BinaryFileType object for person images.
             BinaryFileType binaryFileType = new BinaryFileTypeService( rockContext ).Get( SystemGuid.BinaryFiletype.PERSON_IMAGE.AsGuid() );
 
@@ -4279,7 +4290,7 @@ namespace Rock.Model
             // Set properties for the new BinaryFile object.
             binaryFile.IsTemporary = false;
             binaryFile.BinaryFileTypeId = binaryFileType.Id;
-            binaryFile.MimeType = "octet/stream";
+            binaryFile.MimeType = mimeType;
             binaryFile.FileSize = photoBytes.Length;
             binaryFile.FileName = filename;
             binaryFile.ContentStream = new MemoryStream( photoBytes );
@@ -5302,6 +5313,38 @@ AND GroupTypeId = ${familyGroupType.Id}
 
         #endregion
 
+        #region Person's History Related
+
+        /// <summary>
+        /// Gets the latest property-change history for the specified person.
+        /// </summary>
+        /// <param name="personId">The person identifier.</param>
+        /// <returns>
+        /// A <see cref="System.Data.DataTable"/> containing the stored procedure result set from
+        /// <c>[dbo].[spCrm_PersonMerge_ChangeHistory]</c> (one row per property/value name, latest change only).
+        /// <para>
+        /// Columns:
+        /// <list type="bullet">
+        ///   <item><description><c>CreatedDateTime</c> (datetime): When the change was recorded.</description></item>
+        ///   <item><description><c>CreatedByPersonAliasId</c> (int): PersonAliasId of the user who made the change.</description></item>
+        ///   <item><description><c>NickName</c> (nvarchar): Nickname of the user who made the change.</description></item>
+        ///   <item><description><c>LastName</c> (nvarchar): Last name of the user who made the change.</description></item>
+        ///   <item><description><c>ValueName</c> (nvarchar): The name of the property that changed (History.ValueName).</description></item>
+        ///   <item><description><c>AttributeId</c> (int, nullable): History.RelatedEntityId when the change is for a Person Attribute; NULL for non-attribute properties and Primary Family address-related changes.</description></item>
+        ///   <item><description><c>NewValue</c> (nvarchar, nullable): The new value recorded by History.</description></item>
+        ///   <item><description><c>OldValue</c> (nvarchar, nullable): The prior value recorded by History.</description></item>
+        /// </list>
+        /// </para>
+        /// </returns>
+        public DataTable GetLatestPersonHistoryChangesDataTable( int personId )
+        {
+            var parameters = new Dictionary<string, object>();
+            parameters.Add( "PersonId", personId );
+            return new DbService( this.Context ).GetDataTableFromSqlCommand( "[dbo].[spCrm_PersonMerge_ChangeHistory]", System.Data.CommandType.StoredProcedure, parameters );
+        }
+
+        #endregion
+
         /// <summary>
         /// Gets all the foreign keys in the person table in the database
         /// </summary>
@@ -5559,6 +5602,8 @@ AND GroupTypeId = ${familyGroupType.Id}
                     return new RockChatUserKey
                     {
                         PersonId = p.Person.Id,
+                        NickName = p.Person.NickName,
+                        LastName = p.Person.LastName,
                         ChatPersonAliasId = firstChatAlias?.Id,
                         ChatPersonAliasGuid = firstChatAlias?.Guid
                     };
@@ -5609,6 +5654,8 @@ AND GroupTypeId = ${familyGroupType.Id}
                     ( p, pa ) => new RockChatUserKey
                     {
                         PersonId = p.Id,
+                        NickName = p.NickName,
+                        LastName = p.LastName,
                         ChatPersonAliasId = pa.Id,
                         ChatPersonAliasGuid = pa.Guid,
                     }
@@ -5646,6 +5693,8 @@ AND GroupTypeId = ${familyGroupType.Id}
                     ( p, pa ) => new RockChatUserKey
                     {
                         PersonId = p.Id,
+                        NickName = p.NickName,
+                        LastName = p.LastName,
                         ChatPersonAliasId = pa.Id,
                         ChatPersonAliasGuid = pa.Guid,
                     }

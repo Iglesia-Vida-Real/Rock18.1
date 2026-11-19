@@ -1,6 +1,6 @@
 <!-- Copyright by the Spark Development Network; Licensed under the Rock Community License -->
 <template>
-    <ContentSectionContainer sidebar>
+    <ContentSectionContainer :sidebar="false">
         <ContentSection light>
             <ContentStack>
                 <div class="row">
@@ -45,12 +45,15 @@
                                  v-model="defaultListView"
                                  rules="required"
                                  label="Default List View"
-                                 :items="viewModes" />
+                                 help="Choose the default view used when showing this program's steps on a person's profile page."
+                                 :items="viewModes"
+                                 trailblazerField />
             </ContentStack>
         </ContentSection>
 
         <ContentSection title="Statuses"
-                        icon="ti ti-flag">
+                        icon="ti ti-flag"
+                        :order="1">
             <ContentStack>
                 <Grid :data="statusesGridData"
                       keyField="key"
@@ -111,12 +114,13 @@
             </Modal>
         </ContentSection>
 
-        <ContentSection title="Step Type Attributes"
-                        icon="ti ti-binary-tree-2">
+        <ContentSection title="Type Attributes"
+                        icon="ti ti-binary-tree-2"
+                        :order="2">
             <ContentStack>
                 <Grid :data="attributesGridData"
                       keyField="key"
-                      itemTerm="Step Type Attribute"
+                      itemTerm="Type Attribute"
                       liveUpdates
                       light
                       @addItem="onAddAttribute">
@@ -139,12 +143,13 @@
             </ContentStack>
 
             <Modal v-model="isAttributeModalOpen"
-                   title="Step Type Attributes">
+                   title="Type Attributes">
 
                 <RockForm v-model:submit="saveAttribute"
                           @submit="onSaveAttribute">
                     <AttributeEditor v-model="stepAttribute"
-                                     :reservedKeyNames="reservedKeyNames" />
+                                     :reservedKeyNames="reservedKeyNames"
+                                     :attributeEntityTypeGuid="EntityType.StepType" />
                 </RockForm>
 
                 <template #customButtons>
@@ -158,7 +163,8 @@
 
         <ContentSection v-if="areEntityAttributesDisplayed"
                         title="Step Program Entity Attributes"
-                        icon="ti ti-database">
+                        icon="ti ti-database"
+                        :order="3">
             <ContentStack>
                 <AttributeValuesContainer v-model="attributeValues"
                                           :attributes="attributes"
@@ -167,8 +173,10 @@
             </ContentStack>
         </ContentSection>
 
-        <ContentSection title="Workflows"
-                        icon="ti ti-route-alt-right">
+        <ContentSection v-if="store.state.trailblazerMode"
+                        title="Workflows"
+                        icon="ti ti-settings-cog"
+                        :order="4">
             <ContentStack>
                 <Grid :data="workflowGridData"
                       keyField="key"
@@ -275,7 +283,7 @@
     import { enumToListItemBag } from "@Obsidian/Utility/enumUtils";
     import { CompletionFlow, CompletionFlowDescription } from "@Obsidian/Enums/Engagement/completionFlow";
     import { ValidPropertiesBox } from "@Obsidian/ViewModels/Utility/validPropertiesBox";
-    import { useInvokeBlockAction } from "@Obsidian/Utility/block";
+    import { useStore } from "@Obsidian/PageState";
 
     const props = defineProps({
         modelValue: {
@@ -293,8 +301,6 @@
         (e: "update:modelValue", value: ValidPropertiesBox<StepProgramBag>): void,
         (e: "propertyChanged", value: string): void
     }>();
-
-    const invokeBlockAction = useInvokeBlockAction();
 
     // #region Values
 
@@ -316,11 +322,12 @@
     const defaultListView = propertyRef(props.modelValue?.bag?.defaultListView?.toString() ?? "", "DefaultListView");
     const viewModes = ref(props.options.viewModes ?? []);
     const areViewModesDisplayed = ref(props.options.areViewDisplayOptionsVisible ?? false);
+    const store = useStore();
 
     const stepStatuses = ref(props.modelValue?.bag?.statuses ?? []);
     const isStatusModalOpen = ref(false);
     const saveStatus = ref(false);
-    const stepStatusId = ref<number>(0);
+    const stepStatusGuid = ref<string>("");
     const stepStatusName = ref("");
     const stepStatusDisplayColor = ref("");
     const isActiveStepStatus = ref(true);
@@ -329,7 +336,6 @@
     const isWorkflowModalOpen = ref(false);
     const triggerType = ref("");
     const triggerTypes = ref(props.options.triggerTypes ?? []);
-    const stepStatusOptions = ref(props.modelValue?.bag?.statusOptions ?? []);
     const primaryQualifier = ref("");
     const secondaryQualifier = ref("");
     const workflow = ref<StepProgramWorkflowTriggerBag>({});
@@ -360,6 +366,13 @@
 
     const statusesGridData: GridDataBag = reactive<GridDataBag>({
         rows: stepStatuses.value.map(x => convertToStatusGridRowItem(x))
+    });
+
+    const stepStatusOptions = computed<ListItemBag[]>(() => {
+        return stepStatuses.value.map(ss => ({
+            text: ss.name ?? "",
+            value: ss.guid
+        }));
     });
 
     const showQualifiers = computed(() => {
@@ -403,7 +416,7 @@
     function convertToStatusGridRowItem(stepStatus: StepStatusBag): Record<string, unknown> {
 
         return {
-            key: stepStatus.id,
+            key: stepStatus.guid,
             name: stepStatus.name,
             isCompleteStatus: stepStatus.isCompleteStatus,
             isSystem: stepStatus.isSystem
@@ -418,7 +431,7 @@
     }
 
     function resetStepStatusForm(): void {
-        stepStatusId.value = 0;
+        stepStatusGuid.value = "";
         stepStatusName.value = "";
         isActiveStepStatus.value = true;
         isCompleteStepStatus.value = false;
@@ -426,12 +439,12 @@
     }
 
     function getTriggerDescription(triggerType: string, primaryQualifier: string | null | undefined, secondaryQualifier: string | null | undefined): string {
-        if (triggerType == "StatusChanged") {
+        if (triggerType === "StatusChanged") {
 
-            let status = stepStatusOptions.value.find(x => x.value == primaryQualifier);
+            let status = stepStatusOptions.value.find(x => x.value === primaryQualifier);
             const fromStatus = !status?.text ? "[Any]" : status.text;
 
-            status = stepStatusOptions.value.find(x => x.value == secondaryQualifier);
+            status = stepStatusOptions.value.find(x => x.value === secondaryQualifier);
 
             const toStatus = !status?.text ? "[Any]" : status.text;
 
@@ -439,7 +452,7 @@
 
             return description;
         }
-        else if (triggerType == "IsComplete") {
+        else if (triggerType === "IsComplete") {
             return "Step Completed";
         }
         else {
@@ -453,32 +466,74 @@
 
     // #region Attributes Grid
 
-    async function onStepStatusOrderChanged(item: Record<string, unknown>, beforeItem: Record<string, unknown> | null): Promise<boolean> {
-        try {
-            const result = await invokeBlockAction<string>("ReorderStepStatus", {
-                key: item["key"],
-                beforeKey: beforeItem?.["key"] ?? null
-            });
-            return result.isSuccess;
-        }
-        catch (error) {
-            console.error("Error reordering step statuses: ", error);
+    function onStepStatusOrderChanged(item: Record<string, unknown>, beforeItem: Record<string, unknown> | null): boolean {
+        const itemGuid = item["key"] as string;
+        const beforeGuid = (beforeItem?.["key"] as string | undefined) ?? null;
+
+        const currentItems = [...stepStatuses.value];
+        const idx = currentItems.findIndex(i => i.guid === itemGuid);
+
+        if (idx < 0) {
             return false;
         }
+
+        const itemToMove = currentItems.splice(idx, 1)[0];
+
+        if (beforeGuid) {
+            const beforeIndex = currentItems.findIndex(i => i.guid === beforeGuid);
+            if (beforeIndex < 0) {
+                currentItems.push(itemToMove);
+            }
+            else {
+                currentItems.splice(beforeIndex, 0, itemToMove);
+            }
+        }
+        else {
+            currentItems.push(itemToMove);
+        }
+
+        stepStatuses.value = currentItems;
+
+        if (statusesGridData.rows) {
+            statusesGridData.rows = stepStatuses.value.map(x => convertToStatusGridRowItem(x));
+        }
+
+        return true;
     }
 
-    async function onStepTypeAttributeOrderChanged(item: Record<string, unknown>, beforeItem: Record<string, unknown> | null): Promise<boolean> {
-        try {
-            const result = await invokeBlockAction<string>("ReorderStepTypeAttribute", {
-                key: item["key"],
-                beforeKey: beforeItem?.["key"] ?? null
-            });
-            return result.isSuccess;
-        }
-        catch (error) {
-            console.error("Error reordering step type attributes: ", error);
+    function onStepTypeAttributeOrderChanged(item: Record<string, unknown>, beforeItem: Record<string, unknown> | null): boolean {
+        const itemGuid = item["key"] as string;
+        const beforeGuid = (beforeItem?.["key"] as string | undefined) ?? null;
+
+        const currentItems = [...stepProgramAttributes.value];
+        const idx = currentItems.findIndex(i => i.guid === itemGuid);
+
+        if (idx < 0) {
             return false;
         }
+
+        const itemToMove = currentItems.splice(idx, 1)[0];
+
+        if (beforeGuid) {
+            const beforeIndex = currentItems.findIndex(i => i.guid === beforeGuid);
+            if (beforeIndex < 0) {
+                currentItems.push(itemToMove);
+            }
+            else {
+                currentItems.splice(beforeIndex, 0, itemToMove);
+            }
+        }
+        else {
+            currentItems.push(itemToMove);
+        }
+
+        stepProgramAttributes.value = currentItems;
+
+        if (attributesGridData.rows) {
+            attributesGridData.rows = stepProgramAttributes.value.map(x => convertToAttributeGridRowItem(x));
+        }
+
+        return true;
     }
 
     async function onAddAttribute(): Promise<void> {
@@ -522,8 +577,8 @@
             const index = stepProgramAttributes.value.findIndex(a => a.guid === stepAttribute.value?.guid);
             if (index !== -1) {
                 // Get the updated attribute and rowItem.
-                let editedAttribute = stepProgramAttributes.value.find(a => a.guid == stepAttribute.value?.guid);
-                let rowItem = attributesGridData.rows?.find(x => x.key == stepAttribute.value?.guid);
+                let editedAttribute = stepProgramAttributes.value.find(a => a.guid === stepAttribute.value?.guid);
+                let rowItem = attributesGridData.rows?.find(x => x.key === stepAttribute.value?.guid);
 
                 if (editedAttribute) {
                     // Replace old attribute with updated attribute.
@@ -560,9 +615,10 @@
             reservedKeyNames.value = reservedKeyNames.value.filter(k => k !== stepAttribute.value?.key);
         }
         else {
-            if (stepAttribute.value?.key && !reservedKeyNames.value.some(k => k === stepAttribute.value?.key)) {
-                reservedKeyNames.value.push(stepAttribute.value.key);
-            }
+            // Rebuild from the authoritative attribute list so a cancelled key
+            // change cannot leave a phantom key reserved or drop the real key.
+            reservedKeyNames.value = stepProgramAttributes.value.map(k => k.key!);
+            stepAttribute.value = null;
         }
     });
     // #endregion
@@ -576,7 +632,7 @@
     };
 
     const onEditWorkflow = (key: string): void => {
-        const selectedWorkflow = workflows.value.find(x => x.idKey == key);
+        const selectedWorkflow = workflows.value.find(x => x.idKey === key);
         if (selectedWorkflow) {
             workflow.value = selectedWorkflow;
             triggerType.value = selectedWorkflow.workflowTrigger?.value ?? "";
@@ -603,7 +659,7 @@
 
     const onSaveWorkflow = (): void => {
         isWorkflowModalOpen.value = false;
-        const selectedTriggerType = triggerTypes.value.find(t => t.value == triggerType.value);
+        const selectedTriggerType = triggerTypes.value.find(t => t.value === triggerType.value);
 
         if (triggerType.value && workflow.value.workflowType?.value && workflowGridData.rows && selectedTriggerType?.value) {
             const index = workflows.value.findIndex(a => (a.idKey === workflow.value.idKey));
@@ -614,8 +670,8 @@
 
             if (index !== -1) {
                 // Get the updated WorkflowTrigger and RowItem.
-                let editedWorkflowTrigger = workflows.value.find(a => a.idKey == workflow.value.idKey);
-                let rowItem = workflowGridData.rows.find(x => x.key == workflow.value.idKey);
+                let editedWorkflowTrigger = workflows.value.find(a => a.idKey === workflow.value.idKey);
+                let rowItem = workflowGridData.rows.find(x => x.key === workflow.value.idKey);
 
                 if (editedWorkflowTrigger && rowItem) {
                     // Replace old WorkflowTrigger with updated WorkflowTrigger.
@@ -667,9 +723,9 @@
     };
 
     const onEditStatus = (key: string): void => {
-        const selectedStepStatus = stepStatuses.value.find(x => x.id == toNumber(key));
+        const selectedStepStatus = stepStatuses.value.find(x => x.guid === key);
         if (selectedStepStatus) {
-            stepStatusId.value = selectedStepStatus.id;
+            stepStatusGuid.value = selectedStepStatus.guid ?? "";
             stepStatusName.value = selectedStepStatus.name ?? "";
             isActiveStepStatus.value = selectedStepStatus.isActive ?? true;
             isCompleteStepStatus.value = selectedStepStatus.isCompleteStatus ?? false;
@@ -681,11 +737,11 @@
     const onDeleteStatus = async (key: string): Promise<void> => {
         // Close modal and remove deleted trigger from the current collection  of triggers.
         isStatusModalOpen.value = false;
-        stepStatuses.value = stepStatuses.value.filter(s => s.id !== toNumber(key));
+        stepStatuses.value = stepStatuses.value.filter(s => s.guid !== key);
 
         // Update the grid.
         if (statusesGridData.rows) {
-            const index = statusesGridData.rows.findIndex(r => r.key == key);
+            const index = statusesGridData.rows.findIndex(r => r.key === key);
 
             if (index !== -1) {
                 statusesGridData.rows?.splice(index, 1);
@@ -697,12 +753,12 @@
         isStatusModalOpen.value = false;
 
         if (stepStatusName.value && statusesGridData.rows) {
-            const index = stepStatuses.value.findIndex(a => a.id === stepStatusId.value);
+            const index = stepStatuses.value.findIndex(a => a.guid === stepStatusGuid.value);
 
             if (index !== -1) {
                 // Get the updated WorkflowTrigger and RowItem.
-                let editedStatus = stepStatuses.value.find(a => a.id == stepStatusId.value);
-                let rowItem = statusesGridData.rows.find(x => x.key == stepStatusId.value);
+                let editedStatus = stepStatuses.value.find(a => a.guid === stepStatusGuid.value);
+                let rowItem = statusesGridData.rows.find(x => x.key === stepStatusGuid.value);
 
                 if (editedStatus && rowItem) {
                     // Replace old WorkflowTrigger with updated WorkflowTrigger.
@@ -713,21 +769,19 @@
                     stepStatuses.value.splice(index, 1, editedStatus);
 
                     // Update the GridRowItem with changes
-                    const rowIndex = statusesGridData.rows.findIndex(r => r.key === stepStatusId.value);
+                    const rowIndex = statusesGridData.rows.findIndex(r => r.key === stepStatusGuid.value);
                     rowItem = convertToStatusGridRowItem(editedStatus);
                     statusesGridData.rows?.splice(rowIndex, 1, rowItem);
                 }
             }
             else {
-                // Create new entry and set the size of the current triggers as a pseudo id so
-                // it can be tracked for frontend edits and deletes
-                const currentLength = stepStatuses.value.length + 1;
+                const guid = newGuid();
                 const stepStatus: StepStatusBag = {
                     name: stepStatusName.value,
                     isActive: isActiveStepStatus.value,
                     isCompleteStatus: isCompleteStepStatus.value,
                     statusColor: stepStatusDisplayColor.value,
-                    id: currentLength,
+                    guid,
                     isSystem: false
                 };
                 stepStatuses.value.push(stepStatus);
@@ -748,20 +802,6 @@
     // #endregion
 
     // #endregion
-
-    // On close of the Attribute Modal add the step attribute key to our reserved key name list
-    watch(() => isAttributeModalOpen.value, () => {
-        if (!isAttributeModalOpen.value && stepAttribute.value?.key) {
-
-            const key = stepAttribute.value?.key ?? "";
-
-            if (!reservedKeyNames.value.includes(key) && stepProgramAttributes.value.find(x => x.key == key)) {
-                reservedKeyNames.value.push(key);
-            }
-
-            stepAttribute.value = null;
-        }
-    });
 
     // Watch for parental changes in our model value and update all our values.
     watch(() => props.modelValue, () => {

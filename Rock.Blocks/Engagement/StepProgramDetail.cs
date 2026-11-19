@@ -72,7 +72,7 @@ namespace Rock.Blocks.Engagement
     [BooleanField
         ( "Enable List View Display Options",
           Key = AttributeKey.EnableListViewDisplayOptions,
-          Description = "Allows selecting a display mode of Grid or Cards.",
+          Description = "Allows selecting the display mode when showing steps on a person's profile page.",
           DefaultValue = "false",
           Order = 3 )]
 
@@ -347,7 +347,6 @@ namespace Rock.Blocks.Engagement
             bag.Statuses = GetStepStatuses( entity.Id ).Select( s => new StepStatusBag()
             {
                 Guid = s.Guid,
-                Id = s.Id,
                 IsActive = s.IsActive,
                 IsCompleteStatus = s.IsCompleteStatus,
                 Name = s.Name,
@@ -356,6 +355,7 @@ namespace Rock.Blocks.Engagement
             } ).ToList();
 
             bag.WorkflowTriggers = entity.StepWorkflowTriggers
+                .Where( wt => wt.StepTypeId == null )
                 .OrderBy( c => c.TypeName ).ThenBy( c => c.TriggerType.ConvertToString() )
                 .Select( wt => new StepProgramWorkflowTriggerBag()
                 {
@@ -366,8 +366,6 @@ namespace Rock.Blocks.Engagement
                     PrimaryQualifier = GetStepStatuses( entity.Id ).Find( ss => ss.Id == new StepWorkflowTrigger.StatusChangeTriggerSettings( wt.TypeQualifier ).FromStatusId )?.Guid.ToString(),
                     SecondaryQualifier = GetStepStatuses( entity.Id ).Find( ss => ss.Id == new StepWorkflowTrigger.StatusChangeTriggerSettings( wt.TypeQualifier ).ToStatusId )?.Guid.ToString(),
                 } ).ToList();
-
-            bag.StatusOptions = new StepStatusService( RockContext ).Queryable().Where( s => s.StepProgramId == entity.Id ).AsEnumerable().ToListItemBagList();
 
             return bag;
         }
@@ -476,9 +474,6 @@ namespace Rock.Blocks.Engagement
             box.IfValidProperty( nameof( box.Bag.Statuses ),
                 () => SaveStatuses( box.Bag, entity, RockContext ) );
 
-            box.IfValidProperty( nameof( box.Bag.WorkflowTriggers ),
-                () => SaveWorkflowTriggers( box.Bag, entity, RockContext ) );
-
             box.IfValidProperty( nameof( box.Bag.CompletionFlow ),
                 () => entity.CompletionFlow = box.Bag.CompletionFlow.Value );
 
@@ -568,10 +563,18 @@ namespace Rock.Blocks.Engagement
             }
 
             // Update the Attributes that were assigned in the UI
+            // The attributes are coming from the frontend already sorted in the correct order.
+            int order = 0;
             foreach ( var attributeState in viewStateAttributes )
             {
-                Helper.SaveAttributeEdits( attributeState, entityTypeId, qualifierColumn, qualifierValue, RockContext );
+                var attr = Helper.SaveAttributeEdits( attributeState, entityTypeId, qualifierColumn, qualifierValue, RockContext );
+                if ( attr != null )
+                {
+                    attr.Order = order++;
+                }
             }
+
+            RockContext.SaveChanges();
         }
 
         /// <summary>
@@ -631,7 +634,6 @@ namespace Rock.Blocks.Engagement
                 workflowTrigger.TriggerType = stateTrigger.WorkflowTrigger.Value.ConvertToEnum<StepWorkflowTrigger.WorkflowTriggerCondition>();
                 workflowTrigger.TypeQualifier = qualifierSettings.ToSelectionString();
                 workflowTrigger.WorkflowName = stateTrigger.WorkflowType.Text;
-                workflowTrigger.StepTypeId = null;
             }
         }
 
@@ -656,8 +658,10 @@ namespace Rock.Blocks.Engagement
             }
 
             // Step Statuses: Update modified Statuses
-            foreach ( var stepStatusState in bag.Statuses )
+            // The statuses are coming from the frontend already sorted in the correct order.
+            for ( int i = 0; i < bag.Statuses.Count; i++ ) 
             {
+                var stepStatusState = bag.Statuses[i];
                 var stepStatus = entity.StepStatuses.FirstOrDefault( a => a.Guid == stepStatusState.Guid );
 
                 if ( stepStatus == null )
@@ -666,10 +670,13 @@ namespace Rock.Blocks.Engagement
                     entity.StepStatuses.Add( stepStatus );
                 }
 
+                stepStatus.Guid = stepStatusState.Guid;
+
                 stepStatus.Name = stepStatusState.Name;
                 stepStatus.IsActive = stepStatusState.IsActive;
                 stepStatus.IsCompleteStatus = stepStatusState.IsCompleteStatus;
                 stepStatus.StatusColor = stepStatusState.StatusColor;
+                stepStatus.Order = i;
 
                 stepStatus.StepProgramId = entity.Id;
             }
@@ -2037,6 +2044,7 @@ namespace Rock.Blocks.Engagement
             var parameters = new Dictionary<string, object>();
 
             // Generate a date range from the SlidingDateRangePicker's value
+#if REVIEW_WEBFORMS
             var testRange = new SlidingDateRangePicker
             {
                 SlidingDateRangeMode = ( SlidingDateRangePicker.SlidingDateRangeType ) ( int ) date.RangeType,
@@ -2047,8 +2055,12 @@ namespace Rock.Blocks.Engagement
             };
 
             var dateRange = testRange.SelectedDateRange;
+#else
+            var dateRangeRaw = $"{( int ) date.RangeType}|{date.TimeValue ?? 1}|{( int ) ( date.TimeUnit ?? 0 )}|{date.LowerDate?.DateTime}|{date.UpperDate?.DateTime}";
+            var dateRange = SlidingDateRangePicker.CalculateDateRangeFromDelimitedValues( dateRangeRaw );
+#endif
 
-            parameters.Add( "StartingStepTypeIds", startingStepTypeIds.ConvertToEntityIdListParameter( "StartingStepTypeIds" ) );
+            parameters.Add( "StartingStepTypeIds", startingStepTypeIds.ConvertToIdListParameter( "StartingStepTypeIds" ) );
 
             if ( dateRange.Start != null )
             {
@@ -2096,58 +2108,6 @@ namespace Rock.Blocks.Engagement
         #endregion Methods
 
         #region Block Actions
-
-        /// <summary>
-        /// Changes the ordered position of a single step status.
-        /// </summary>
-        /// <param name="key">The identifier of the step status that will be moved.</param>
-        /// <param name="beforeKey">The identifier of the step status it will be placed before.</param>
-        /// <returns>An empty result that indicates if the operation succeeded.</returns>
-        [BlockAction]
-        public BlockActionResult ReorderStepStatus( string key, string beforeKey )
-        {
-            var stepProgram = StepProgramCache.Get( PageParameter( PageParameterKey.StepProgramId ), !PageCache.Layout.Site.DisablePredictableIds );
-            if ( stepProgram == null )
-            {
-                return ActionBadRequest( "Step program not found." );
-            }
-
-            var items = GetStepStatuses( stepProgram.Id );
-
-            if ( !items.ReorderEntity( key, beforeKey ) )
-            {
-                return ActionBadRequest( "Invalid reorder attempt." );
-            }
-
-            RockContext.SaveChanges();
-            return ActionOk();
-        }
-
-        /// <summary>
-        /// Changes the ordered position of a single step type attribute.
-        /// </summary>
-        /// <param name="key">The identifier of the step type attribute that will be moved.</param>
-        /// <param name="beforeKey">The identifier of the step type attribute it will be placed before.</param>
-        /// <returns>An empty result that indicates if the operation succeeded.</returns>
-        [BlockAction]
-        public BlockActionResult ReorderStepTypeAttribute( string key, string beforeKey )
-        {
-            var stepProgram = StepProgramCache.Get( PageParameter( PageParameterKey.StepProgramId ), !PageCache.Layout.Site.DisablePredictableIds );
-            if ( stepProgram == null )
-            {
-                return ActionBadRequest( "Step program not found." );
-            }
-
-            var items = GetStepTypeAttributes( stepProgram.Id.ToString() );
-
-            if ( !items.ReorderEntity( key, beforeKey ) )
-            {
-                return ActionBadRequest( "Invalid reorder attempt." );
-            }
-
-            RockContext.SaveChanges();
-            return ActionOk();
-        }
 
         /// <summary>
         /// Gets the box that will contain all the information needed to begin
@@ -2208,10 +2168,32 @@ namespace Rock.Blocks.Engagement
 
             var isNew = entity.Id == 0;
 
+            // Make sure the step attributes are either new or already
+            // belong to this step program.
+            if ( !PublicAttributeHelper.AreAttributeEditsAllowed( box.Bag.StepProgramAttributes, new StepType().TypeId, "StepProgramId", isNew ? null : entity.Id.ToString(), RockContext ) )
+            {
+                return ActionBadRequest( "Invalid attribute." );
+            }
+
             RockContext.WrapTransaction( () =>
             {
                 RockContext.SaveChanges();
                 entity.SaveAttributeValues( RockContext );
+
+                /*
+                    1/3/2026 - MSE
+
+                    Newly created Step Statuses can now be selected when configuring Workflow Triggers
+                    before they are saved to the database, rather than limiting selection to
+                    previously persisted statuses only. Because Workflow Triggers serialize
+                    Step Status references using database IDs, the statuses must be saved first
+                    so those IDs exist.
+
+                    Reason: Ensure Workflow Trigger serialization uses valid Step Status IDs.
+                */
+                SaveWorkflowTriggers( box.Bag, entity, RockContext );
+
+                RockContext.SaveChanges();
             } );
 
             SaveAttributes( new StepType().TypeId, "StepProgramId", entity.Id.ToString(), box.Bag.StepProgramAttributes );
@@ -2290,16 +2272,38 @@ namespace Rock.Blocks.Engagement
             }
 
             string errorMessage = null;
-            RockContext.WrapTransaction( () =>
+
+            /*
+                10/19/2026 - MSE
+
+                The step types used to be deleted and saved before the program's
+                CanDelete check, and WrapTransaction always commits, so a refused
+                program delete still removed its step types and every Step record.
+                Check the program first and roll back on every refusal.
+
+                Reason: A refused delete must not remove anything.
+            */
+            RockContext.WrapTransactionIf( () =>
             {
+                if ( !entityService.CanDelete( entity, out errorMessage ) )
+                {
+                    return false;
+                }
+
                 var stepTypes = entity.StepTypes.ToList();
                 var stepTypeService = new StepTypeService( RockContext );
 
                 foreach ( var stepType in stepTypes )
                 {
+                    if ( stepType.IsSystem )
+                    {
+                        errorMessage = $"This program contains the Step Type, '{stepType.Name}', which is a system Step Type and cannot be deleted.";
+                        return false;
+                    }
+
                     if ( !stepTypeService.CanDelete( stepType, out errorMessage ) )
                     {
-                        return;
+                        return false;
                     }
 
                     stepTypeService.Delete( stepType );
@@ -2307,13 +2311,10 @@ namespace Rock.Blocks.Engagement
 
                 RockContext.SaveChanges();
 
-                if ( !entityService.CanDelete( entity, out errorMessage ) )
-                {
-                    return;
-                }
-
                 entityService.Delete( entity );
                 RockContext.SaveChanges();
+
+                return true;
             } );
 
             return string.IsNullOrWhiteSpace( errorMessage ) ? ActionOk( this.GetParentPageUrl() ) : ActionBadRequest( errorMessage );
@@ -2332,6 +2333,12 @@ namespace Rock.Blocks.Engagement
             if ( stepProgram == null )
             {
                 return ActionBadRequest( "Could not find the specified Step Program" );
+            }
+
+            // Use the same VIEW check that is used when the block loads.
+            if ( !stepProgram.IsAuthorized( Authorization.VIEW, RequestContext.CurrentPerson ) )
+            {
+                return ActionBadRequest( "You are not authorized to view this Step Program." );
             }
 
             DateTime startDate = startDateTime.ToOrganizationDateTime();
@@ -2404,7 +2411,15 @@ namespace Rock.Blocks.Engagement
         [BlockAction]
         public BlockActionResult GetStepFlowData( SlidingDateRangeBag dateRange, int maxLevels, List<Guid> startingStepTypes )
         {
-            List<StepTypeCache> stepTypes = StepProgramCache.Get( PageParameter( PageParameterKey.StepProgramId ), !PageCache.Layout.Site.DisablePredictableIds ).StepTypes;
+            var stepProgram = StepProgramCache.Get( PageParameter( PageParameterKey.StepProgramId ), !PageCache.Layout.Site.DisablePredictableIds );
+
+            // Use the same VIEW check that is used when the block loads.
+            if ( stepProgram == null || !stepProgram.IsAuthorized( Authorization.VIEW, RequestContext.CurrentPerson ) )
+            {
+                return ActionBadRequest( "You are not authorized to view this Step Program." );
+            }
+
+            List<StepTypeCache> stepTypes = stepProgram.StepTypes;
             var nodeResults = new List<SankeyDiagramNodeBag>();
             List<int> startingStepTypeIds = new List<int>();
             int order = 0;

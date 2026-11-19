@@ -19,8 +19,10 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
+#if REVIEW_WEBFORMS
 using System.Web;
 using System.Web.Routing;
+#endif
 
 using Rock.Attribute;
 using Rock.Model;
@@ -752,11 +754,13 @@ namespace Rock.Blocks.Reporting
 
                 Reason: Ensure page parameter overrides are accurately applied upon initial page load.
              */
+#if REVIEW_WEBFORMS
             RouteValueDictionary legacyRouteValueDictionary = null;
             if ( HttpContext.Current?.Handler is RockPage rockPage )
             {
                 legacyRouteValueDictionary = rockPage.Page?.RouteData?.Values;
             }
+#endif
 
             // This collection represents the Obsidian page parameters.
             var pageParameters = this.RequestContext.GetPageParameters();
@@ -767,12 +771,14 @@ namespace Rock.Blocks.Reporting
 
                 if ( overrideValue.IsNullOrWhiteSpace() )
                 {
+#if REVIEW_WEBFORMS
                     // Remove existing parameters whose override value is empty.
                     // Legacy page parameters.
                     if ( legacyRouteValueDictionary?.ContainsKey( overrideKey ) == true )
                     {
                         legacyRouteValueDictionary.Remove( overrideKey );
                     }
+#endif
 
                     // Obsidian page parameters.
                     if ( pageParameters.ContainsKey( overrideKey ) )
@@ -783,12 +789,14 @@ namespace Rock.Blocks.Reporting
                     continue;
                 }
 
+#if REVIEW_WEBFORMS
                 // Add the new value (which might override an existing value).
                 // Legacy page parameters.
                 if ( legacyRouteValueDictionary != null )
                 {
                     legacyRouteValueDictionary[overrideKey] = overrideValue;
                 }
+#endif
 
                 // Obsidian page parameters.
                 pageParameters[overrideKey] = overrideValue;
@@ -1063,7 +1071,10 @@ namespace Rock.Blocks.Reporting
 
             if ( filterGuid.HasValue && !filterGuid.Equals( Guid.Empty ) )
             {
-                var attribute = new AttributeService( this.RockContext ).Get( filterGuid.Value );
+                // Only this block instance's own filter attributes may be edited.
+                var attribute = new AttributeService( this.RockContext )
+                    .Get( this.BlockEntityTypeId, "Id", this.BlockId.ToString() )
+                    .FirstOrDefault( a => a.Guid == filterGuid.Value );
                 if ( attribute == null )
                 {
                     return ActionBadRequest( "Unable to find filter to edit." );
@@ -1091,6 +1102,13 @@ namespace Rock.Blocks.Reporting
             if ( bag == null )
             {
                 return ActionBadRequest();
+            }
+
+            // Make sure the filter attribute is either new or already belongs
+            // to this block.
+            if ( !PublicAttributeHelper.AreAttributeEditsAllowed( new[] { bag }, this.BlockEntityTypeId, "Id", this.BlockId.ToString(), this.RockContext ) )
+            {
+                return ActionBadRequest( "Invalid attribute." );
             }
 
             // Prevent duplicate key values.
@@ -1174,7 +1192,11 @@ namespace Rock.Blocks.Reporting
             }
 
             var attributeService = new AttributeService( this.RockContext );
-            var attribute = attributeService.Get( filterGuid );
+
+            // Only this block instance's own filter attributes may be deleted.
+            var attribute = attributeService
+                .Get( this.BlockEntityTypeId, "Id", this.BlockId.ToString() )
+                .FirstOrDefault( a => a.Guid == filterGuid );
             if ( attribute == null )
             {
                 return ActionBadRequest( "Unable to find filter to delete." );

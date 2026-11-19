@@ -113,7 +113,6 @@ namespace RockWeb.Blocks.Groups
         Key = AttributeKey.LavaTemplate,
         Description = "The lava template to use to format the group details.",
         EditorMode = CodeEditorMode.Lava,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 400,
         IsRequired = true,
         DefaultValue = "{% include '~~/Assets/Lava/GroupDetail.lava' %}",
@@ -135,7 +134,6 @@ namespace RockWeb.Blocks.Groups
         Key = AttributeKey.EditGroupPreHTML,
         Description = "HTML to display before the edit group panel.",
         EditorMode = CodeEditorMode.Html,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 200,
         IsRequired = false,
         DefaultValue = "",
@@ -146,7 +144,6 @@ namespace RockWeb.Blocks.Groups
         Key = AttributeKey.EditGroupPostHTML,
         Description = "HTML to display after the edit group panel.",
         EditorMode = CodeEditorMode.Html,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 200,
         IsRequired = false,
         DefaultValue = "",
@@ -157,7 +154,6 @@ namespace RockWeb.Blocks.Groups
         Key = AttributeKey.EditGroupMemberPreHTML,
         Description = "HTML to display before the edit group member panel.",
         EditorMode = CodeEditorMode.Html,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 200,
         IsRequired = false,
         DefaultValue = "",
@@ -168,7 +164,6 @@ namespace RockWeb.Blocks.Groups
         Key = AttributeKey.EditGroupMemberPostHTML,
         Description = "HTML to display after the edit group member panel.",
         EditorMode = CodeEditorMode.Html,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 200,
         IsRequired = false,
         DefaultValue = "",
@@ -349,6 +344,22 @@ namespace RockWeb.Blocks.Groups
             get { return this.GetAttributeValue( AttributeKey.EnableCommunicationPreference ).AsBooleanOrNull() ?? false; }
         }
 
+        /// <summary>
+        /// Gets a value indicating whether the current person may edit the group.
+        /// </summary>
+        private bool CanEdit
+        {
+            get { return IsAuthorizedForGroup( Authorization.EDIT ); }
+        }
+
+        /// <summary>
+        /// Gets a value indicating whether the current person may manage group members.
+        /// </summary>
+        private bool CanManageMembers
+        {
+            get { return CanEdit || IsAuthorizedForGroup( Authorization.MANAGE_MEMBERS ); }
+        }
+
         #endregion
 
         #region Base Control Methods
@@ -393,7 +404,7 @@ namespace RockWeb.Blocks.Groups
                 RockContext rockContext = new RockContext();
                 GroupMemberService groupMemberService = new GroupMemberService( rockContext );
 
-                var groupMember = groupMemberService.Get( this.CurrentGroupMemberId );
+                var groupMember = groupMemberService.Queryable().FirstOrDefault( m => m.Id == this.CurrentGroupMemberId && m.GroupId == _groupId );
 
                 if ( groupMember == null )
                 {
@@ -470,7 +481,7 @@ namespace RockWeb.Blocks.Groups
 
             Group group = groupService.Get( _groupId );
 
-            if ( group != null && group.IsAuthorized( Authorization.EDIT, CurrentPerson ) )
+            if ( group != null && CanEdit )
             {
                 group.Name = tbName.Text;
                 group.Description = tbDescription.Text;
@@ -621,12 +632,17 @@ namespace RockWeb.Blocks.Groups
         /// <param name="e">The <see cref="EventArgs"/> instance containing the event data.</param>
         protected void btnSaveGroupMember_Click( object sender, EventArgs e )
         {
+            if ( !CanManageMembers )
+            {
+                return;
+            }
+
             var rockContext = new RockContext();
             GroupMemberService groupMemberService = new GroupMemberService( rockContext );
 
             GroupTypeRole role = new GroupTypeRoleService( rockContext ).Get( ddlGroupRole.SelectedValueAsInt() ?? 0 );
 
-            var groupMember = groupMemberService.Get( this.CurrentGroupMemberId );
+            var groupMember = groupMemberService.Queryable().FirstOrDefault( m => m.Id == this.CurrentGroupMemberId && m.GroupId == _groupId );
             if ( groupMember == null )
             {
                 groupMember = new GroupMember { Id = 0 };
@@ -739,12 +755,17 @@ namespace RockWeb.Blocks.Groups
         {
             mdConfirmDelete.Hide();
 
+            if ( !CanManageMembers )
+            {
+                return;
+            }
+
             if ( GetAttributeValue( AttributeKey.AllowGroupMemberDelete ).AsBoolean() )
             {
                 RockContext rockContext = new RockContext();
                 GroupMemberService groupMemberService = new GroupMemberService( rockContext );
 
-                var groupMember = groupMemberService.Get( this.CurrentGroupMemberId );
+                var groupMember = groupMemberService.Queryable().FirstOrDefault( m => m.Id == this.CurrentGroupMemberId && m.GroupId == _groupId );
                 if ( groupMember != null )
                 {
                     groupMemberService.Delete( groupMember );
@@ -845,6 +866,11 @@ namespace RockWeb.Blocks.Groups
 
                 if ( eventArgs.Length == 2 )
                 {
+                    if ( !CanManageMembers )
+                    {
+                        return;
+                    }
+
                     string action = eventArgs[0];
                     string parameters = eventArgs[1];
 
@@ -905,6 +931,31 @@ namespace RockWeb.Blocks.Groups
                 pnlEditGroupMember.Visible = false;
                 DisplayViewGroup();
             }
+        }
+
+        /// <summary>
+        /// Determines whether the current person is authorized for the security action on the group.
+        /// Security role groups allow only the view action through this block.
+        /// </summary>
+        /// <param name="action">The security action, such as <see cref="Authorization.EDIT"/>.</param>
+        /// <returns><c>true</c> if the current person is authorized; otherwise, <c>false</c>.</returns>
+        private bool IsAuthorizedForGroup( string action )
+        {
+            var group = GroupCache.Get( _groupId );
+
+            if ( group == null )
+            {
+                return false;
+            }
+
+            var isSecurityRole = group.IsSecurityRole || group.GroupTypeId == GroupTypeCache.GetSecurityRoleGroupType()?.Id;
+
+            if ( isSecurityRole && action != Authorization.VIEW )
+            {
+                return false;
+            }
+
+            return group.IsAuthorized( action, CurrentPerson );
         }
 
         /// <summary>
@@ -979,8 +1030,8 @@ namespace RockWeb.Blocks.Groups
                 // add collection of allowed security actions
                 Dictionary<string, object> securityActions = new Dictionary<string, object>();
                 securityActions.Add( "View", group != null && group.IsAuthorized( Authorization.VIEW, CurrentPerson ) );
-                securityActions.Add( "ManageMembers", group != null && group.IsAuthorized( Authorization.MANAGE_MEMBERS, CurrentPerson ) );
-                securityActions.Add( "Edit", group != null && group.IsAuthorized( Authorization.EDIT, CurrentPerson ) );
+                securityActions.Add( "ManageMembers", CanManageMembers );
+                securityActions.Add( "Edit", CanEdit );
                 securityActions.Add( "Administrate", group != null && group.IsAuthorized( Authorization.ADMINISTRATE, CurrentPerson ) );
                 mergeFields.Add( "AllowedActions", securityActions );
 
@@ -992,6 +1043,7 @@ namespace RockWeb.Blocks.Groups
                 Dictionary<string, object> buttonVisibility = new Dictionary<string, object>();
                 buttonVisibility.Add( AttributeKey.ShowEmailGroupLeadersButton, GetAttributeValue( AttributeKey.ShowEmailGroupLeadersButton ) );
                 buttonVisibility.Add( AttributeKey.ShowEmailRosterParentsButton, GetAttributeValue( AttributeKey.ShowEmailRosterParentsButton ) );
+                buttonVisibility.Add( AttributeKey.AllowGroupMemberDelete, GetAttributeValue( AttributeKey.AllowGroupMemberDelete ) );
                 mergeFields.Add( "ButtonVisibility", buttonVisibility );
 
                 string template = GetAttributeValue( AttributeKey.LavaTemplate );
@@ -1315,7 +1367,7 @@ namespace RockWeb.Blocks.Groups
             RockContext rockContext = new RockContext();
             GroupMemberService groupMemberService = new GroupMemberService( rockContext );
 
-            var groupMember = groupMemberService.Get( groupMemberId );
+            var groupMember = groupMemberService.Queryable().FirstOrDefault( m => m.Id == groupMemberId && m.GroupId == _groupId );
 
             if ( groupMember == null )
             {
@@ -1377,13 +1429,13 @@ namespace RockWeb.Blocks.Groups
             RockContext rockContext = new RockContext();
             GroupMemberService groupMemberService = new GroupMemberService( rockContext );
 
-            var groupMember = groupMemberService.Get( groupMemberId );
+            var groupMember = groupMemberService.Queryable().FirstOrDefault( m => m.Id == groupMemberId && m.GroupId == _groupId );
             if ( groupMember != null )
             {
                 // persist the group member id for use in partial postbacks
                 this.CurrentGroupMemberId = groupMember.Id;
 
-                lConfirmDeleteMsg.Text = string.Format( "Are you sure you want to delete (remove) {0} from {1}?", groupMember.Person.FullName, groupMember.Group.Name );
+                lConfirmDeleteMsg.Text = string.Format( "Are you sure you want to remove {0} from {1}?", groupMember.Person.FullName, groupMember.Group.Name );
 
                 mdConfirmDelete.Show();
                 //mdConfirmDelete.Header.Visible = false;

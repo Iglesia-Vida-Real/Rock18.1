@@ -126,7 +126,6 @@ namespace RockWeb.Blocks.Event
         private Dictionary<int, PhoneNumber> _mobilePhoneNumbers = new Dictionary<int, PhoneNumber>();
         private Dictionary<int, PhoneNumber> _homePhoneNumbers = new Dictionary<int, PhoneNumber>();
         private Dictionary<int, PhoneNumber> _workPhoneNumbers = new Dictionary<int, PhoneNumber>();
-        private Dictionary<int, SignatureDocument> _signatureDocuments = new Dictionary<int, SignatureDocument>();
         private List<RegistrationTemplatePlacement> _registrationTemplatePlacements = null;
         private List<PlacementGroupInfo> _placementGroupInfoList = null;
         private RockLiteralField _placementsField = null;
@@ -724,7 +723,7 @@ namespace RockWeb.Blocks.Event
             {
                 if ( registrant.PersonAlias != null && registrant.PersonAlias.Person != null )
                 {
-                    lRegistrant.Text = registrant.PersonAlias.Person.FullNameReversed;
+                    lRegistrant.Text = registrant.PersonAlias.Person.FullNameReversed.EncodeHtml();
                 }
                 else
                 {
@@ -807,9 +806,10 @@ namespace RockWeb.Blocks.Event
             {
                 var lSignedDocument = e.Row.FindControl( "rlSignedDocument" ) as Literal;
 
-                if ( _signatureDocuments.ContainsKey( registrant.PersonId.Value ) )
+
+                if ( registrant.SignatureDocumentId.HasValue )
                 {
-                    var document = _signatureDocuments[registrant.PersonId.Value];
+                    var document = registrant.SignatureDocument;
                     if ( document.Status == SignatureDocumentStatus.Signed )
                     {
                         lSignedDocument.Text = string.Format( SIGNATURE_LINK_TEMPLATE, FileUrlHelper.GetFileUrl( document.BinaryFileId ) );
@@ -819,11 +819,11 @@ namespace RockWeb.Blocks.Event
                         string message;
                         if ( document.LastInviteDate.HasValue )
                         {
-                            message = $"A signed {registrant.Registration.RegistrationInstance.RegistrationTemplate.Name} document has not yet been received for {registrant.NickName}. The last request was sent {document.LastInviteDate.Value.ToElapsedString()}.";
+                            message = $"A signed {registrant.Registration.RegistrationInstance.RegistrationTemplate.Name.EncodeHtml()} document has not yet been received for {registrant.NickName.EncodeHtml()}. The last request was sent {document.LastInviteDate.Value.ToElapsedString()}.";
                         }
                         else
                         {
-                            message = $"The required {registrant.Registration.RegistrationInstance.RegistrationTemplate.Name} document has not yet been sent to {registrant.NickName} for signing.";
+                            message = $"The required {registrant.Registration.RegistrationInstance.RegistrationTemplate.Name.EncodeHtml()} document has not yet been sent to {registrant.NickName.EncodeHtml()} for signing.";
                         }
 
                         lSignedDocument.Text = string.Format( SIGNATURE_NOT_SIGNED_INDICATOR, message );
@@ -864,7 +864,7 @@ namespace RockWeb.Blocks.Event
                     var addressField = e.Row.FindControl( "lRegistrantsAddress" ) as Literal ?? e.Row.FindControl( "lGroupPlacementsAddress" ) as Literal;
                     if ( addressField != null )
                     {
-                        addressField.Text = location != null && location.FormattedAddress.IsNotNullOrWhiteSpace() ? location.FormattedAddress : string.Empty;
+                        addressField.Text = location != null && location.FormattedAddress.IsNotNullOrWhiteSpace() ? location.FormattedAddress.EncodeHtml() : string.Empty;
                     }
                 }
             }
@@ -1481,7 +1481,6 @@ namespace RockWeb.Blocks.Event
                     _mobilePhoneNumbers = GetPersonMobilePhoneLookup( rockContext, this.RegistrantFields, personIds );
                     _homePhoneNumbers = GetPersonHomePhoneLookup( rockContext, this.RegistrantFields, personIds );
                     _workPhoneNumbers = GetPersonWorkPhoneLookup( rockContext, this.RegistrantFields, personIds );
-                    _signatureDocuments = GetPersonSignatureDocumentLookup( rockContext, personIds, registrationInstance );
 
                     // Filter by any selected
                     foreach ( var personFieldType in RegistrantFields
@@ -1959,36 +1958,6 @@ namespace RockWeb.Blocks.Event
 
                 gRegistrants.DataBind();
             }
-        }
-
-        /// <summary>
-        /// Gets the person signature document lookup.
-        /// </summary>
-        /// <param name="rockContext">The rock context.</param>
-        /// <param name="personIds">The person ids.</param>
-        /// <param name="registrationInstance">The registration instance.</param>
-        /// <returns></returns>
-        private Dictionary<int, SignatureDocument> GetPersonSignatureDocumentLookup( RockContext rockContext, List<int> personIds, RegistrationInstance registrationInstance )
-        {
-            var signatureDocuments = new Dictionary<int, SignatureDocument>();
-            var documents = new SignatureDocumentService( rockContext )
-                    .Queryable().AsNoTracking()
-                    .Where( d =>
-                        d.SignatureDocumentTemplateId == registrationInstance.RegistrationTemplate.RequiredSignatureDocumentTemplateId.Value &&
-                        d.AppliesToPersonAlias != null && personIds.Contains( d.AppliesToPersonAlias.PersonId ) )
-                    .OrderByDescending( d => d.LastStatusDate )
-                    .ToList();
-
-            foreach ( var personId in personIds )
-            {
-                var document = documents.Find( d => d.AppliesToPersonAlias.PersonId == personId );
-                if ( document != null )
-                {
-                    signatureDocuments[personId] = document;
-                }
-            }
-
-            return signatureDocuments;
         }
 
         /// <summary>

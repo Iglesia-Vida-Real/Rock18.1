@@ -37,14 +37,71 @@ namespace RockWeb.Blocks.Security
     [Category( "Security" )]
     [Description( "Block for user to confirm a newly created login account, usually from an email that was sent to them." )]
 
-    [CodeEditorField( "Confirmed Caption", "", Rock.Web.UI.Controls.CodeEditorMode.Html, Rock.Web.UI.Controls.CodeEditorTheme.Rock, 200, false, "{0}, your account has been confirmed.  Thank you for creating the account.", "Captions", 0 )]
-    [CodeEditorField( "Reset Password Caption", "", Rock.Web.UI.Controls.CodeEditorMode.Html, Rock.Web.UI.Controls.CodeEditorTheme.Rock, 200, false, "{0}, enter a new password for your '{1}' account.", "Captions", 1 )]
-    [CodeEditorField( "Password Reset Caption", "", Rock.Web.UI.Controls.CodeEditorMode.Html, Rock.Web.UI.Controls.CodeEditorTheme.Rock, 200, false, "{0}, the password for your '{1}' account has been changed.", "Captions", 2 )]
-    [CodeEditorField( "Delete Caption", "The caption to display when deleting an account. When deleting passwordless accounts, 'Are you sure you want to delete the account?' will be displayed instead.", Rock.Web.UI.Controls.CodeEditorMode.Html, Rock.Web.UI.Controls.CodeEditorTheme.Rock, 200, false, "Are you sure you want to delete the '{0}' account?", "Captions", 3 )]
-    [CodeEditorField( "Deleted Caption", "", Rock.Web.UI.Controls.CodeEditorMode.Html, Rock.Web.UI.Controls.CodeEditorTheme.Rock, 200, false, "The account has been deleted.", "Captions", 4 )]
-    [CodeEditorField( "Invalid Caption", "", Rock.Web.UI.Controls.CodeEditorMode.Html, Rock.Web.UI.Controls.CodeEditorTheme.Rock, 200, false, "The confirmation code you've entered is not valid.  Please enter a valid confirmation code or <a href='{0}'>create a new account</a>.", "Captions", 5 )]
-    [CodeEditorField( "Password Reset Unavailable Caption", "", Rock.Web.UI.Controls.CodeEditorMode.Html, Rock.Web.UI.Controls.CodeEditorTheme.Rock, 200, false, "This type of account does not allow passwords to be changed.  Please contact your system administrator for assistance changing your password.", "Captions", 6 )]
+    [CodeEditorField( "Confirmed Caption",
+        Description = "",
+        EditorMode = Rock.Web.UI.Controls.CodeEditorMode.Html,
+        EditorHeight = 200,
+        IsRequired = false,
+        DefaultValue = "{0}, your account has been confirmed.  Thank you for creating the account.",
+        Category = "Captions",
+        Order = 0 )]
+
+    [CodeEditorField( "Reset Password Caption",
+        Description = "",
+        EditorMode = Rock.Web.UI.Controls.CodeEditorMode.Html,
+        EditorHeight = 200,
+        IsRequired = false,
+        DefaultValue = "{0}, enter a new password for your '{1}' account.",
+        Category = "Captions",
+        Order = 1 )]
+
+    [CodeEditorField( "Password Reset Caption",
+        Description = "",
+        EditorMode = Rock.Web.UI.Controls.CodeEditorMode.Html,
+        EditorHeight = 200,
+        IsRequired = false,
+        DefaultValue = "{0}, the password for your '{1}' account has been changed.",
+        Category = "Captions",
+        Order = 2 )]
+
+    [CodeEditorField( "Delete Caption",
+        Description = "The caption to display when deleting an account. When deleting passwordless accounts, 'Are you sure you want to delete the account?' will be displayed instead.",
+        EditorMode = Rock.Web.UI.Controls.CodeEditorMode.Html,
+        EditorHeight = 200,
+        IsRequired = false,
+        DefaultValue = "Are you sure you want to delete the '{0}' account?",
+        Category = "Captions",
+        Order = 3 )]
+
+    [CodeEditorField( "Deleted Caption",
+        Description = "",
+        EditorMode = Rock.Web.UI.Controls.CodeEditorMode.Html,
+        EditorHeight = 200,
+        IsRequired = false,
+        DefaultValue = "The account has been deleted.",
+        Category = "Captions",
+        Order = 4 )]
+
+    [CodeEditorField( "Invalid Caption",
+        Description = "",
+        EditorMode = Rock.Web.UI.Controls.CodeEditorMode.Html,
+        EditorHeight = 200,
+        IsRequired = false,
+        DefaultValue = "The confirmation code you've entered is not valid.  Please enter a valid confirmation code or <a href='{0}'>create a new account</a>.",
+        Category = "Captions",
+        Order = 5 )]
+
+    [CodeEditorField( "Password Reset Unavailable Caption",
+        Description = "",
+        EditorMode = Rock.Web.UI.Controls.CodeEditorMode.Html,
+        EditorHeight = 200,
+        IsRequired = false,
+        DefaultValue ="This type of account does not allow passwords to be changed.  Please contact your system administrator for assistance changing your password.",
+        Category = "Captions",
+        Order = 6 )]
+
     [LinkedPage( "New Account Page", "Page to navigate to when user selects 'Create New Account' option (if blank will use 'NewAccount' page route)" )]
+
     [Rock.SystemGuid.BlockTypeGuid( "734DFF21-7465-4E02-BFC3-D40F7A65FB60" )]
     public partial class ConfirmAccount : Rock.Web.UI.RockBlock, IDisallowReturnUrlBlock
     {
@@ -213,9 +270,18 @@ namespace RockWeb.Blocks.Security
                 Rock.Security.Authorization.SetAuthCookie( user.UserName, false, false );
 
                 string caption = GetAttributeValue( "ConfirmedCaption" );
+                /*
+                    10/19/2026 - MSE
+
+                    The caption template is admin authored HTML and is written into a Literal. The
+                    first name and user name formatted into it are stored data a person can set, so
+                    they are encoded.
+
+                    Reason: Prevent stored XSS through a person's name in Confirm Account.
+                */
                 if ( caption.Contains( "{0}" ) )
                 {
-                    caption = string.Format( caption, user.Person.FirstName );
+                    caption = string.Format( caption, user.Person.FirstName.EncodeHtml() );
                 }
 
                 lConfirmed.Text = caption;
@@ -242,13 +308,22 @@ namespace RockWeb.Blocks.Security
                 if ( component.SupportsChangePassword )
                 {
                     string caption = GetAttributeValue( "ResetPasswordCaption" );
+                    /*
+                        10/19/2026 - MSE
+
+                        The caption template is admin authored HTML and is written into a Literal. The
+                        first name and user name formatted into it are stored data a person can set, so
+                        they are encoded.
+
+                        Reason: Prevent stored XSS through a person's name in Confirm Account.
+                    */
                     if ( caption.Contains( "{1}" ) )
                     {
-                        caption = string.Format( caption, user.Person.FirstName, user.UserName );
+                        caption = string.Format( caption, user.Person.FirstName.EncodeHtml(), user.UserName.EncodeHtml() );
                     }
                     else if ( caption.Contains( "{0}" ) )
                     {
-                        caption = string.Format( caption, user.Person.FirstName );
+                        caption = string.Format( caption, user.Person.FirstName.EncodeHtml() );
                     }
 
                     lResetPassword.Text = caption;
@@ -281,13 +356,22 @@ namespace RockWeb.Blocks.Security
                 if ( UserLoginService.IsPasswordValid( tbPassword.Text ) )
                 {
                     string caption = GetAttributeValue( "PasswordResetCaption" );
+                    /*
+                        10/19/2026 - MSE
+
+                        The caption template is admin authored HTML and is written into a Literal. The
+                        first name and user name formatted into it are stored data a person can set, so
+                        they are encoded.
+
+                        Reason: Prevent stored XSS through a person's name in Confirm Account.
+                    */
                     if ( caption.Contains( "{1}" ) )
                     {
-                        caption = string.Format( caption, user.Person.FirstName, user.UserName );
+                        caption = string.Format( caption, user.Person.FirstName.EncodeHtml(), user.UserName.EncodeHtml() );
                     }
                     else if ( caption.Contains( "{0}" ) )
                     {
-                        caption = string.Format( caption, user.Person.FirstName );
+                        caption = string.Format( caption, user.Person.FirstName.EncodeHtml() );
                     }
 
                     lResetSuccess.Text = caption;
@@ -333,7 +417,16 @@ namespace RockWeb.Blocks.Security
                     }
                     else
                     {
-                        caption = string.Format( caption, user.UserName );
+                        /*
+                            10/19/2026 - MSE
+
+                            The caption template is admin authored HTML and is written into a Literal. The
+                            first name and user name formatted into it are stored data a person can set, so
+                            they are encoded.
+
+                            Reason: Prevent stored XSS through a person's name in Confirm Account.
+                        */
+                        caption = string.Format( caption, user.UserName.EncodeHtml() );
                     }
                 }
 

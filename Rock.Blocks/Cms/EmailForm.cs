@@ -88,7 +88,6 @@ namespace Rock.Blocks.Cms
         "HTML Form",
         Description = "The HTML for the form the user will complete.",
         EditorMode = CodeEditorMode.Lava,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 400,
         IsRequired = false,
         DefaultValue = HTML_FORM_DEFAULT_VALUE,
@@ -99,7 +98,6 @@ namespace Rock.Blocks.Cms
         "Message Body",
         Description = "The email message body.",
         EditorMode = CodeEditorMode.Lava,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 400,
         IsRequired = false,
         DefaultValue = MESSAGE_BODY_DEFAULT_VALUE,
@@ -110,7 +108,6 @@ namespace Rock.Blocks.Cms
         "Response Message",
         Description = "The message the user will see when they submit the form if no response page if provided. Lava merge fields are available for you to use in your message.",
         EditorMode = CodeEditorMode.Lava,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 200,
         IsRequired = false,
         DefaultValue = @"<div class=""alert alert-info"">
@@ -165,7 +162,7 @@ namespace Rock.Blocks.Cms
 
     [BooleanField(
         "Disable Captcha Support",
-        Description = "If set to 'Yes' the CAPTCHA verification will be skipped. \n\nNote: If the CAPTCHA site key and/or secret key are not configured in the system settings, this option will be forced as 'Yes', even if 'No' is visually selected.",
+        Description = "If set to 'Yes' the CAPTCHA verification step will not be performed.",
         DefaultBooleanValue = false,
         Order = 15,
         Key = AttributeKey.DisableCaptchaSupport )]
@@ -370,6 +367,7 @@ namespace Rock.Blocks.Cms
             }
 
             bool isBot = false;
+#if REVIEW_WEBFORMS
             var filterString = GlobalAttributesCache.Value( "EmailExceptionsFilter" );
             var serverVarList = System.Web.HttpContext.Current.Request.ServerVariables;
 
@@ -387,6 +385,7 @@ namespace Rock.Blocks.Cms
                     }
                 }
             }
+#endif
 
             if ( isBot )
             {
@@ -403,15 +402,38 @@ namespace Rock.Blocks.Cms
             var binaryFileType = BinaryFileTypeCache.Get( Rock.SystemGuid.BinaryFiletype.DEFAULT.AsGuid() );
 
             // Form Attachments
+            var currentPersonId = RequestContext.CurrentPerson?.Id;
+            var earliestUploadDateTime = RockDateTime.Now.AddDays( -1 );
+
             foreach ( var guid in bag.AttachmentGuids ?? new List<Guid>() )
             {
                 var binaryFile = binaryFileService.Get( guid );
-                if ( binaryFile != null )
+
+                if ( binaryFile == null )
                 {
-                    binaryFile.BinaryFileTypeId = binaryFileType.Id;
-                    binaryFile.IsTemporary = false;
-                    attachments.Add( binaryFile );
+                    continue;
                 }
+
+                // The attachment guids come from the client, and the client uploads
+                // attachments as non-temporary files of the default type. So only
+                // accept files of that type that were recently uploaded by the
+                // current person (or with no creator if nobody is logged in). The
+                // file type is not changed, since that would change who can view
+                // the file.
+                //
+                // BinaryFileService.IsUploadedBinaryFileAllowedForPerson() is the
+                // preferred check, but it only accepts temporary files, so it
+                // requires emailForm.obs to upload attachments as temporary first.
+                if ( binaryFile.BinaryFileTypeId != binaryFileType.Id
+                    || binaryFile.CreatedByPersonAlias?.PersonId != currentPersonId
+                    || !binaryFile.CreatedDateTime.HasValue
+                    || binaryFile.CreatedDateTime.Value < earliestUploadDateTime )
+                {
+                    return ActionBadRequest( "Invalid attachment." );
+                }
+
+                binaryFile.IsTemporary = false;
+                attachments.Add( binaryFile );
             }
 
             RockContext.SaveChanges();
@@ -435,8 +457,14 @@ namespace Rock.Blocks.Cms
 
             foreach ( var emailAddress in recipientEmails )
             {
-                var email = emailAddress.ResolveMergeFields( mergeFields, enabledLavaCommands );
-                
+                var email = emailAddress.ResolveMergeFields( mergeFields, enabledLavaCommands ).Trim();
+
+                // Only send to a single valid email address.
+                if ( email.IsNullOrWhiteSpace() || email.IsLavaTemplate() || !EmailAddressFieldValidator.IsValid( email ) )
+                {
+                    continue;
+                }
+
                 RockEmailMessageRecipient recipient;
                 if ( saveCommunicationHistory )
                 {
@@ -460,10 +488,20 @@ namespace Rock.Blocks.Cms
 
             message.CCEmails = GetAttributeValue( AttributeKey.CCEmail ).ResolveMergeFields( mergeFields, enabledLavaCommands ).Split( ',' ).ToList();
             message.BCCEmails = GetAttributeValue( AttributeKey.BCCEmail ).ResolveMergeFields( mergeFields, enabledLavaCommands ).Split( ',' ).ToList();
-            message.FromEmail = GetAttributeValue( AttributeKey.FromEmail ).ResolveMergeFields( mergeFields, enabledLavaCommands );
-            message.FromName = GetAttributeValue( AttributeKey.FromName ).ResolveMergeFields( mergeFields, enabledLavaCommands );
-            message.Subject = GetAttributeValue( AttributeKey.Subject ).ResolveMergeFields( mergeFields, enabledLavaCommands );
-            message.Message = GetAttributeValue( AttributeKey.MessageBody ).ResolveMergeFields( mergeFields, enabledLavaCommands );
+
+            /*
+                10/7/2026 - MSE
+
+                From Email, From Name, Subject and Message Body are passed as
+                templates. The transport resolves them once with the recipient
+                merge fields.
+
+                Reason: Keep all email templates resolved in one place.
+            */
+            message.FromEmail = GetAttributeValue( AttributeKey.FromEmail );
+            message.FromName = GetAttributeValue( AttributeKey.FromName );
+            message.Subject = GetAttributeValue( AttributeKey.Subject );
+            message.Message = GetAttributeValue( AttributeKey.MessageBody );
 
             message.AppRoot = RequestContext.RootUrlPath.EnsureTrailingForwardslash();
             message.ThemeRoot = RequestContext.RootUrlPath + RequestContext.ResolveRockUrl( "~~/" );

@@ -194,7 +194,7 @@ namespace Rock.Blocks.Types.Mobile.Cms
             /// The display campus types key.
             /// </summary>
             public const string DisplayCampusTypes = "DisplayCampusTypes";
-                
+
             /// <summary>
             /// The display campus statuses key.
             /// </summary>
@@ -337,6 +337,20 @@ namespace Rock.Blocks.Types.Mobile.Cms
                     return ActionNotFound();
                 }
 
+                /*
+                    10/16/2026 - MSE
+
+                    Only the person themselves, or someone allowed to edit people through this
+                    block, may load a person's profile. This is the same rule UpdatePersonProfile
+                    already applies when saving, so a person with only View permission on the block
+                    can no longer read another person's contact details by Guid.
+
+                    Reason: Prevent loading another person's profile details by Guid.
+                */
+                if ( RequestContext.CurrentPerson?.Guid != personGuid && !IsAuthorizedToEditPerson( person ) )
+                {
+                    return ActionStatusCode( System.Net.HttpStatusCode.Unauthorized );
+                }
 
                 return ActionOk( MobileHelper.GetMobilePerson( person, site ) );
             }
@@ -346,11 +360,10 @@ namespace Rock.Blocks.Types.Mobile.Cms
         /// Updates a user profile based off the MobilePerson passed in.
         /// </summary>
         /// <param name="profile">The profile to use to update the user.</param>
-        /// <param name="user">The user to update.</param>
+        /// <param name="personId">The Identifier of the person to edit.</param>
         /// <returns></returns>
-        private MobilePerson UpdateUserProfile( MobilePerson profile, UserLogin user )
+        private MobilePerson UpdateUserProfile( MobilePerson profile, int personId )
         {
-            var personId = user.PersonId.Value;
             var rockContext = new Data.RockContext();
 
             var personService = new PersonService( rockContext );
@@ -503,7 +516,6 @@ namespace Rock.Blocks.Types.Mobile.Cms
                 person = new PersonService( rockContext2 ).Get( person.Id );
 
                 var mobilePerson = MobileHelper.GetMobilePerson( person, MobileHelper.GetCurrentApplicationSite() );
-                mobilePerson.AuthToken = MobileHelper.GetAuthenticationToken( user.UserName );
 
                 return mobilePerson;
             }
@@ -524,7 +536,14 @@ namespace Rock.Blocks.Types.Mobile.Cms
                 return ActionStatusCode( System.Net.HttpStatusCode.Unauthorized );
             }
 
-            return ActionOk( UpdateUserProfile( profile, user ) );
+            var updatedPerson = UpdateUserProfile( profile, user.PersonId.Value );
+
+            if ( user != null )
+            {
+                updatedPerson.AuthToken = MobileHelper.GetAuthenticationToken( user.UserName );
+            }
+
+            return ActionOk( updatedPerson );
         }
 
         /// <summary>
@@ -538,15 +557,6 @@ namespace Rock.Blocks.Types.Mobile.Cms
         {
             using ( var rockContext = new RockContext() )
             {
-                var user = new UserLoginService( rockContext )
-                    .Queryable()
-                    .FirstOrDefault( x => x.Person != null && x.Person.Guid == personGuid );
-
-                if ( user == null )
-                {
-                    return ActionStatusCode( System.Net.HttpStatusCode.Unauthorized );
-                }
-
                 var personToEdit = new PersonService( rockContext ).Get( personGuid );
                 if ( personToEdit == null )
                 {
@@ -558,7 +568,7 @@ namespace Rock.Blocks.Types.Mobile.Cms
                     return ActionStatusCode( System.Net.HttpStatusCode.Unauthorized );
                 }
 
-                return ActionOk( UpdateUserProfile( profile, user ) );
+                return ActionOk( UpdateUserProfile( profile, personToEdit.Id ) );
             }
         }
 

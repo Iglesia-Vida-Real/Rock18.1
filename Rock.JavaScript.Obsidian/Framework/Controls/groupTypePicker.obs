@@ -7,6 +7,7 @@
     import { Guid } from "@Obsidian/Types";
     import { standardAsyncPickerProps, useStandardAsyncPickerProps, useVModelPassthrough } from "@Obsidian/Utility/component";
     import { useHttp } from "@Obsidian/Utility/http";
+    import { useSecurityGrantToken } from "@Obsidian/Utility/block";
     import { ListItemBag } from "@Obsidian/ViewModels/Utility/listItemBag";
     import { computed, PropType, ref, watch } from "vue";
     import BaseAsyncPicker from "./baseAsyncPicker.obs";
@@ -21,6 +22,12 @@
 
         /** List of Group Type GUIDs of the Group Types to include in the picker. If null, include all Group Types */
         groupTypes: {
+            type: Array as PropType<Guid[] | null>,
+            default: []
+        },
+
+        /** List of Group Type GUIDs of the Group Types to exclude from the picker. */
+        excludeGroupTypes: {
             type: Array as PropType<Guid[] | null>,
             default: []
         },
@@ -49,6 +56,7 @@
     const internalValue = useVModelPassthrough(props, "modelValue", emit);
     const standardProps = useStandardAsyncPickerProps(props);
     const http = useHttp();
+    const securityGrantToken = useSecurityGrantToken();
     const loadedItems = ref<ListItemBag[] | null>(null);
 
     // #endregion
@@ -73,8 +81,10 @@
     const loadOptions = async (): Promise<ListItemBag[]> => {
         const options: GroupTypePickerGetGroupTypesOptionsBag = {
             groupTypes: props.groupTypes,
+            excludeGroupTypes: props.excludeGroupTypes,
             isSortedByName: props.isSortedByName,
-            onlyGroupListItems: props.onlyGroupListItems
+            onlyGroupListItems: props.onlyGroupListItems,
+            securityGrantToken: securityGrantToken.value
         };
         const result = await http.post<ListItemBag[]>("/api/v2/Controls/GroupTypePickerGetGroupTypes", undefined, options);
 
@@ -94,9 +104,9 @@
     // #region Watchers
 
     // Reload elements when props change
-    watch(() => [props.groupTypes, props.isSortedByName], () => {
+    watch(() => [props.groupTypes, props.excludeGroupTypes, props.isSortedByName], () => {
         loadedItems.value = null;
     });
 
-        // #endregion
+    // #endregion
 </script>

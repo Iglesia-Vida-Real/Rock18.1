@@ -43,6 +43,11 @@
             required: false,
             default: false
         },
+        hideActions: {
+            type: Boolean as PropType<boolean>,
+            required: false,
+            default: false
+        },
         options: {
             type: Object as PropType<AccountEntryExistingAccountStepBag>,
             required: true

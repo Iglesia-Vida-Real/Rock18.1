@@ -1,4 +1,4 @@
-﻿// <copyright>
+// <copyright>
 // Copyright by the Spark Development Network
 //
 // Licensed under the Rock Community License (the "License");
@@ -35,6 +35,8 @@ using Rock.Enums.Reporting;
 using Rock.Field;
 using Rock.Financial;
 using Rock.Model;
+using Rock.Model.EventRegistrationOptions.RegistrationInstance.Options; // [VidaReal] upstream: Rock.Model.Event.RegistrationInstance.Options (choque con la entidad Event de Eventos)
+using Rock.Model.EventRegistrationOptions.RegistrationTemplate.Options; // [VidaReal] upstream: Rock.Model.Event.RegistrationTemplate.Options (choque con la entidad Event de Eventos)
 using Rock.Pdf;
 using Rock.Security;
 using Rock.Tasks;
@@ -46,6 +48,7 @@ using Rock.ViewModels.Reporting;
 using Rock.ViewModels.Utility;
 using Rock.Web;
 using Rock.Web.Cache;
+using Rock.Web.UI.Controls;
 
 namespace Rock.Blocks.Event
 {
@@ -154,6 +157,13 @@ namespace Rock.Blocks.Event
         DefaultBooleanValue = false,
         Order = 17 )]
 
+    [BooleanField(
+        "Enable Missing Field Diagnostics",
+        Description = "When enabled, special checks will be performed during registration to identify missing required form fields and logged to the exception log. This should only be enabled at the request of the core team.",
+        Category = "Advanced",
+        Key = AttributeKey.EnableMissingFieldDiagnostics,
+        Order = 0 )]
+
     #endregion Block Attributes
 
     [Rock.SystemGuid.EntityTypeGuid( Rock.SystemGuid.EntityType.OBSIDIAN_EVENT_REGISTRATION_ENTRY )]
@@ -180,6 +190,8 @@ namespace Rock.Blocks.Event
             public const string EnableACH = "EnableACH";
             public const string EnableCreditCard = "EnableCreditCard";
             public const string DisableCaptchaSupport = "DisableCaptchaSupport";
+
+            public const string EnableMissingFieldDiagnostics = "EnableMissingFieldDiagnostics";
         }
 
         /// <summary>
@@ -203,6 +215,21 @@ namespace Rock.Blocks.Event
         /// </summary>
         public const string ReturnUrlSessionPrefix = "sessionGuid";
 
+        /// <summary>
+        /// Encryption purpose that binds a signature security token to this block.
+        /// </summary>
+        private const string SignatureSecurityTokenEncryptionPurpose = "Rock.Blocks.Event.RegistrationEntry.SignatureSecurityToken";
+
+        /// <summary>
+        /// Encryption purpose that binds signed document data to this block.
+        /// </summary>
+        private const string SignedDocumentDataEncryptionPurpose = "Rock.Blocks.Event.RegistrationEntry.SignedDocumentData";
+
+        /// <summary>
+        /// Message shown when a signed document cannot be read or verified.
+        /// </summary>
+        private const string InvalidSignedDocumentMessage = "The signed document could not be verified. Please review and sign the document again.";
+
         #endregion Keys
 
         #region Properties
@@ -210,7 +237,7 @@ namespace Rock.Blocks.Event
         /// <summary>
         /// A diagnostic collection of missing fields, grouped by form ID.
         /// </summary>
-        public Dictionary<int, Dictionary<int, string>> MissingFieldsByFormId { get; set; }
+        public Dictionary<int, Dictionary<Guid, string>> MissingFieldsByFormId { get; set; }
 
         /// <summary>
         /// Gets the registration identifier page parameter.
@@ -452,6 +479,82 @@ namespace Rock.Blocks.Event
 
         #endregion Vida Real - NIT / FEL Validation
 
+        [BlockAction]
+        public BlockActionResult ResolveRegistrantPerson( RegistrationEntryArgsBag args, Guid registrantGuid )
+        {
+            if ( args == null )
+            {
+                return ActionBadRequest( "Unable to check for existing registrant witout registration info." );
+            }
+
+            var registrant = args.Registrants.FirstOrDefault( r => r.Guid == registrantGuid );
+
+            if ( registrant == null )
+            {
+                return ActionBadRequest( "Unable to check for existing registrant without specifying a registrant." );
+            }
+
+            using ( var transaction = RockContext.Database.BeginTransaction() )
+            {
+                var registrationContext = GetContext( RockContext, args, out var errorMessage );
+
+                if ( registrationContext == null )
+                {
+                    return ActionBadRequest( errorMessage );
+                }
+
+                if ( !registrationContext.RegistrationSettings.AreDuplicateRegistrantsPrevented )
+                {
+                    // Prevent this endpoint from being used if the registration template isn't configured to prevent duplicate registrants.
+                    return ActionStatusCode( System.Net.HttpStatusCode.PreconditionFailed );
+                }
+
+                var registrarPerson = ResolveRegistrarPerson( args, registrationContext, RockContext ).Person;
+
+                var registrantPerson = ResolveRegistrantPerson( args, registrant, registrationContext, registrarPerson, RockContext ).Person;
+
+                // Rollback any changes to ensure no side effects of this block action.
+                transaction.Rollback();
+
+                var registrationRegistrantService = new RegistrationRegistrantService( RockContext );
+
+                var isAlreadyInAnotherRegistration = registrantPerson != null
+                    && registrationRegistrantService.Queryable()
+                        .Any( r =>
+                            r.PersonAlias.PersonId == registrantPerson.Id
+                            && r.Guid != registrant.Guid
+                            && r.Registration.RegistrationInstanceId == registrationContext.RegistrationSettings.RegistrationInstanceId );
+
+                // If the registrant has already been registered, then skip this next step.
+                // If they haven't been registered before, check if they are already being registered in this registration.
+                var isAlreadyInCurrentRegistration = false;
+                if ( !isAlreadyInCurrentRegistration && registrantPerson != null )
+                {
+                    foreach ( var otherRegistrant in args.Registrants.Where( r => r.Guid != registrant.Guid ) )
+                    {
+                        if ( !otherRegistrant.PersonGuid.HasValue )
+                        {
+                            otherRegistrant.PersonGuid = ResolveRegistrantPerson( args, otherRegistrant, registrationContext, registrarPerson, RockContext )?.Person?.Guid;
+                        }
+
+                        if ( otherRegistrant.PersonGuid == registrantPerson.Guid )
+                        {
+                            // Stop checking for duplicate registrants once we've determined that the person is already being registered.
+                            isAlreadyInCurrentRegistration = true;
+                            break;
+                        }
+                    }
+                }
+
+                return ActionOk( new ResolveRegistrantPersonResultBag
+                {
+                    PersonGuid = registrantPerson?.Guid,
+                    IsAlreadyInAnotherRegistration = isAlreadyInAnotherRegistration,
+                    IsAlreadyInCurrentRegistration = isAlreadyInCurrentRegistration
+                } );
+            }
+        }
+
         /// <summary>
         /// Checks the discount code provided. If a null/blank string is used then checks for AutoApplied discounts.
         /// </summary>
@@ -467,8 +570,29 @@ namespace Rock.Blocks.Event
                 RegistrationTemplateDiscountWithUsage discount = null;
                 var registration = registrationGuid != null ? new RegistrationService( rockContext ).Get( registrationGuid.ToString() ) : null;
 
+                // Ignore a registration that is not for this instance or does
+                // not belong to the current person.
+                if ( registration != null && ( registration.RegistrationInstanceId != registrationInstanceId || !IsRegistrationOwnedByPerson( registration, GetCurrentPerson() ) ) )
+                {
+                    registration = null;
+                }
+
                 if ( isAutoApply && code.IsNullOrWhiteSpace() && ( registration == null || registration.DiscountCode.IsNullOrWhiteSpace() ) )
                 {
+                    // If a manual discount amount or percentage has already been applied to the registration
+                    // (without a discount code), return that manual discount instead of overriding it with an auto-applied one.
+                    if ( registration != null && ( registration.DiscountAmount > 0 || registration.DiscountPercentage > 0 ) )
+                    {
+                        return ActionOk( new
+                        {
+                            DiscountCode = registration.DiscountCode,
+                            RegistrationUsagesRemaining = ( int? ) null,
+                            DiscountAmount = registration.DiscountAmount,
+                            DiscountPercentage = registration.DiscountPercentage,
+                            DiscountMaxRegistrants = ( int? ) null
+                        } );
+                    }
+
                     // if no code is provided and there is no code already saved in the registration check for an auto apply discount, if there are none discount will be null which returns ActionNotFound
                     var registrationTemplateDiscountCodes = registrationTemplateDiscountService
                         .GetDiscountsForRegistrationInstance( registrationInstanceId )
@@ -577,7 +701,17 @@ namespace Rock.Blocks.Event
                     }
                 }
 
-                var session = UpsertSession( context, args, SessionStatus.PaymentPending, out errorMessage );
+                // Reject an unreadable signed document before the person is sent to the external payment page, so no money moves against a registration that cannot be saved.
+                if ( context.Registration == null
+                    && context.RegistrationSettings.SignatureDocumentTemplateId.HasValue
+                    && context.RegistrationSettings.IsInlineSignatureRequired
+                    && args.Registrants != null
+                    && args.Registrants.Any( r => !r.ExistingSignatureDocumentGuid.HasValue && Encryption.DecryptStringForPurpose( r.SignatureData, SignedDocumentDataEncryptionPurpose )?.FromJsonOrNull<SignedDocumentData>() == null ) )
+                {
+                    return ActionBadRequest( InvalidSignedDocumentMessage );
+                }
+
+                var session = UpsertSession( rockContext, context, args, SessionStatus.PaymentPending, out errorMessage );
 
                 if ( !errorMessage.IsNullOrWhiteSpace() )
                 {
@@ -616,27 +750,43 @@ namespace Rock.Blocks.Event
         [BlockAction]
         public BlockActionResult PersistSession( RegistrationEntryArgsBag args )
         {
-            using ( var rockContext = new RockContext() )
+            var context = GetContext( RockContext, args, out var errorMessage );
+
+            if ( !errorMessage.IsNullOrWhiteSpace() )
             {
-                var context = GetContext( rockContext, args, out var errorMessage );
+                return ActionBadRequest( errorMessage );
+            }
 
-                if ( !errorMessage.IsNullOrWhiteSpace() )
+            if ( !context.RegistrationSettings.IsTimeoutEnabled )
+            {
+                return ActionOk( new PersistSessionResponseBag
                 {
-                    return ActionBadRequest( errorMessage );
-                }
-
-                var session = UpsertSession( context, args, SessionStatus.PaymentPending, out errorMessage );
-
-                if ( !errorMessage.IsNullOrWhiteSpace() )
-                {
-                    return ActionBadRequest( errorMessage );
-                }
-
-                return ActionOk( new
-                {
-                    ExpirationDateTime = session.ExpirationDateTime.ToRockDateTimeOffset()
+                    IsTimeoutDisabled = true
                 } );
             }
+
+            var session = UpsertSession( RockContext, context, args, SessionStatus.PaymentPending, out errorMessage );
+
+            if ( !errorMessage.IsNullOrWhiteSpace() )
+            {
+                return ActionBadRequest( errorMessage );
+            }
+
+            // Get the current spots remaining excluding those that were just reserved for this session, if any.
+            var spotsRemaining = new RegistrationInstanceService( RockContext ).GetSpotsAvailable( new GetSpotsAvailableOptions
+            {
+                ExcludeReservedSpotsForRegistrationSessionGuid = null,
+                IsTimeoutEnabled = context.RegistrationSettings.IsTimeoutEnabled,
+                IsWaitListExcluded = true,
+                MaxAttendees = context.RegistrationSettings.MaxAttendees,
+                RegistrationInstanceId = context.RegistrationSettings.RegistrationInstanceId
+            } );
+
+            return ActionOk( new PersistSessionResponseBag
+            {
+                ExpirationDateTime = session.ExpirationDateTime.ToRockDateTimeOffset(),
+                SpotsRemaining = spotsRemaining
+            } );
         }
 
         /// <summary>
@@ -702,7 +852,7 @@ namespace Rock.Blocks.Event
         [BlockAction]
         public BlockActionResult SubmitRegistration( RegistrationEntryArgsBag args )
         {
-            var disableCaptcha = GetAttributeValue( AttributeKey.DisableCaptchaSupport ).AsBoolean();
+            var disableCaptcha = Captcha.CaptchaService.ShouldDisableCaptcha( GetAttributeValue( AttributeKey.DisableCaptchaSupport ).AsBoolean() );
 
             if ( !disableCaptcha && !RequestContext.IsCaptchaValid )
             {
@@ -725,14 +875,33 @@ namespace Rock.Blocks.Event
                     return ActionBadRequest( errorMessage );
                 }
 
-                SubmitRegistration( rockContext, context, args, out errorMessage );
+                var result = SubmitRegistration( rockContext, context, args, out errorMessage );
+
+                if ( result == SubmitRegistrationResult.CapacityFullFailure )
+                {
+                    /* 
+                        11/18/2025 JMH
+
+                        If the registration fails because capacity has been reached, we return 409 Conflict.
+                        This lets our client detect the "capacity full" scenario and show a specific error page.
+                        This endpoint is used by third-party payment processors, so we must preserve the existing
+                        response shape. We cannot add custom error codes or change the payload structure.
+                        Using a standard HTTP status code ensures third parties can continue displaying the
+                        error message normally, while still allowing clients to handle 409 in a special way.
+                    */
+
+                    return new BlockActionResult( System.Net.HttpStatusCode.Conflict )
+                    {
+                        Error = errorMessage
+                    };
+                }
 
                 if ( !errorMessage.IsNullOrWhiteSpace() )
                 {
                     return ActionBadRequest( errorMessage );
                 }
 
-                var successViewModel = GetSuccessViewModel( context.Registration.Id, context.TransactionCode, context.GatewayPersonIdentifier );
+                var successViewModel = GetSuccessViewModel( context.Registration.Id, context.RegistrationSettings.FinancialGatewayId, context.TransactionCode, context.GatewayPersonIdentifier );
 
                 return new BlockActionResult( System.Net.HttpStatusCode.Created, successViewModel );
             }
@@ -772,8 +941,6 @@ namespace Rock.Blocks.Event
                 }
 
                 var isNewRegistration = context.Registration == null;
-                Person registrar = null;
-
                 if ( isNewRegistration )
                 {
                     // This is a new registration, generate a fake registration
@@ -781,67 +948,32 @@ namespace Rock.Blocks.Event
                     context.Registration = new Registration
                     {
                         RegistrationInstanceId = context.RegistrationSettings.RegistrationInstanceId,
-                        RegistrationTemplateId = context.RegistrationSettings.RegistrationTemplateId
+                        RegistrationTemplateId = context.RegistrationSettings.RegistrationTemplateId,
                     };
-
-                    if ( context.RegistrationSettings.RegistrarOption == RegistrarOption.UseLoggedInPerson && RequestContext.CurrentPerson != null )
-                    {
-                        registrar = RequestContext.CurrentPerson;
-                        context.Registration.PersonAliasId = registrar.PrimaryAliasId;
-                    }
-                }
-                else
-                {
-                    // This is an existing registration, re-use the old registrar.
-                    registrar = context.Registration.PersonAlias.Person;
-
-                    var registrationService = new RegistrationService( rockContext );
-                    var previousRegistration = registrationService.Get( args.RegistrationGuid.Value );
-
-                    if ( previousRegistration != null )
-                    {
-                        isNewRegistration = false;
-                    }
                 }
 
-                // If the registrar person record does not exist, try to find the record.
-                if ( registrar == null )
-                {
-                    registrar = GetExistingRegistrarPerson( context, RequestContext.CurrentPerson, rockContext );
-                }
+                var registrarPerson = ResolveRegistrarPerson( args, context, rockContext ).Person;
 
-                var registrarFamily = registrar?.GetFamily( rockContext );
+                context.Registration.PersonAliasId = registrarPerson?.PrimaryAliasId;
+
+                var registrarFamily = registrarPerson?.GetFamily( rockContext );
 
                 // Process the Person so we have data for the Lava merge.
-                bool isCreatedAsRegistrant = context.RegistrationSettings.RegistrarOption == RegistrarOption.UseFirstRegistrant && registrantInfo == args.Registrants.FirstOrDefault();
-                var (person, registrant) = GetExistingOrCreatePerson( context, registrantInfo, registrar, registrarFamily?.Guid ?? Guid.Empty, isCreatedAsRegistrant, rockContext );
+                var (person, registrant) = GetExistingOrCreatePerson( context, registrantInfo, registrarPerson, registrarFamily?.Guid ?? Guid.Empty, rockContext, args );
 
                 var response = new RegistrationEntrySignatureDocumentBag();
 
                 // If the person happens to have a valid signature document of the required template, we may skip this step.
                 if ( documentTemplate.IsValidInFuture && documentTemplate.ValidityDurationInDays.HasValue )
                 {
-                    // When thinking about date comparisons, think in terms of extremes:
-                    //  - If they signed a document today, and it's only valid for 1 day, it's still valid (at any point) today.
-                    //  - If they signed a document (at any point) yesterday or before, and it's only valid for 1 day, it's no longer valid today.
-                    // With this in mind, add one day to the specified ValidityDurationInDays before comparing.
-                    var earliestSignatureDate = RockDateTime.Today.AddDays( -documentTemplate.ValidityDurationInDays.ToIntSafe() + 1 );
-                    var existingSignatureDocument = new RegistrationRegistrantService( rockContext )
-                        .Queryable()
-                        .Where( r =>
-                            r.PersonAlias.PersonId == person.Id &&
-                            r.SignatureDocument.SignatureDocumentTemplateId == documentTemplate.Id &&
-                            r.SignatureDocument.SignedDateTime >= earliestSignatureDate )
-                        .OrderByDescending( r => r.SignatureDocument.SignedDateTime )
-                        .Select( r => new
-                        {
-                            r.SignatureDocument.Guid
-                        } )
+                    var existingSignatureDocumentGuid = new RegistrationRegistrantService( rockContext )
+                        .GetValidSignatureDocument( person.Id, documentTemplate )
+                        .Select( d => ( Guid? ) d.Guid )
                         .FirstOrDefault();
 
-                    if ( existingSignatureDocument != null )
+                    if ( existingSignatureDocumentGuid != null )
                     {
-                        response.ExistingSignatureDocumentGuid = existingSignatureDocument.Guid;
+                        response.ExistingSignatureDocumentGuid = existingSignatureDocumentGuid;
 
                         return ActionOk( response );
                     }
@@ -884,7 +1016,7 @@ namespace Rock.Blocks.Event
                 // be used later to validate the document after signing.
                 var fieldHashToken = GetRegistrantSignatureHashToken( registrantInfo );
                 var unencryptedSecurityToken = new[] { RockDateTime.Now.ToString( "o" ), GetSha256Hash( fieldHashToken + html ) }.ToJson();
-                var encryptedSecurityToken = Encryption.EncryptString( unencryptedSecurityToken );
+                var encryptedSecurityToken = Encryption.EncryptStringForPurpose( unencryptedSecurityToken, SignatureSecurityTokenEncryptionPurpose );
 
                 response.DocumentHtml = html;
                 response.SecurityToken = encryptedSecurityToken;
@@ -930,7 +1062,7 @@ namespace Rock.Blocks.Event
                 }
 
                 // Validate they did not modify any of the fields or the signed HTML.
-                var unencryptedSecurityToken = Encryption.DecryptString( securityToken ).FromJsonOrNull<List<string>>();
+                var unencryptedSecurityToken = Encryption.DecryptStringForPurpose( securityToken, SignatureSecurityTokenEncryptionPurpose )?.FromJsonOrNull<List<string>>();
                 var fieldHashToken = GetRegistrantSignatureHashToken( registrantInfo );
                 var hash = GetSha256Hash( fieldHashToken + documentHtml );
 
@@ -951,7 +1083,7 @@ namespace Rock.Blocks.Event
                     SignedByEmail = signature.SignedByEmail
                 };
 
-                return ActionOk( Encryption.EncryptString( signedData.ToJson() ) );
+                return ActionOk( Encryption.EncryptStringForPurpose( signedData.ToJson(), SignedDocumentDataEncryptionPurpose ) );
             }
         }
 
@@ -974,15 +1106,42 @@ namespace Rock.Blocks.Event
 
             using ( var rockContext = new RockContext() )
             {
+                var currentPerson = GetCurrentPerson();
+
+                // Only use an existing registration if it belongs to the current person.
+                Registration registration = null;
+                if ( args?.RegistrationGuid.HasValue == true )
+                {
+                    registration = new RegistrationService( rockContext ).Get( args.RegistrationGuid.Value );
+
+                    if ( registration != null && !IsRegistrationOwnedByPerson( registration, currentPerson ) )
+                    {
+                        registration = null;
+                    }
+                }
+
                 // A null person is okay here as default values can still be returned.
                 Person person = null;
                 if ( registrantInfo != null && registrantInfo.PersonGuid.HasValue )
                 {
                     person = new PersonService( rockContext ).Get( registrantInfo.PersonGuid.Value );
+
+                    // Only return values for the current person, their family
+                    // members or registrants of their own registration.
+                    if ( person != null && !IsPersonAvailableForDefaultValues( rockContext, person, currentPerson, registration ) )
+                    {
+                        person = null;
+                    }
                 }
 
                 // If we already have a saved registrant get it, otherwise a null registrant will get any default values.
                 var registrant = new RegistrationRegistrantService( rockContext ).Get( registrantGuid );
+
+                // Only use a saved registrant from the current person's registration.
+                if ( registrant != null && ( registration == null || registrant.RegistrationId != registration.Id ) )
+                {
+                    registrant = null;
+                }
 
                 // Load the group member for the registrant if there are any group member attribute form fields.
                 // If the group member is not found, the default field values will be used.
@@ -1196,6 +1355,89 @@ namespace Rock.Blocks.Event
         #region Methods
 
         /// <summary>
+        /// Resolves the Person record associated with the specified registrant in the context of a registration process.
+        /// </summary>
+        /// <returns>A <see cref="ResolveRegistrantPersonResult"/> object representing the resolved registrant.
+        /// This is never <see langword="null"/> but the <see cref="ResolveRegistrantPersonResult.Person"/> will be <see langword="null"/> if the registrant cannot be resolved.</returns>
+        private ResolveRegistrantPersonResult ResolveRegistrantPerson( RegistrationEntryArgsBag args, RegistrantBag registrant, RegistrationContext registrationContext, Person registrarPerson, RockContext rockContext )
+        {
+            // Unpack the RegistrationEntryArgsBag and RegistrationContext into a smaller targetted context object for the resolver
+            // so we can reduce dependencies on the larger structures and only pass the specific data needed for resolution.
+            // This will give us future flexibility to change the structures of RegistrationEntryArgsBag and RegistrationContext
+            // without impacting the resolver logic.
+            var resolveContext = new ResolveRegistrantPersonContext
+            {
+                RockContext = rockContext,
+                CurrentPerson = GetCurrentPerson(),
+                IsFirstRegistrant = args.Registrants.FirstOrDefault() == registrant,
+                SessionRegisteredPersonIds = registrationContext.PersonIdsRegisteredWithinThisSession,
+                RegistrantBag = registrant,
+                RegistrarPerson = registrarPerson,
+                RegistrarOption = registrationContext.RegistrationSettings.RegistrarOption,
+
+                ExistingRegistrationRegistrant = registrationContext.Registration?.Registrants?.FirstOrDefault( rr => rr.Guid == registrant.Guid ),
+
+                // Registrant form field values.
+                FirstNameFieldValue = GetPersonFieldValue( registrationContext.RegistrationSettings, RegistrationPersonFieldType.FirstName, registrant.FieldValues ).ToStringSafe(),
+                LastNameFieldValue = GetPersonFieldValue( registrationContext.RegistrationSettings, RegistrationPersonFieldType.LastName, registrant.FieldValues ).ToStringSafe(),
+                EmailFieldValue = GetPersonFieldValue( registrationContext.RegistrationSettings, RegistrationPersonFieldType.Email, registrant.FieldValues ).ToStringSafe(),
+                BirthdateFieldValue = GetPersonFieldValue( registrationContext.RegistrationSettings, RegistrationPersonFieldType.Birthdate, registrant.FieldValues ).ToStringSafe().FromJsonOrNull<BirthdayPickerBag>().ToDateTime(),
+                MobilePhoneFieldValue = GetPersonFieldValue( registrationContext.RegistrationSettings, RegistrationPersonFieldType.MobilePhone, registrant.FieldValues ).ToStringSafe(),
+            };
+
+            var resolver = new RegistrantPersonResolver();
+            return resolver.Resolve( resolveContext );
+        }
+
+        /// <summary>
+        /// Resolves and returns the person who is acting as the registrar for the current registration process.
+        /// </summary>
+        /// <param name="args">The arguments containing registration entry data used to determine the registrar.</param>
+        /// <param name="registrationContext">The context of the current registration, providing additional information required for resolution.</param>
+        /// <returns>A <see cref="Model.Person"/> object representing the registrar, or <see langword="null"/> if no registrar could be
+        /// resolved.</returns>
+        private ResolveRegistrarPersonResult ResolveRegistrarPerson( RegistrationEntryArgsBag args, RegistrationContext registrationContext, RockContext rockContext )
+        {
+            // Unpack the RegistrationEntryArgsBag and RegistrationContext into a smaller targetted context object for the resolver
+            // so we can reduce dependencies on the larger structures and only pass the specific data needed for person resolution.
+            // This will give us future flexibility to change the structures of RegistrationEntryArgsBag and RegistrationContext
+            // without impacting the resolver logic.
+            var firstRegistrant = args.Registrants.FirstOrDefault();
+            var resolveContext = new ResolveRegistrarPersonContext
+            {
+                RockContext = rockContext,
+                CurrentPerson = GetCurrentPerson(),
+                ExistingRegistrationRegistrarPerson = registrationContext.Registration?.PersonAlias?.Person,
+                IsNewRegistration = registrationContext.Registration == null,
+                RegistrarOption = registrationContext.RegistrationSettings.RegistrarOption,
+
+                // Registrar field values. Default to current registration registrar info if field values are empty.
+                RegistrarFirstName =
+                    args.Registrar?.NickName.IsNotNullOrWhiteSpace() == true
+                    ? args.Registrar?.NickName
+                    : registrationContext.Registration?.FirstName,
+                RegistrarLastName =
+                    args.Registrar?.LastName.IsNotNullOrWhiteSpace() == true
+                    ? args.Registrar.LastName
+                    : registrationContext.Registration?.LastName,
+                RegistrarConfirmationEmail =
+                    args.Registrar?.Email.IsNotNullOrWhiteSpace() == true
+                    ? args.Registrar.Email
+                    : registrationContext.Registration?.ConfirmationEmail,
+
+                // First registrant Form field values.
+                FirstRegistrantFirstNameFieldValue = GetPersonFieldValue( registrationContext.RegistrationSettings, RegistrationPersonFieldType.FirstName, firstRegistrant?.FieldValues ).ToStringSafe(),
+                FirstRegistrantLastNameFieldValue = GetPersonFieldValue( registrationContext.RegistrationSettings, RegistrationPersonFieldType.LastName, firstRegistrant?.FieldValues ).ToStringSafe(),
+                FirstRegistrantEmailFieldValue = GetPersonFieldValue( registrationContext.RegistrationSettings, RegistrationPersonFieldType.Email, firstRegistrant?.FieldValues ).ToStringSafe(),
+                FirstRegistrantBirthdateFieldValue = GetPersonFieldValue( registrationContext.RegistrationSettings, RegistrationPersonFieldType.Birthdate, firstRegistrant?.FieldValues ).ToStringSafe().FromJsonOrNull<BirthdayPickerBag>().ToDateTime(),
+                FirstRegistrantMobilePhoneFieldValue = GetPersonFieldValue( registrationContext.RegistrationSettings, RegistrationPersonFieldType.MobilePhone, firstRegistrant?.FieldValues ).ToStringSafe(),
+            };
+
+            var resolver = new RegistrarPersonResolver();
+            return resolver.Resolve( resolveContext );
+        }
+
+        /// <summary>
         /// Fixes registration arguments, such as, approximated decimal values sent by a browser.
         /// </summary>
         /// <param name="args"></param>
@@ -1292,12 +1534,14 @@ namespace Rock.Blocks.Event
         /// <summary>
         /// Updates or Inserts the session.
         /// </summary>
+        /// <param name="rockContext">The rock context.</param>
         /// <param name="context">The context.</param>
         /// <param name="args">The arguments.</param>
         /// <param name="sessionStatus">The status to set the session to.</param>
         /// <param name="errorMessage">On exit will contain any error message.</param>
         /// <returns>The <see cref="RegistrationSession"/> or <c>null</c> if an error occurred.</returns>
         private RegistrationSession UpsertSession(
+            RockContext rockContext,
             RegistrationContext context,
             RegistrationEntryArgsBag args,
             SessionStatus sessionStatus,
@@ -1316,7 +1560,7 @@ namespace Rock.Blocks.Event
                 RegistrationGuid = context.Registration?.Guid,
                 RegistrationSessionGuid = args.RegistrationSessionGuid,
                 Slug = PageParameter( PageParameterKey.Slug ),
-                GroupId = PageParameter( PageParameterKey.GroupId ).AsIntegerOrNull()
+                GroupId = GetRegistrationGroupId( rockContext, context.RegistrationSettings.RegistrationInstanceId )
             };
 
             var nonWaitlistRegistrantCount = args.Registrants.Count( r => !r.IsOnWaitList );
@@ -1340,6 +1584,11 @@ namespace Rock.Blocks.Event
                     session.SessionStatus = sessionStatus;
                     session.RegistrationCount = nonWaitlistRegistrantCount;
                 },
+                // The registration count above is the registration's full non-wait-list
+                // total, so credit spots it already holds and only require capacity for
+                // any increase. This lets an existing registrant complete payment even
+                // when the registration is full or was pushed over capacity.
+                creditAlreadyReservedSpots: true,
                 out errorMessage );
 
             return registrationSession;
@@ -1354,7 +1603,7 @@ namespace Rock.Blocks.Event
         /// <param name="errorMessage">The error message.</param>
         /// <returns></returns>
         /// <exception cref="Exception">There was a problem with the payment</exception>
-        private Registration SubmitRegistration( RockContext rockContext, RegistrationContext context, RegistrationEntryArgsBag args, out string errorMessage )
+        private SubmitRegistrationResult SubmitRegistration( RockContext rockContext, RegistrationContext context, RegistrationEntryArgsBag args, out string errorMessage )
         {
             // Ensure the arguments provided are in their proper format
             // before use (e.g. proper currency formatting of amounts).
@@ -1378,16 +1627,20 @@ namespace Rock.Blocks.Event
                 Reason: Registration entries are sometimes missing registration form data.
                 https://github.com/SparkDevNetwork/Rock/issues/5091
              */
+            var enableMissingFieldDiagnostics = GetAttributeValue( AttributeKey.EnableMissingFieldDiagnostics ).AsBoolean();
             var logInstanceOrTemplateName = context?.RegistrationSettings?.Name;
             var logCurrentPersonDetails = $"Current Person Name: {this.RequestContext.CurrentPerson?.FullName} (Person ID: {this.RequestContext.CurrentPerson?.Id});";
             var logMsgPrefix = $"Obsidian{( logInstanceOrTemplateName.IsNotNullOrWhiteSpace() ? $@" ""{logInstanceOrTemplateName}""" : string.Empty )} Registration; {logCurrentPersonDetails}{Environment.NewLine}";
 
-            var (wereFieldsMissing, missingFieldsDetails) = new RegistrationTemplateFormService( rockContext ).TryLoadMissingFields( context?.RegistrationSettings?.Forms );
-            if ( wereFieldsMissing )
+            if ( enableMissingFieldDiagnostics )
             {
-                var logMissingFieldsMsg = $"{logMsgPrefix}RegistrationTemplateForm(s) missing Fields data when trying to save Registration.{Environment.NewLine}{missingFieldsDetails}";
+                var (wereFieldsMissing, missingFieldsDetails) = new RegistrationTemplateFormService( rockContext ).TryLoadMissingFields( context?.RegistrationSettings?.Forms );
+                if ( wereFieldsMissing )
+                {
+                    var logMissingFieldsMsg = $"{logMsgPrefix}RegistrationTemplateForm(s) missing Fields data when trying to save Registration.{Environment.NewLine}{missingFieldsDetails}";
 
-                ExceptionLogService.LogException( new RegistrationTemplateFormFieldException( logMissingFieldsMsg ) );
+                    ExceptionLogService.LogException( new RegistrationTemplateFormFieldException( logMissingFieldsMsg ) );
+                }
             }
 
             errorMessage = string.Empty;
@@ -1395,7 +1648,8 @@ namespace Rock.Blocks.Event
 
             var postSaveActions = new List<Action>();
             var registrationChanges = new History.HistoryChangeList();
-            Person registrar = null;
+            var resolveRegistrarPersonResult = ResolveRegistrarPerson( args, context, rockContext );
+            var registrarPerson = resolveRegistrarPersonResult.Person;
             List<int> previousRegistrantPersonIds = null;
             var isNewRegistration = context.Registration == null;
 
@@ -1412,48 +1666,56 @@ namespace Rock.Blocks.Event
                 registrationService.Add( context.Registration );
                 registrationChanges.AddChange( History.HistoryVerb.Add, History.HistoryChangeType.Record, "Registration" );
 
-                if ( context.RegistrationSettings.RegistrarOption == RegistrarOption.UseLoggedInPerson && currentPerson != null )
+                if ( resolveRegistrarPersonResult.IsResolvedFromFirstRegistrant == true )
                 {
-                    // Registrar is sometimes used with save operations later on
-                    // so we need to load a new person that is in our RockContext.
-                    // Fixes #5624.
-                    registrar = new PersonService( rockContext ).Get( currentPerson.Id );
-                    context.Registration.PersonAliasId = currentPerson.PrimaryAliasId;
-                }
-                else if ( context.RegistrationSettings.RegistrarOption == RegistrarOption.UseFirstRegistrant )
-                {
-                    var registrantInfo = args.Registrants.FirstOrDefault();
+                    // If the registrar was resolved from the first registrant person,
+                    // update the registrar's primary email if the block setting says so.
+                    var personService = new PersonService( rockContext );
+                    var forceEmailUpdate = GetAttributeValue( AttributeKey.ForceEmailUpdate ).AsBoolean();
+                    var firstRegistrantEmail = resolveRegistrarPersonResult.FirstRegistrantEmailFieldValue;
 
-                    var firstName = GetPersonFieldValue( context.RegistrationSettings, RegistrationPersonFieldType.FirstName, registrantInfo.FieldValues ).ToStringSafe();
-                    var lastName = GetPersonFieldValue( context.RegistrationSettings, RegistrationPersonFieldType.LastName, registrantInfo.FieldValues ).ToStringSafe();
-                    var email = GetPersonFieldValue( context.RegistrationSettings, RegistrationPersonFieldType.Email, registrantInfo.FieldValues ).ToStringSafe();
-                    var birthday = GetPersonFieldValue( context.RegistrationSettings, RegistrationPersonFieldType.Birthdate, registrantInfo.FieldValues ).ToStringSafe().FromJsonOrNull<BirthdayPickerBag>().ToDateTime();
-                    var mobilePhone = GetPersonFieldValue( context.RegistrationSettings, RegistrationPersonFieldType.MobilePhone, registrantInfo.FieldValues ).ToStringSafe();
-                    bool forceEmailUpdate = GetAttributeValue( AttributeKey.ForceEmailUpdate ).AsBoolean();
+                    // The registrar was matched from the registrant details and the email
+                    // comes from the client, so only update it when the registrar is the
+                    // current person or in their family.
+                    var currentPersonId = currentPerson?.Id;
+                    var isCurrentPersonOrFamilyMember = registrarPerson != null
+                        && currentPersonId.HasValue
+                        && ( registrarPerson.Id == currentPersonId.Value
+                            || registrarPerson.GetFamilies().ToList().Any( f => f.ActiveMembers().Any( m => m.PersonId == currentPersonId ) ) );
 
-                    var personQuery = new PersonService.PersonMatchQuery( firstName, lastName, email, mobilePhone, gender: null, birthDate: birthday );
+                    if ( isCurrentPersonOrFamilyMember
+                         && forceEmailUpdate
+                         && firstRegistrantEmail.IsNotNullOrWhiteSpace()
+                         && !firstRegistrantEmail.Equals( registrarPerson.Email, StringComparison.CurrentCultureIgnoreCase ) )
+                    {
+                        using ( var privateContext = new RockContext() )
+                        {
+                            var updatePerson = new PersonService( privateContext ).Get( registrarPerson.Id );
+                            updatePerson.Email = firstRegistrantEmail;
+                            privateContext.SaveChanges();
+                        }
 
-                    registrar = new PersonService( rockContext ).FindPerson( personQuery, forceEmailUpdate );
-                    context.Registration.PersonAliasId = registrar?.PrimaryAliasId;
+                        // Requery the registrar with the updated email.
+                        registrarPerson = personService.Get( registrarPerson.Id );
+                    }
                 }
             }
             else
             {
                 // This is an existing registration
-                registrar = context.Registration.PersonAlias.Person;
-
-                var registrationService = new RegistrationService( rockContext );
-                var previousRegistration = registrationService.Get( args.RegistrationGuid.Value );
-
+                var previousRegistration = new RegistrationService( rockContext ).Get( args.RegistrationGuid.Value );
                 if ( previousRegistration != null )
                 {
-                    isNewRegistration = false;
                     previousRegistrantPersonIds = previousRegistration.Registrants
                         .Where( r => r.PersonAlias != null )
                         .Select( r => r.PersonAlias.PersonId )
                         .ToList();
                 }
             }
+
+            // Whether new or existing registration, set the registrar if resolved to a person.
+            // If not resolved, the registar will be created below.
+            context.Registration.PersonAliasId = registrarPerson?.PrimaryAliasId;
 
             // Apply the registrar values to the registration record
             History.EvaluateChange( registrationChanges, "First Name", context.Registration.FirstName, args.Registrar.NickName );
@@ -1488,12 +1750,6 @@ namespace Rock.Blocks.Event
             History.EvaluateChange( registrationChanges, "Discount Amount", context.Registration.DiscountAmount, discountAmount );
             context.Registration.DiscountAmount = discountAmount;
 
-            // If the registrar person record does not exist, try to find the record.
-            if ( registrar == null )
-            {
-                registrar = GetExistingRegistrarPerson( context, currentPerson, rockContext );
-            }
-
             // Load some attribute values about family roles and statuses
 
             // Get the connection status from the registration settings first.
@@ -1524,7 +1780,7 @@ namespace Rock.Blocks.Event
                 multipleFamilyGroupIds.AddOrReplace( currentPerson.PrimaryFamily.Guid, currentPerson.PrimaryFamily.Id );
             }
 
-            if ( !context.Registration.PersonAliasId.HasValue )
+            if ( registrarPerson == null )
             {
                 // If a match was not found, create a new person
                 var person = new Person
@@ -1543,7 +1799,7 @@ namespace Rock.Blocks.Event
                     person.RecordStatusValueId = dvcRecordStatus.Id;
                 }
 
-                registrar = SavePerson(
+                registrarPerson = SavePerson(
                     rockContext,
                     context.RegistrationSettings,
                     person,
@@ -1555,14 +1811,14 @@ namespace Rock.Blocks.Event
                     multipleFamilyGroupIds,
                     ref singleFamilyId );
 
-                context.Registration.PersonAliasId = registrar != null ? registrar.PrimaryAliasId : ( int? ) null;
-                History.EvaluateChange( registrationChanges, "Registrar", string.Empty, registrar.FullName );
+                context.Registration.PersonAliasId = registrarPerson != null ? registrarPerson.PrimaryAliasId : ( int? ) null;
+                History.EvaluateChange( registrationChanges, "Registrar", string.Empty, registrarPerson.FullName );
             }
             else
             {
                 if ( context.Registration.ConfirmationEmail.IsNotNullOrWhiteSpace() )
                 {
-                    var isEmailDifferent = !context.Registration.ConfirmationEmail.Trim().Equals( registrar.Email?.Trim(), StringComparison.OrdinalIgnoreCase );
+                    var isEmailDifferent = !context.Registration.ConfirmationEmail.Trim().Equals( registrarPerson.Email?.Trim(), StringComparison.OrdinalIgnoreCase );
 
                     var forceEmailUpdate = GetAttributeValue( AttributeKey.ForceEmailUpdate ).AsBoolean();
 
@@ -1572,7 +1828,16 @@ namespace Rock.Blocks.Event
                     {
                         var person = new PersonAliasService( rockContext ).GetPerson( context.Registration.PersonAliasId.Value );
 
-                        if ( person != null )
+                        // The registrar may have been matched from the registrant details
+                        // and the email comes from the client, so only update it when the
+                        // registrar is the current person or in their family.
+                        var currentPersonId = currentPerson?.Id;
+                        var isCurrentPersonOrFamilyMember = person != null
+                            && currentPersonId.HasValue
+                            && ( person.Id == currentPersonId.Value
+                                || person.GetFamilies().ToList().Any( f => f.ActiveMembers().Any( m => m.PersonId == currentPersonId ) ) );
+
+                        if ( isCurrentPersonOrFamilyMember )
                         {
                             person.Email = context.Registration.ConfirmationEmail;
                             rockContext.SaveChanges();
@@ -1582,7 +1847,7 @@ namespace Rock.Blocks.Event
             }
 
             // Determine the campus
-            var registrarFamily = registrar.GetFamily( rockContext );
+            var registrarFamily = registrarPerson.GetFamily( rockContext );
             campusId = campusId ?? registrarFamily.CampusId;
 
             // Set the family guid for any other registrants that were selected to be in the same family
@@ -1650,15 +1915,19 @@ namespace Rock.Blocks.Event
 
             try
             {
-                // Get each registrant
-                var index = 0;
-
                 // Keep track of the registered person IDs to prevent mistakenly merging different
                 // people (i.e. twins who share an email address) into the same person record
                 // based on an over-confident PersonService.FindPerson(...) match result.
                 context.PersonIdsRegisteredWithinThisSession.Clear();
 
                 /*
+                    11/18/2025 - JMH
+
+                    People are automatically put on the waitlist only if enabled
+                    in the Registration Template. If the waitlist is not enabled,
+                    and there is not enough room for all the new registrants being added,
+                    then no payment will occur and the registrants will not be put on the waitlist.
+
                     7/5/2024 - JMH
 
                     If max capacity is reached during registration, one or more registrants
@@ -1667,37 +1936,152 @@ namespace Rock.Blocks.Event
                     for any **automatically** wait-listed registrants.
                  */
                 var forceWaitlistedRegistrantGuids = new List<Guid>();
+                var registrationInstanceService = new RegistrationInstanceService( rockContext );
+                var registrationRegistrantService = new RegistrationRegistrantService( rockContext );
 
-                foreach ( var registrantInfo in args.Registrants )
+                // Figure out how many NEW registrants this submission is trying to add.
+                var newRegistrantGuidsToAdd = args.Registrants
+                    .Where( ri => !context.Registration.Registrants.Any( rr => rr.Guid == ri.Guid ) )
+                    .Select( ri => ri.Guid )
+                    .ToList();
+
+                var remainingNewRegistrantsToAdd = newRegistrantGuidsToAdd.Count;
+
+                // Resolve max attendees and available spots.
+                var registrationInstance = context.Registration.RegistrationInstance;
+                var maxAttendees = registrationInstance?.MaxAttendees; // int? (null means unlimited)
+                var hasCapacityLimit = maxAttendees.HasValue;
+                var isWaitListEnabled = context.RegistrationSettings.IsWaitListEnabled;
+
+                if ( !hasCapacityLimit )
                 {
-                    var forceWaitlist = context.SpotsRemaining < 1 && ( isNewRegistration == true || registrantInfo.IsOnWaitList == true );
-                    context.SpotsRemaining -= 1;
+                    // Unlimited registrations.
+                    // Capacity, sessions, and waitlist are all irrelevant in this case.
+                    isWaitListEnabled = false;
+                    context.SpotsRemaining = null; // keep null to signal "unlimited"
+                }
+                else
+                {
+                    // Limited capacity, enforce instance and session capacity.
+                    context.SpotsRemaining = registrationInstanceService.GetSpotsAvailable( new GetSpotsAvailableOptions
+                    {
+                        RegistrationInstanceId = context.RegistrationSettings.RegistrationInstanceId,
+                        MaxAttendees = maxAttendees,
+                        IsTimeoutEnabled = context.RegistrationSettings.IsTimeoutEnabled,
+                        AreRegistrationSessionsExcluded = true,
+                        IsWaitListExcluded = true
+                    } );
+                }
 
-                    bool isCreatedAsRegistrant = context.RegistrationSettings.RegistrarOption == RegistrarOption.UseFirstRegistrant && registrantInfo == args.Registrants.FirstOrDefault();
+                if ( context.SpotsRemaining < 0 )
+                {
+                    context.SpotsRemaining = 0;
+                }
 
-                    MissingFieldsByFormId = new Dictionary<int, Dictionary<int, string>>();
+                // Pre-loop capacity gate when:
+                // 1) There is a capacity limit, and
+                // 2) Waitlist is disabled, and
+                // 3) There is at least one new registrant, and
+                // 4) There is not enough room for the new registrants.
+                if ( hasCapacityLimit
+                     && !isWaitListEnabled
+                     && remainingNewRegistrantsToAdd > ( context.SpotsRemaining ?? 0 ) )
+                {
+                    if ( isNewRegistration )
+                    {
+                        AbortNewRegistrationSubmission( context );
+                    }
+
+                    errorMessage = "The registration instance has reached its capacity and is no longer accepting new registrations.";
+                    return SubmitRegistrationResult.CapacityFullFailure;
+                }
+
+                // At this point either:
+                // 1) There is no capacity limit, or
+                // 2) Waitlist is enabled, or
+                // 3) There is currently enough space for all new registrants, or
+                // 4) There are no new registrants.
+
+                for ( var i = 0; i < args.Registrants.Count; i++ )
+                {
+                    var registrantInfo = args.Registrants[i];
+                    var isNewRegistrant = newRegistrantGuidsToAdd.Contains( registrantInfo.Guid );
+
+                    if ( hasCapacityLimit && isNewRegistrant )
+                    {
+                        // Refresh spots remaining before each new registrant is added.
+                        context.SpotsRemaining = registrationInstanceService.GetSpotsAvailable( new GetSpotsAvailableOptions
+                        {
+                            RegistrationInstanceId = context.RegistrationSettings.RegistrationInstanceId,
+                            MaxAttendees = maxAttendees,
+                            IsTimeoutEnabled = context.RegistrationSettings.IsTimeoutEnabled,
+                            AreRegistrationSessionsExcluded = true,
+                            IsWaitListExcluded = true
+                        } );
+
+                        // Abort the registration if:
+                        // 1) Waitlist is not enabled, and
+                        // 2) There are not enough spots available for the remaining new registrants.
+                        if ( !isWaitListEnabled
+                             && remainingNewRegistrantsToAdd > ( context.SpotsRemaining ?? 0 ) )
+                        {
+                            if ( isNewRegistration )
+                            {
+                                AbortNewRegistrationSubmission( context );
+                            }
+
+                            errorMessage = "The registration instance has reached its capacity and is no longer accepting new registrations.";
+                            return SubmitRegistrationResult.CapacityFullFailure;
+                        }
+                    }
+
+                    var isRegistrationInstanceFull = hasCapacityLimit
+                        && context.SpotsRemaining.HasValue
+                        && context.SpotsRemaining.Value < 1;
+
+                    var forceWaitlist = isRegistrationInstanceFull
+                        && isWaitListEnabled
+                        && ( isNewRegistration || isNewRegistrant || registrantInfo.IsOnWaitList );
+
+                    // Only decrement capacity if:
+                    // 1) There is a capacity limit, and
+                    // 2) This is a new registrant, and
+                    // 3) they are taking a spot, not being waitlisted.
+                    if ( hasCapacityLimit && isNewRegistrant && !forceWaitlist )
+                    {
+                        if ( context.SpotsRemaining.HasValue )
+                        {
+                            // SpotsRemaining is recalculated from the database at the start of each loop iteration
+                            // but decrement here for posterity and to reflect logical consumption of a spot.
+                            context.SpotsRemaining--;
+                        }
+
+                        remainingNewRegistrantsToAdd--;
+                    }
+
+                    MissingFieldsByFormId = enableMissingFieldDiagnostics && isNewRegistrant
+                        ? new Dictionary<int, Dictionary<Guid, string>>()
+                        : null;
 
                     UpsertRegistrant(
                         rockContext,
                         context,
-                        registrar,
+                        registrarPerson,
                         registrarFamily.Guid,
                         registrantInfo,
-                        index,
+                        i,
                         multipleFamilyGroupIds,
                         ref singleFamilyId,
                         forceWaitlist,
-                        isCreatedAsRegistrant,
                         isNewRegistration,
-                        postSaveActions );
+                        postSaveActions,
+                        args );
 
                     if ( forceWaitlist )
                     {
                         // Do this after upserting so the updated Guid can be used.
                         forceWaitlistedRegistrantGuids.Add( registrantInfo.Guid );
                     }
-
-                    index++;
 
                     if ( MissingFieldsByFormId?.Any() == true )
                     {
@@ -1711,20 +2095,85 @@ namespace Rock.Blocks.Event
 
                             Reason: Registration entries are sometimes missing registration form data.
                             https://github.com/SparkDevNetwork/Rock/issues/5091
+
+                            1/26/2026 - DSH
+
+                            We believe this was caused by an issue in RockForm on Obsidian that
+                            caused the errors to be cleared when resetting the form. This allowed
+                            an individual to move to a previous form and then back to the next
+                            form. From there they could proceed without filling out any data.
+                            This has been fixed, but we are leaving the logging information here
+                            for now in case there are still issues causing blank data. This is
+                            controlled by an advanced block setting.
+
+                            The remaining known issues are caused by things like people being on
+                            wait list and the form fields marked as not shown on wait list. As well
+                            as cases where a staff member manually adds a registrant with can bypass
+                            some required fields (such as person birth date).
+
+                            This logging code should be removed in Rock v22 if no further issues
+                            are reported.
                          */
                         var logAllMissingFieldsSb = new StringBuilder();
-                        logAllMissingFieldsSb.AppendLine( $"{logMsgPrefix}Registrant {index} of {args.Registrants.Count}: The following required (non-conditional) Field values were missing:" );
 
-                        foreach ( var missingFormFields in MissingFieldsByFormId )
+                        try
                         {
-                            var logMissingFormFieldsSb = new StringBuilder( $"[Form ID: {missingFormFields.Key} -" );
+                            // Serialize and log the missing and expected form fields as well as this registrant's field
+                            // values so a more thorough investigation can be performed.
+                            var missingFields = MissingFieldsByFormId
+                                .SelectMany( mf => mf.Value.Select( f => new LogMissingField
+                                {
+                                    TemplateFormId = mf.Key,
+                                    TemplateFormFieldGuid = f.Key,
+                                    TemplateFormFieldName = f.Value,
+                                } ) )
+                                .ToList();
 
-                            foreach ( var missingField in missingFormFields.Value )
+                            var logMissingFields = new LogMissingFields
                             {
-                                logMissingFormFieldsSb.Append( $" {missingField.Value} (Field ID: {missingField.Key});" );
-                            }
+                                RegistrationTemplateId = context.RegistrationSettings.RegistrationTemplateId,
+                                RegistrationInstanceId = context.RegistrationSettings.RegistrationInstanceId,
+                                InstanceOrTemplateName = context.RegistrationSettings.Name,
+                                RegistrationId = context.Registration?.Id,
+                                MaxRegistrants = context.RegistrationSettings.MaxRegistrants,
+                                MaxAttendees = context.RegistrationSettings.MaxAttendees,
+                                SpotsRemaining = context.SpotsRemaining,
+                                IsTimeoutEnabled = context.RegistrationSettings.IsTimeoutEnabled,
+                                TimeoutMinutes = context.RegistrationSettings.TimeoutMinutes,
+                                TimeoutThreshold = context.RegistrationSettings.TimeoutThreshold,
+                                IsWaitlistEnabled = context.RegistrationSettings.IsWaitListEnabled,
+                                AreCurrentFamilyMembersShown = context.RegistrationSettings.AreCurrentFamilyMembersShown,
+                                CurrentPersonId = RequestContext.CurrentPerson?.Id,
+                                CurrentPersonName = RequestContext.CurrentPerson?.FullName,
+                                Registrar = args.Registrar,
+                                RegistrantIndexPosition = $"{i} of {args.Registrants.Count}",
+                                Registrant = registrantInfo,
+                                MissingFields = missingFields,
+                                ExpectedForms = context.RegistrationSettings.Forms
+                                    .Select( f => new LogTemplateForm( f ) )
+                                    .OrderBy( f => f.Order )
+                                    .ToList()
+                            };
 
-                            logAllMissingFieldsSb.AppendLine( $"{logMissingFormFieldsSb}]" );
+                            logAllMissingFieldsSb.Append( logMissingFields.ToJson() );
+                        }
+                        catch
+                        {
+                            // Go back to the old version of logging so we're sure to capture this failure.
+                            logAllMissingFieldsSb.Clear();
+                            logAllMissingFieldsSb.AppendLine( $"{logMsgPrefix}Registrant {i} of {args.Registrants.Count}: The following required (non-conditional) Field values were missing:" );
+
+                            foreach ( var missingFormFields in MissingFieldsByFormId )
+                            {
+                                var logMissingFormFieldsSb = new StringBuilder( $"[Form ID: {missingFormFields.Key} -" );
+
+                                foreach ( var missingField in missingFormFields.Value )
+                                {
+                                    logMissingFormFieldsSb.Append( $" {missingField.Value} (Field Guid: {missingField.Key});" );
+                                }
+
+                                logAllMissingFieldsSb.AppendLine( $"{logMissingFormFieldsSb}]" );
+                            }
                         }
 
                         ExceptionLogService.LogException( new RegistrationTemplateFormFieldException( logAllMissingFieldsSb.ToString() ) );
@@ -1750,7 +2199,7 @@ namespace Rock.Blocks.Event
                     if ( financialAccount == null )
                     {
                         errorMessage = "There was a problem with the financial account configuration for this registration instance";
-                        return null;
+                        return SubmitRegistrationResult.FinancialAccountFailure;
                     }
 
                     // Keep track of the customer token so the customer account is only created once.
@@ -1817,22 +2266,9 @@ namespace Rock.Blocks.Event
             }
             catch ( Exception )
             {
-                using ( var newRockContext = new RockContext() )
+                if ( isNewRegistration )
                 {
-                    // Cleanup any new records created since there was an error
-                    if ( isNewRegistration )
-                    {
-                        var newRegistrationService = new RegistrationService( newRockContext );
-                        var savedRegistration = new RegistrationService( newRockContext ).Get( context.Registration.Id );
-
-                        if ( savedRegistration != null )
-                        {
-                            HistoryService.DeleteChanges( newRockContext, typeof( Registration ), savedRegistration.Id );
-
-                            newRegistrationService.Delete( savedRegistration );
-                            newRockContext.SaveChanges();
-                        }
-                    }
+                    AbortNewRegistrationSubmission( context );
                 }
 
                 throw;
@@ -1859,7 +2295,36 @@ namespace Rock.Blocks.Event
                 ProcessPostSave( rockContext, context.RegistrationSettings, args, isNewRegistration, context.Registration, previousRegistrantPersonIds, postSaveActions );
             }
 
-            return context.Registration;
+            return SubmitRegistrationResult.Success;
+        }
+
+        /// <summary>
+        /// Aborts the registration submission and cleans up any new records created if there was an error.
+        /// </summary>
+        /// <param name="context">The registration context.</param>
+        /// <param name="isNewRegistration">Indicates if this is a new registration.</param>
+        private static void AbortNewRegistrationSubmission( RegistrationContext context )
+        {
+            if ( context?.Registration?.Id == null )
+            {
+                // Nothing to delete.
+                return;
+            }
+
+            using ( var rockContext = new RockContext() )
+            {
+                var registrationService = new RegistrationService( rockContext );
+                var registration = registrationService.Get( context.Registration.Id );
+
+                if ( registration == null )
+                {
+                    return;
+                }
+
+                HistoryService.DeleteChanges( rockContext, typeof( Registration ), registration.Id );
+                registrationService.Delete( registration );
+                rockContext.SaveChanges();
+            }
         }
 
         /// <summary>
@@ -2012,64 +2477,6 @@ namespace Rock.Blocks.Event
         }
 
         /// <summary>
-        /// Gets the existing registrar person from the registration.
-        /// </summary>
-        /// <param name="context">The registration context.</param>
-        /// <param name="currentPerson">The current person that is logged in.</param>
-        /// <param name="rockContext">The rock context.</param>
-        /// <returns>The <see cref="Person"/> that should be used as the registrant or <c>null</c> if unknown.</returns>
-        private Person GetExistingRegistrarPerson( RegistrationContext context, Person currentPerson, RockContext rockContext )
-        {
-            /**
-             * 1/26/2022 - DSH
-             * 
-             * Logic is as follows. If we have a logged in person and the name has
-             * not been changed, then just use the current person as the registrar.
-             * 
-             * Otherwise (no logged in person or the name was changed), perform a
-             * standard person match search to try to find an existing person.
-             */
-            bool currentPersonNamesMatch = false;
-            Person registrar;
-
-            if ( currentPerson != null )
-            {
-                var isFirstNameSame = currentPerson.NickName.Trim().Equals( context.Registration.FirstName, StringComparison.OrdinalIgnoreCase )
-                    || currentPerson.FirstName.Trim().Equals( context.Registration.FirstName, StringComparison.OrdinalIgnoreCase );
-                var isLastNameSame = currentPerson.LastName.Trim().Equals( context.Registration.LastName, StringComparison.OrdinalIgnoreCase );
-
-                currentPersonNamesMatch = isFirstNameSame && isLastNameSame;
-            }
-
-            if ( currentPersonNamesMatch )
-            {
-                // Registrar is sometimes used with save operations later on
-                // so we need to load a new person that is in our RockContext.
-                // Fixes #5624.
-                registrar = new PersonService( rockContext ).Get( currentPerson.Id );
-                context.Registration.PersonAliasId = currentPerson.PrimaryAliasId;
-            }
-            else
-            {
-                var personService = new PersonService( rockContext );
-                registrar = personService.FindPerson( context.Registration.FirstName, context.Registration.LastName, context.Registration.ConfirmationEmail, true );
-
-                if ( registrar != null )
-                {
-                    context.Registration.PersonAliasId = registrar.PrimaryAliasId;
-                }
-                else
-                {
-                    registrar = null;
-                    context.Registration.PersonAlias = null;
-                    context.Registration.PersonAliasId = null;
-                }
-            }
-
-            return registrar;
-        }
-
-        /// <summary>
         /// Gets the registration group identifier.
         /// </summary>
         /// <param name="rockContext">The rock context.</param>
@@ -2081,42 +2488,51 @@ namespace Rock.Blocks.Event
             var registrationSlug = PageParameter( PageParameterKey.Slug );
             var eventOccurrenceId = this.EventOccurrenceIdPageParameter;
 
-            if ( !groupId.HasValue )
+            if ( !registrationSlug.IsNullOrWhiteSpace() )
             {
-                if ( !registrationSlug.IsNullOrWhiteSpace() )
-                {
-                    var dateTime = RockDateTime.Now;
-                    var linkage = new EventItemOccurrenceGroupMapService( rockContext )
-                        .Queryable().AsNoTracking()
-                        .Where( l =>
-                            l.UrlSlug == registrationSlug &&
-                            l.RegistrationInstance != null &&
-                            l.RegistrationInstance.IsActive &&
-                            l.RegistrationInstance.RegistrationTemplate != null &&
-                            l.RegistrationInstance.RegistrationTemplate.IsActive &&
-                            ( !l.RegistrationInstance.StartDateTime.HasValue || l.RegistrationInstance.StartDateTime <= dateTime ) &&
-                            ( !l.RegistrationInstance.EndDateTime.HasValue || l.RegistrationInstance.EndDateTime > dateTime ) )
-                        .FirstOrDefault();
+                var dateTime = RockDateTime.Now;
+                var linkage = new EventItemOccurrenceGroupMapService( rockContext )
+                    .Queryable().AsNoTracking()
+                    .Where( l =>
+                        l.UrlSlug == registrationSlug &&
+                        ( !registrationInstanceId.HasValue || l.RegistrationInstanceId == registrationInstanceId.Value ) &&
+                        l.RegistrationInstance != null &&
+                        l.RegistrationInstance.IsActive &&
+                        l.RegistrationInstance.RegistrationTemplate != null &&
+                        l.RegistrationInstance.RegistrationTemplate.IsActive &&
+                        ( !l.RegistrationInstance.StartDateTime.HasValue || l.RegistrationInstance.StartDateTime <= dateTime ) &&
+                        ( !l.RegistrationInstance.EndDateTime.HasValue || l.RegistrationInstance.EndDateTime > dateTime ) )
+                    .FirstOrDefault();
 
-                    return linkage?.GroupId;
-                }
-                else if ( eventOccurrenceId.HasValue && registrationInstanceId.HasValue )
-                {
-                    var linkageGroupId = new EventItemOccurrenceService( rockContext )
-                        .Queryable()
-                        .Where( o => o.Id == eventOccurrenceId.Value )
-                        .SelectMany( o => o.Linkages )
-                        .Where( l => l.RegistrationInstanceId == registrationInstanceId.Value )
-                        .Select( l => l.GroupId )
-                        .FirstOrDefault();
+                return linkage?.GroupId;
+            }
+            else if ( eventOccurrenceId.HasValue && registrationInstanceId.HasValue )
+            {
+                var linkageGroupId = new EventItemOccurrenceService( rockContext )
+                    .Queryable()
+                    .Where( o => o.Id == eventOccurrenceId.Value )
+                    .SelectMany( o => o.Linkages )
+                    .Where( l => l.RegistrationInstanceId == registrationInstanceId.Value )
+                    .Select( l => l.GroupId )
+                    .FirstOrDefault();
 
-                    return linkageGroupId;
-                }
+                return linkageGroupId;
             }
 
-            // If there is no slug or event occurrence id then don't use/trust the groupId in the query string
-            // There is some if logic refactoring that could be done here but leaving as we're only addressing a
-            // security concern and don't want to inadvertently change behavior.
+            // If there is no slug or event occurrence id then only trust the groupId
+            // in the query string if it is linked to this registration instance.
+            if ( groupId.HasValue && registrationInstanceId.HasValue )
+            {
+                var linkedGroupId = new EventItemOccurrenceGroupMapService( rockContext )
+                    .Queryable()
+                    .Where( l => l.RegistrationInstanceId == registrationInstanceId.Value
+                        && l.GroupId == groupId.Value )
+                    .Select( l => l.GroupId )
+                    .FirstOrDefault();
+
+                return linkedGroupId;
+            }
+
             return null;
         }
 
@@ -2139,6 +2555,7 @@ namespace Rock.Blocks.Event
                     .Include( m => m.Campus )
                     .Where( l =>
                         l.UrlSlug == registrationSlug &&
+                        ( !registrationInstanceId.HasValue || l.RegistrationInstanceId == registrationInstanceId.Value ) &&
                         l.RegistrationInstance != null &&
                         l.RegistrationInstance.IsActive &&
                         l.RegistrationInstance.RegistrationTemplate != null &&
@@ -2191,27 +2608,26 @@ namespace Rock.Blocks.Event
         }
 
         /// <summary>
-        /// Gets the registration instance query.
+        /// Gets a person field.
         /// </summary>
-        /// <param name="rockContext">The rock context.</param>
-        /// <param name="includes">The includes.</param>
+        /// <param name="settings">The settings.</param>
+        /// <param name="personFieldType">Type of the person field.</param>
         /// <returns></returns>
-        private IQueryable<RegistrationInstance> GetRegistrationInstanceQuery( RockContext rockContext, string includes )
+        private RegistrationTemplateFormField GetPersonField( RegistrationSettings settings, RegistrationPersonFieldType personFieldType )
         {
-            var registrationInstanceId = GetRegistrationInstanceId( rockContext );
-            var now = RockDateTime.Now;
+            if ( settings == null || settings.Forms == null )
+            {
+                return null;
+            }
 
-            var query = new RegistrationInstanceService( rockContext )
-                .Queryable( includes )
-                .Where( r =>
-                    r.Id == registrationInstanceId &&
-                    r.IsActive &&
-                    r.RegistrationTemplate != null &&
-                    r.RegistrationTemplate.IsActive &&
-                    ( !r.StartDateTime.HasValue || r.StartDateTime <= now ) &&
-                    ( !r.EndDateTime.HasValue || r.EndDateTime > now ) );
-
-            return query;
+            return settings.Forms
+                .SelectMany( t => t.Fields
+                    .Where( f =>
+                        f.FieldSource == RegistrationFieldSource.PersonField &&
+                        f.PersonFieldType == personFieldType
+                    )
+                )
+                .FirstOrDefault();
         }
 
         /// <summary>
@@ -2675,7 +3091,8 @@ namespace Rock.Blocks.Event
         /// <param name="person">The person.</param>
         /// <param name="phoneTypeGuid">The phone type unique identifier.</param>
         /// <param name="changes">The changes.</param>
-        private void SavePhone( object fieldValue, Person person, Guid phoneTypeGuid, History.HistoryChangeList changes )
+        /// <param name="isMessagingEnabledEditable">Whether the phone Messaging Enabled property is editable.</param>
+        private void SavePhone( object fieldValue, Person person, Guid phoneTypeGuid, History.HistoryChangeList changes, bool isMessagingEnabledEditable )
         {
             string phoneNumber = string.Empty;
             string countryCode = string.Empty;
@@ -2686,7 +3103,7 @@ namespace Rock.Blocks.Event
             {
                 // We got the number and SMS selection, so set both.
                 phoneNumber = phoneData.Number;
-                isMessagingEnabled = phoneData.IsMessagingEnabled;
+                isMessagingEnabled = isMessagingEnabledEditable ? phoneData.IsMessagingEnabled : ( bool? ) null;
                 countryCode = phoneData.CountryCode;
             }
             else if ( fieldValue is string )
@@ -2705,6 +3122,7 @@ namespace Rock.Blocks.Event
 
             if ( string.IsNullOrWhiteSpace( cleanNumber ) || numberType == null )
             {
+                // TODO: Figure out why phone numbers are prevented from being cleared out here and update comment with "why".
                 return;
             }
 
@@ -2749,18 +3167,18 @@ namespace Rock.Blocks.Event
         /// <param name="registrarFamilyGuid">The registrar family unique identifier.</param>
         /// <param name="isCreatedAsRegistrant">if set to <c>true</c> [is created as registrant].</param>
         /// <param name="rockContext">The rock context for any database lookups.</param>
-        /// <returns>A tuple that contains the <see cref="Person" /> object and the optional <see cref="RegistrationRegistrant" /> object.</returns>
-        private (Person person, RegistrationRegistrant registrant) GetExistingOrCreatePerson( RegistrationContext context, ViewModels.Blocks.Event.RegistrationEntry.RegistrantBag registrantInfo, Person registrar, Guid registrarFamilyGuid, bool isCreatedAsRegistrant, RockContext rockContext )
+        /// <returns>A tuple that contains the <see cref="Model.Person" /> object and the optional <see cref="RegistrationRegistrant" /> object.</returns>
+        private (Person person, RegistrationRegistrant registrant) GetExistingOrCreatePerson( RegistrationContext context, ViewModels.Blocks.Event.RegistrationEntry.RegistrantBag registrantInfo, Person registrar, Guid registrarFamilyGuid, RockContext rockContext, RegistrationEntryArgsBag args )
         {
-            RegistrationRegistrant registrant = null;
-            Person person = null;
             var personService = new PersonService( rockContext );
+            var currentPerson = GetCurrentPerson();
 
             var firstName = GetPersonFieldValue( context.RegistrationSettings, RegistrationPersonFieldType.FirstName, registrantInfo.FieldValues ).ToStringSafe();
             var lastName = GetPersonFieldValue( context.RegistrationSettings, RegistrationPersonFieldType.LastName, registrantInfo.FieldValues ).ToStringSafe();
             var email = GetPersonFieldValue( context.RegistrationSettings, RegistrationPersonFieldType.Email, registrantInfo.FieldValues ).ToStringSafe();
             var birthday = GetPersonFieldValue( context.RegistrationSettings, RegistrationPersonFieldType.Birthdate, registrantInfo.FieldValues ).ToStringSafe().FromJsonOrNull<BirthdayPickerBag>().ToDateTime();
             var mobilePhone = GetPersonFieldValue( context.RegistrationSettings, RegistrationPersonFieldType.MobilePhone, registrantInfo.FieldValues ).ToStringSafe();
+            var emailField = GetPersonField( context.RegistrationSettings, RegistrationPersonFieldType.Email );
 
             /*
                 8/15/2023 - JPH
@@ -2800,177 +3218,80 @@ namespace Rock.Blocks.Event
                 NotePersonFieldDetailsIfRequiredAndMissing( RegistrationPersonFieldType.MobilePhone, mobilePhone );
             }
 
-            registrant = context.Registration.Registrants.FirstOrDefault( r => r.Guid == registrantInfo.Guid );
-
-            if ( registrant != null )
+            var existingRegistrationRegistrant = context.Registration.Registrants.FirstOrDefault( r => r.Guid == registrantInfo.Guid );
+            if ( existingRegistrationRegistrant?.Person != null )
             {
-                person = registrant.Person;
-                if ( person != null )
+                // If the form has first or last name fields and they have data then match the registrant.Person with the form values.
+                // If the form values are blank then this is an existing registration and a payment is being made and we do not want to null out the registrant(s).
+                var firstNameMatch = firstName.IsNullOrWhiteSpace() ? true : ( existingRegistrationRegistrant.Person.FirstName.Equals( firstName, StringComparison.OrdinalIgnoreCase ) || existingRegistrationRegistrant.Person.NickName.Equals( firstName, StringComparison.OrdinalIgnoreCase ) );
+                var lastNameMatch = lastName.IsNullOrWhiteSpace() ? true : existingRegistrationRegistrant.Person.LastName.Equals( lastName, StringComparison.OrdinalIgnoreCase );
+
+                if ( firstNameMatch && lastNameMatch )
                 {
-                    // If the form has first or last name fields and they have data then match the registrant.Person with the form values.
-                    // If the form values are blank then this is an existing registration and a payment is being made and we do not want to null out the registrant(s).
-                    var firstNameMatch = firstName.IsNullOrWhiteSpace() ? true : ( registrant.Person.FirstName.Equals( firstName, StringComparison.OrdinalIgnoreCase ) || registrant.Person.NickName.Equals( firstName, StringComparison.OrdinalIgnoreCase ) );
-                    var lastNameMatch = lastName.IsNullOrWhiteSpace() ? true : registrant.Person.LastName.Equals( lastName, StringComparison.OrdinalIgnoreCase );
-
-                    if ( firstNameMatch && lastNameMatch )
-                    {
-                        // Do nothing
-                    }
-                    else
-                    {
-                        person = null;
-                        registrant.PersonAlias = null;
-                        registrant.PersonAliasId = null;
-                    }
-                }
-            }
-            else if ( registrantInfo.PersonGuid.HasValue )
-            {
-                // This can happen if the page has reloaded due to an error. The person was saved to the DB and we don't want to add them again.
-                person = personService.Get( registrantInfo.PersonGuid.Value );
-            }
-            else
-            {
-                if ( registrantInfo.PersonGuid.HasValue && context.RegistrationSettings.AreCurrentFamilyMembersShown )
-                {
-                    person = personService.Get( registrantInfo.PersonGuid.Value );
-                }
-            }
-
-            if ( person == null )
-            {
-                // Try to find a matching person based on name, email address, mobile phone, and birthday. If these were not provided they are not considered.
-                var personQuery = new PersonService.PersonMatchQuery( firstName, lastName, email, mobilePhone, gender: null, birthDate: birthday );
-                person = personService.FindPerson( personQuery, true );
-
-                if ( person != null && context.PersonIdsRegisteredWithinThisSession.Contains( person.Id ) )
-                {
-                    /*
-                        1/8/2024 - JPH
-
-                        We've seen scenarios in which different people (i.e. twins who share an email address) are
-                        mistakenly merged into a single person record because of the way our FindPerson(...) method
-                        works. Rock is correctly attempting to prevent the creation of duplicate person records,
-                        but we need to handle this unique scenario by instead keeping track of the person IDs that
-                        have already been tied to a registrant record within this specific registration session,
-                        and if the FindPerson(...) method returns the same person more than once, we'll force Rock
-                        to create a new person record, at the risk of creating duplicate people. This risk is more
-                        tolerable than the risk of failing to save a Person altogether, as in the twin example above.
-
-                        Reason: Attempt to prevent merging different people based on an over-confident match result.
-                    */
-                    person = null;
-                }
-
-                // Try to find a matching person based on name within same family as registrar
-                if ( person == null && registrar != null && registrantInfo.FamilyGuid == registrarFamilyGuid )
-                {
-                    var familyMembers = registrar.GetFamilyMembers( true, rockContext )
-                        .Where( m => ( m.Person.FirstName == firstName || m.Person.NickName == firstName ) && m.Person.LastName == lastName )
-                        .Select( m => m.Person )
-                        .ToList();
-
-                    if ( familyMembers.Count() == 1 )
-                    {
-                        person = familyMembers.First();
-                        if ( !string.IsNullOrWhiteSpace( email ) )
-                        {
-                            person.Email = email;
-                        }
-                    }
-
-                    if ( familyMembers.Count() > 1 && !string.IsNullOrWhiteSpace( email ) )
-                    {
-                        familyMembers = familyMembers
-                            .Where( m =>
-                                m.Email != null &&
-                                m.Email.Equals( email, StringComparison.OrdinalIgnoreCase ) )
-                            .ToList();
-                        if ( familyMembers.Count() == 1 )
-                        {
-                            person = familyMembers.First();
-                        }
-                    }
-                }
-            }
-
-            /*
-                 4/26/2024 - JMH
-                
-                 If a person match was not made for the registrant at this point,
-                 and if the registrar is not the authenticated person,
-                 then try to find a match from the authenticated person's family.
-
-                 Duplicate prevention may be enhanced in the future to include suffix
-                 or other identifying information.
-            */
-            var currentPerson = GetCurrentPerson();
-            if ( person == null && currentPerson != null && registrar?.PrimaryAliasId != currentPerson.PrimaryAliasId )
-            {
-                var familyMembers = currentPerson.GetFamilyMembers( true, rockContext )
-                    .Where( m => ( m.Person.FirstName == firstName || m.Person.NickName == firstName ) && m.Person.LastName == lastName )
-                    .Select( m => m.Person )
-                    .ToList();
-
-                if ( familyMembers.Count() == 1 )
-                {
-                    person = familyMembers.First();
-                    if ( !string.IsNullOrWhiteSpace( email ) )
-                    {
-                        person.Email = email;
-                    }
-                }
-            }
-
-            if ( person == null )
-            {
-                /**
-                  * 06/07/2022 - KA
-                  * 
-                  * Logic is as follows. If the Template RegistrarOption was set to UseFirstRegistrant
-                  * then chances are a Person was created or found for the first Registrant and used
-                  * as the Registrar. In that case then we don't create a new Person for the first
-                  * Registrant. Otherwise we go ahead and create a new Person. This is of Particular
-                  * importance when the AccountProtectionProfilesForDuplicateDetectionToIgnore includes
-                  * AccountProtectionProfile.Low. That means the PersonMatch query will return a null
-                  * any time it is called. This prevents us from creating duplicate Person entities for
-                  * both the Registrar and first Registrant who are the same person in this scenario.
-                */
-                if ( isCreatedAsRegistrant && registrar != null )
-                {
-                    person = registrar;
+                    // Do nothing
                 }
                 else
                 {
-                    // Get the connection status from the registration settings first.
-                    // If there is no connection status defined there, then attempt to get
-                    // it from this block's settings.
-                    var dvcConnectionStatusId = context.RegistrationSettings.ConnectionStatusValueId
-                        ?? DefinedValueCache.GetId( GetAttributeValue( AttributeKey.ConnectionStatus ).AsGuid() );
-                    var dvcRecordStatus = DefinedValueCache.Get( GetAttributeValue( AttributeKey.RecordStatus ).AsGuid() );
-
-                    // If a match was not found, create a new person
-                    person = new Person();
-                    person.FirstName = firstName;
-                    person.LastName = lastName;
-                    person.IsEmailActive = true;
-                    person.Email = email;
-                    person.EmailPreference = EmailPreference.EmailAllowed;
-                    person.RecordTypeValueId = DefinedValueCache.Get( Rock.SystemGuid.DefinedValue.PERSON_RECORD_TYPE_PERSON.AsGuid() ).Id;
-
-                    if ( dvcConnectionStatusId.HasValue )
-                    {
-                        person.ConnectionStatusValueId = dvcConnectionStatusId.Value;
-                    }
-
-                    if ( dvcRecordStatus != null )
-                    {
-                        person.RecordStatusValueId = dvcRecordStatus.Id;
-                    }
+                    // Clear these now. They will be reassigned later in UpsertRegistrant.
+                    existingRegistrationRegistrant.PersonAlias = null;
+                    existingRegistrationRegistrant.PersonAliasId = null;
                 }
             }
 
-            return (person, registrant);
+            var resolveRegistrantPersonResult = ResolveRegistrantPerson( args, registrantInfo, context, registrar, rockContext );
+            var registrantPerson = resolveRegistrantPersonResult.Person;
+            if ( registrantPerson != null )
+            {
+                // If the resolved person matches a single family member of the registar or logged in person,
+                // then update the person's email if the new email is not blank and the field is unlocked for editing.
+                // The registrar may have been matched from the registrant details and the email comes from
+                // the client, so a registrar family member match only counts when the current person is in
+                // the registrar's family.
+                var loggedInPersonId = GetCurrentPerson()?.Id;
+                var isCurrentPersonInRegistrarFamily = loggedInPersonId.HasValue
+                    && registrar != null
+                    && registrar.GetFamilyMembers( true, rockContext ).Any( m => m.PersonId == loggedInPersonId.Value );
+
+                var isSingleFamilyMemberMatch = ( resolveRegistrantPersonResult.IsSingleRegistrarFamilyMemberMatch && isCurrentPersonInRegistrarFamily )
+                    || resolveRegistrantPersonResult.IsSingleCurrentUserFamilyMemberMatch;
+
+                if ( isSingleFamilyMemberMatch
+                     && email.IsNotNullOrWhiteSpace()
+                     && IsFieldUnlockedForEditing( emailField, registrantPerson.Email ) )
+                {
+                    registrantPerson.Email = email;
+                }
+            }
+            else
+            {
+                // No registrant person was resolved, so create a new person.
+
+                // If a match was not found, create a new person
+                registrantPerson = new Person
+                {
+                    FirstName = firstName,
+                    LastName = lastName,
+                    IsEmailActive = true,
+                    Email = email, // No need to check if the email field is unlocked for editing because this is a new person.
+                    EmailPreference = EmailPreference.EmailAllowed,
+                    RecordTypeValueId = DefinedValueCache.Get( Rock.SystemGuid.DefinedValue.PERSON_RECORD_TYPE_PERSON.AsGuid() ).Id
+                };
+
+                var dvcConnectionStatusId = context.RegistrationSettings.ConnectionStatusValueId
+                    ?? DefinedValueCache.GetId( GetAttributeValue( AttributeKey.ConnectionStatus ).AsGuid() );
+                if ( dvcConnectionStatusId.HasValue )
+                {
+                    registrantPerson.ConnectionStatusValueId = dvcConnectionStatusId.Value;
+                }
+
+                var dvcRecordStatusId = DefinedValueCache.GetId( GetAttributeValue( AttributeKey.RecordStatus ).AsGuid() );
+                if ( dvcRecordStatusId.HasValue )
+                {
+                    registrantPerson.RecordStatusValueId = dvcRecordStatusId.Value;
+                }
+            }
+
+            return (registrantPerson, existingRegistrationRegistrant);
         }
 
         /// <summary>
@@ -2982,7 +3303,7 @@ namespace Rock.Blocks.Event
         private bool IsFieldUnlockedForEditing( RegistrationTemplateFormField field, string currentFieldValue )
         {
             // The field can be updated if it is not "locked" or if it doesn't have a value.
-            return !field.IsLockedIfValuesExist || currentFieldValue.IsNullOrWhiteSpace();
+            return field != null && ( !field.IsLockedIfValuesExist || currentFieldValue.IsNullOrWhiteSpace() );
         }
 
         /// <summary>
@@ -3060,6 +3381,7 @@ namespace Rock.Blocks.Event
             var homeNumberDefinedValue = DefinedValueCache.Get( SystemGuid.DefinedValue.PERSON_PHONE_TYPE_HOME.AsGuid() );
             var mobileNumberDefinedValue = DefinedValueCache.Get( SystemGuid.DefinedValue.PERSON_PHONE_TYPE_MOBILE.AsGuid() );
             var workNumberDefinedValue = DefinedValueCache.Get( SystemGuid.DefinedValue.PERSON_PHONE_TYPE_WORK.AsGuid() );
+            var isSmsOptInShown = settings.ShowSmsOptIn;
 
             // Set any of the template's person fields
             foreach ( var field in settings.Forms
@@ -3076,7 +3398,9 @@ namespace Rock.Blocks.Event
                         case RegistrationPersonFieldType.Email:
                             // Only update the person's email if they are in the same family as the logged in person (not the registrar)
                             var currentPersonId = GetCurrentPerson()?.Id;
-                            var isFamilyMember = currentPersonId.HasValue && person.GetFamilies().ToList().Select( f => f.ActiveMembers().Where( m => m.PersonId == currentPersonId ) ).Any();
+                            var isFamilyMember = currentPersonId.HasValue
+                                && ( person.Id == currentPersonId.Value
+                                    || person.GetFamilies().ToList().Any( f => f.ActiveMembers().Any( m => m.PersonId == currentPersonId ) ) );
                             if ( isFamilyMember && IsFieldUnlockedForEditing( field, person.Email ) )
                             {
                                 var email = fieldValue.ToString().Trim();
@@ -3181,7 +3505,7 @@ namespace Rock.Blocks.Event
                         case RegistrationPersonFieldType.MobilePhone:
                             if ( IsFieldUnlockedForEditing( field, personService.GetPhoneNumber( person, mobileNumberDefinedValue )?.Number ) )
                             {
-                                SavePhone( fieldValue, person, Rock.SystemGuid.DefinedValue.PERSON_PHONE_TYPE_MOBILE.AsGuid(), personChanges );
+                                SavePhone( fieldValue, person, Rock.SystemGuid.DefinedValue.PERSON_PHONE_TYPE_MOBILE.AsGuid(), personChanges, isSmsOptInShown );
                             }
 
                             break;
@@ -3189,7 +3513,7 @@ namespace Rock.Blocks.Event
                         case RegistrationPersonFieldType.HomePhone:
                             if ( IsFieldUnlockedForEditing( field, personService.GetPhoneNumber( person, homeNumberDefinedValue )?.Number ) )
                             {
-                                SavePhone( fieldValue, person, Rock.SystemGuid.DefinedValue.PERSON_PHONE_TYPE_HOME.AsGuid(), personChanges );
+                                SavePhone( fieldValue, person, Rock.SystemGuid.DefinedValue.PERSON_PHONE_TYPE_HOME.AsGuid(), personChanges, isMessagingEnabledEditable: false );
                             }
 
                             break;
@@ -3197,7 +3521,7 @@ namespace Rock.Blocks.Event
                         case RegistrationPersonFieldType.WorkPhone:
                             if ( IsFieldUnlockedForEditing( field, personService.GetPhoneNumber( person, workNumberDefinedValue )?.Number ) )
                             {
-                                SavePhone( fieldValue, person, Rock.SystemGuid.DefinedValue.PERSON_PHONE_TYPE_WORK.AsGuid(), personChanges );
+                                SavePhone( fieldValue, person, Rock.SystemGuid.DefinedValue.PERSON_PHONE_TYPE_WORK.AsGuid(), personChanges, isMessagingEnabledEditable: false );
                             }
 
                             break;
@@ -3260,7 +3584,10 @@ namespace Rock.Blocks.Event
                     }
                 }
 
-                field.NoteFieldDetailsIfRequiredAndMissing( MissingFieldsByFormId, fieldValue );
+                if ( MissingFieldsByFormId != null )
+                {
+                    field.NoteFieldDetailsIfRequiredAndMissing( MissingFieldsByFormId, fieldValue );
+                }
             }
 
             return (campusId, location, updateExistingCampus);
@@ -3323,7 +3650,10 @@ namespace Rock.Blocks.Event
                             }
                         }
                     }
+                }
 
+                if ( MissingFieldsByFormId != null && ( !registrantInfo.IsOnWaitList || field.ShowOnWaitlist ) )
+                {
                     field.NoteFieldDetailsIfRequiredAndMissing( MissingFieldsByFormId, fieldValue );
                 }
             }
@@ -3356,9 +3686,9 @@ namespace Rock.Blocks.Event
             Dictionary<Guid, int> multipleFamilyGroupIds,
             ref int? singleFamilyId,
             bool isWaitlist,
-            bool isCreatedAsRegistrant,
             bool isNewRegistration,
-            List<Action> postSaveActions )
+            List<Action> postSaveActions,
+            RegistrationEntryArgsBag args )
         {
             // Force waitlist if specified by param, but allow waitlist if requested
             isWaitlist |= ( context.RegistrationSettings.IsWaitListEnabled && registrantInfo.IsOnWaitList );
@@ -3366,11 +3696,12 @@ namespace Rock.Blocks.Event
             var personService = new PersonService( rockContext );
             var registrationInstanceService = new RegistrationInstanceService( rockContext );
             var registrantService = new RegistrationRegistrantService( rockContext );
+            var registrationTemplateService = new RegistrationTemplateService( rockContext );
 
             var registrantChanges = new History.HistoryChangeList();
             var personChanges = new History.HistoryChangeList();
 
-            var (person, registrant) = GetExistingOrCreatePerson( context, registrantInfo, registrar, registrarFamilyGuid, isCreatedAsRegistrant, rockContext );
+            var (person, registrant) = GetExistingOrCreatePerson( context, registrantInfo, registrar, registrarFamilyGuid, rockContext, args );
 
             var familyGroupType = GroupTypeCache.Get( Rock.SystemGuid.GroupType.GROUPTYPE_FAMILY );
             var adultRoleId = familyGroupType.Roles
@@ -3408,6 +3739,33 @@ namespace Rock.Blocks.Event
 
             if ( registrant == null )
             {
+                var registrationTemplate = registrationTemplateService.Get( context.RegistrationSettings.RegistrationTemplateId );
+                var registrantEligibilityEvaluator = registrationTemplateService.GetRegistrantEligibility( registrationTemplate );
+
+                // If a new registrant is being created (this is a new registration or a new registrant is being added to an existing one),
+                // check if the person is eligible, and optionally, if the person has been registered before.
+                if ( !registrantEligibilityEvaluator.Evaluate( person, out var friendlyError ) )
+                {
+                    // Throw an exception to rollback the transaction and display a friendly error message in the browser.
+                    throw new InvalidOperationException( friendlyError );
+                }
+
+                if ( registrationTemplate.AreDuplicateRegistrantsPrevented )
+                {
+                    var isPersonAlreadyRegistered = registrantService
+                        .Queryable()
+                        .Any( rr =>
+                            rr.Registration.RegistrationInstanceId == context.RegistrationSettings.RegistrationInstanceId
+                            && rr.Guid != registrantInfo.Guid
+                            && rr.PersonAlias.PersonId == person.Id );
+
+                    if ( isPersonAlreadyRegistered )
+                    {
+                        // Throw an exception to rollback the transaction and display a friendly error message in the browser.
+                        throw new InvalidOperationException( $"{person.FullName} has already been registered." );
+                    }
+                }
+
                 registrant = new RegistrationRegistrant
                 {
                     Guid = registrantInfo.Guid,
@@ -3465,6 +3823,8 @@ namespace Rock.Blocks.Event
                 {
                     var totalFeeQuantity = 0;
                     var feeItemModels = feeModel.FeeItems.ToList();
+                    var isFeeUsageAutoReduced = false;
+                    var hasRequiredFeeItem = false;
 
                     for ( var i = 0; i < feeItemModels.Count; i++ )
                     {
@@ -3490,22 +3850,32 @@ namespace Rock.Blocks.Event
                         if ( countRemaining.HasValue && countRemaining < quantity )
                         {
                             quantity = countRemaining.Value;
+                            isFeeUsageAutoReduced = true;
                         }
 
                         // Don't allow selecting more than 1 if not allowed
                         if ( !feeModel.AllowMultiple && quantity > 1 )
                         {
                             quantity = 1;
+                            isFeeUsageAutoReduced = true;
                         }
 
                         // Don't allow selecting any if other items of this fee are already selected
                         if ( !feeModel.AllowMultiple && totalFeeQuantity > 0 )
                         {
                             quantity = 0;
+                            isFeeUsageAutoReduced = true;
                         }
 
                         // Check if the item is selected (either actually selected or not allowed to be selected)
-                        if ( quantity < 1 )
+                        if ( quantity >= 1 )
+                        {
+                            if ( feeModel.IsRequired )
+                            {
+                                hasRequiredFeeItem = true;
+                            }
+                        }
+                        else if ( quantity < 1 )
                         {
                             // The item is not selected, so remove it if it already exists
                             if ( registrantFee != null )
@@ -3546,6 +3916,16 @@ namespace Rock.Blocks.Event
                         History.EvaluateChange( registrantChanges, feeName + " Cost", registrantFee.Cost, feeItemModel.Cost );
                         registrantFee.Cost = feeItemModel.Cost;
                     }
+
+                    // Only check if a required fee is missing if the fee is currently active. Inactive fees are not required.
+                    if ( feeModel.IsActive && feeModel.IsRequired && !hasRequiredFeeItem )
+                    {
+                        var cannotAccommodateQuantitySuffix = isFeeUsageAutoReduced
+                                ? $", but is no longer available{( feeModel.AllowMultiple ? " in the selected quantity" : string.Empty )}"
+                                : string.Empty;
+
+                        throw new InvalidOperationException( $"{feeModel.Name} is required{cannotAccommodateQuantitySuffix}." );
+                    }
                 }
             }
 
@@ -3584,7 +3964,13 @@ namespace Rock.Blocks.Event
                     var documentTemplate = new SignatureDocumentTemplateService( rockContext ).Get( context.RegistrationSettings.SignatureDocumentTemplateId ?? 0 );
 
                     // Get the signed document data and encode any string data that was sent by the front-end.
-                    var signedData = Encryption.DecryptString( registrantInfo.SignatureData ).FromJsonOrThrow<SignedDocumentData>();
+                    var signedData = Encryption.DecryptStringForPurpose( registrantInfo.SignatureData, SignedDocumentDataEncryptionPurpose )?.FromJsonOrNull<SignedDocumentData>();
+
+                    if ( signedData == null )
+                    {
+                        throw new Exception( InvalidSignedDocumentMessage );
+                    }
+
                     signedData.SignatureData = signedData.SignatureData.EncodeHtml();
                     signedData.SignedByName = signedData.SignedByName.EncodeHtml();
                     signedData.SignedByEmail = signedData.SignedByEmail.EncodeHtml();
@@ -3640,7 +4026,7 @@ namespace Rock.Blocks.Event
         /// <param name="rockContext">The <see cref="RockContext"/> to use for data access.</param>
         /// <param name="context">The <see cref="RegistrationContext"/> to use for merge fields.</param>
         /// <param name="registrantInfo">The <see cref="RegistrantBag"/> to use for merge fields.</param>
-        /// <param name="person">The <see cref="Person"/> to use for merge fields.</param>
+        /// <param name="person">The <see cref="Model.Person"/> to use for merge fields.</param>
         /// <param name="campusId">The identifier of the <see cref="Campus"/> to use for merge fields.</param>
         /// <param name="location">The <see cref="Location"/> to use for merge fields.</param>
         /// <param name="documentTemplate">The <see cref="SignatureDocumentTemplate"/> to get the LavaTemplate from.</param>
@@ -3655,9 +4041,12 @@ namespace Rock.Blocks.Event
             {
                 var group = new GroupService( rockContext ).Get( groupId.Value );
 
-                groupMember = BuildGroupMember( person, group, context.RegistrationSettings );
-                groupMember.LoadAttributes( rockContext );
-                UpdateGroupMemberAttributes( groupMember, registrantInfo, context.RegistrationSettings );
+                if ( group != null )
+                {
+                    groupMember = BuildGroupMember( person, group, context.RegistrationSettings );
+                    groupMember.LoadAttributes( rockContext );
+                    UpdateGroupMemberAttributes( groupMember, registrantInfo, context.RegistrationSettings );
+                }
             }
 
             // Prepare the merge fields.
@@ -3722,14 +4111,23 @@ namespace Rock.Blocks.Event
 
                 if ( attribute is null )
                 {
+                    if ( MissingFieldsByFormId != null && ( !registrantInfo.IsOnWaitList || field.ShowOnWaitlist ) )
+                    {
+                        field.NoteFieldDetailsIfRequiredAndMissing( MissingFieldsByFormId, null );
+                    }
+
                     continue;
                 }
 
+                var originalValue = registrant.GetAttributeValue( attribute.Key );
+                var finalValue = originalValue;
+
                 if ( IsFieldUnlockedForEditing( field, registrant, attribute.Key ) )
                 {
-                    var originalValue = registrant.GetAttributeValue( attribute.Key );
                     var newValue = registrantInfo.FieldValues.GetValueOrNull( field.Guid ).ToStringSafe();
                     newValue = PublicAttributeHelper.GetPrivateValue( attribute, newValue );
+
+                    finalValue = newValue;
 
                     registrant.SetAttributeValue( attribute.Key, newValue );
 
@@ -3750,8 +4148,11 @@ namespace Rock.Blocks.Event
                         isChanged = true;
                         History.EvaluateChange( registrantChanges, attribute.Name, formattedOriginalValue, formattedNewValue );
                     }
+                }
 
-                    field.NoteFieldDetailsIfRequiredAndMissing( MissingFieldsByFormId, newValue );
+                if ( MissingFieldsByFormId != null && ( !registrantInfo.IsOnWaitList || field.ShowOnWaitlist ) )
+                {
+                    field.NoteFieldDetailsIfRequiredAndMissing( MissingFieldsByFormId, finalValue );
                 }
             }
 
@@ -3866,7 +4267,7 @@ namespace Rock.Blocks.Event
                         }
                     }
 
-                    successViewModel = GetSuccessViewModel( context.Registration.Id, context.TransactionCode, context.GatewayPersonIdentifier );
+                    successViewModel = GetSuccessViewModel( context.Registration.Id, context.RegistrationSettings.FinancialGatewayId, context.TransactionCode, context.GatewayPersonIdentifier );
                 }
             }
 
@@ -3875,7 +4276,22 @@ namespace Rock.Blocks.Event
             var formModels = context.RegistrationSettings
                 .Forms?.OrderBy( f => f.Order ).ToList() ?? new List<RegistrationTemplateForm>();
 
-            // Get family members
+            // Get family members.
+            // Include ineligible family members in the list as disabled options with the appended text "(Ineligible)".
+            // Do not exclude family members who have already registered. They will still be displayed in the dropdown but a warning will be displayed if they are selected.
+            var registrationTemplateService = new RegistrationTemplateService( rockContext );
+            var registrationTemplate = registrationTemplateService.Get( context.RegistrationSettings.RegistrationTemplateId );
+            var registrantEligibilityEvaluator = registrationTemplateService.GetRegistrantEligibility( registrationTemplate );
+
+            // Use Lax mode here so that a family member who is missing data needed by an
+            // eligibility requirement (e.g. age, grade) is still surfaced in the dropdown
+            // as "potentially eligible" rather than being marked Ineligible. The strict
+            // check is still enforced at registration submission.
+            var familyMemberEligibilityOptions = new RegistrantEligibilityEvaluationOptions
+            {
+                Mode = RegistrantEligibilityEvaluationMode.Lax
+            };
+
             var currentPerson = GetCurrentPerson();
             var familyMembers = context.RegistrationSettings.AreCurrentFamilyMembersShown ?
                 currentPerson.GetFamilyMembers( true, rockContext )
@@ -3891,10 +4307,32 @@ namespace Rock.Blocks.Event
                         Guid = gm.Person.Guid,
                         FamilyGuid = gm.FamilyGuid,
                         FullName = gm.Person.FullName,
-                        FieldValues = GetCurrentValueFieldValues( context, rockContext, gm.Person, null, formModels, false )
+                        FieldValues = GetCurrentValueFieldValues( context, rockContext, gm.Person, null, formModels, false ),
+                        IsIneligible = !registrantEligibilityEvaluator.Evaluate( gm.Person, familyMemberEligibilityOptions )
                     } )
                     .ToList() :
                     new List<RegistrationEntryFamilyMemberBag>();
+
+            // Mark the family members who have already been registered for this event.
+            // This is used for browser validation if a registered family member is selected.
+            var familyMembersDictionary = familyMembers.ToDictionary( m => m.Guid, m => m );
+            var registrationId = context.Registration?.Id;
+            var registeredFamilyMembersGuids = familyMembersDictionary.Any()
+                ? new RegistrationRegistrantService( rockContext )
+                    .Queryable()
+                    .Where( rr =>
+                        rr.Registration.RegistrationInstanceId == context.RegistrationSettings.RegistrationInstanceId
+                        && familyMembersDictionary.Keys.Contains( rr.PersonAlias.Person.Guid )
+                        && ( !registrationId.HasValue || registrationId.Value == 0 || registrationId.Value != rr.RegistrationId )
+                    )
+                    .Select( rr => rr.PersonAlias.Person.Guid )
+                    .ToList()
+                : new List<Guid>();
+
+            foreach ( var registeredFamilyMemberGuid in registeredFamilyMembersGuids )
+            {
+                familyMembersDictionary[registeredFamilyMemberGuid].IsRegistrantInAnotherRegistration = true;
+            }
 
             // Get the instructions
             var instructions = context.RegistrationSettings.Instructions;
@@ -4093,15 +4531,18 @@ namespace Rock.Blocks.Event
             // Determine the timeout
             int? timeoutMinutes = null;
 
-            if ( context.SpotsRemaining.HasValue && context.RegistrationSettings.TimeoutMinutes.HasValue )
+            if ( context.SpotsRemaining.HasValue && context.RegistrationSettings.IsTimeoutEnabled && context.RegistrationSettings.MaxAttendees.HasValue && context.RegistrationSettings.MaxAttendees.Value > 0 )
             {
-                var hasMetThreshold =
-                    !context.RegistrationSettings.TimeoutThreshold.HasValue ||
-                    context.SpotsRemaining.Value <= context.RegistrationSettings.TimeoutThreshold.Value;
+                var thresholdPercent = context.RegistrationSettings.TimeoutThreshold
+                    ?? RegistrationInstance.DefaultTimeoutThreshold;
+                var remainingPercent = ( decimal ) context.SpotsRemaining.Value / ( decimal ) context.RegistrationSettings.MaxAttendees.Value * 100m;
+
+                var hasMetThreshold = remainingPercent <= thresholdPercent;
 
                 if ( hasMetThreshold )
                 {
-                    timeoutMinutes = context.RegistrationSettings.TimeoutMinutes.Value;
+                    timeoutMinutes = context.RegistrationSettings.TimeoutMinutes
+                        ?? RegistrationInstance.DefaultTimeoutLength.Minutes;
                 }
             }
 
@@ -4143,9 +4584,9 @@ namespace Rock.Blocks.Event
                         Guid = Guid.NewGuid(),
                         FamilyGuid = currentPerson.PrimaryFamily.Guid,
                         IsOnWaitList = isOnWaitList,
-                        PersonGuid = currentPerson.Guid,
+                        PersonGuid = null,//currentPerson.Guid,
                         FeeItemQuantities = new Dictionary<Guid, int>(),
-                        FieldValues = GetCurrentValueFieldValues( context, rockContext, currentPerson, null, formModels, false )
+                        FieldValues = new Dictionary<Guid, object>(),//GetCurrentValueFieldValues( context, rockContext, currentPerson, null, formModels, false )
                     } );
                 }
                 else
@@ -4173,12 +4614,107 @@ namespace Rock.Blocks.Event
                 }
             }
 
-            // Determine the starting point. External registration updates are
-            // currently only supported if we are not doing inline signatures.
-            var allowExternalRegistrationUpdates = context.RegistrationSettings.AllowExternalRegistrationUpdates && !context.RegistrationSettings.IsInlineSignatureRequired;
+            /*
+                JMH - 1/9/2026
+
+                Track whether any required fees are missing so the fee selection step is shown to the registrar
+                when necessary. This is critical when a registrant is moved off the waitlist and the registrar
+                must complete the registration and select applicable fees.
+
+                Previously, if a signature document was involved, the block always advanced directly to the
+                final step. This caused required fees to be skipped. The block now prioritizes fee selection,
+                even if it requires the signature document to be re-signed.
+             */
+            var requiredFees = fees.Where( fee => fee.IsRequired ).ToList();
+            var isAnyRequiredFeeMissing = requiredFees.Any( requiredFee =>
+            {
+                var isAnyRegistrantMissingTheRequiredFee = session.Registrants.Any( registrant =>
+                    !registrant.FeeItemQuantities.ContainsKey( requiredFee.Guid )
+                );
+
+                if ( isAnyRegistrantMissingTheRequiredFee )
+                {
+                    return true;
+                }
+
+                var doesAnyRegistrantNotHaveAnyOfTheRequiredFee = session.Registrants.Any( registrant =>
+                    registrant.FeeItemQuantities[requiredFee.Guid] <= 0
+                );
+
+                if ( doesAnyRegistrantNotHaveAnyOfTheRequiredFee )
+                {
+                    return true;
+                }
+
+                return false;
+            } );
+
+            /*
+                JMH - 1/9/2026
+
+                Handle registration fields that are configured to be visible only for non waitlist registrants.
+                When a registrar indicates that registrants are on the waitlist, or when capacity forces them
+                onto the waitlist, these fields are intentionally hidden, regardless of whether they are required,
+                and will have no values.
+
+                If a registrant is later moved off the waitlist, the registrar must be prompted to complete the
+                registration and provide values for any newly visible fields. Previously, if a signature document
+                was present, the block forced the registrar directly to the final step, causing these fields
+                to be skipped. The block now ensures all applicable fields are shown before finalizing, even if
+                this requires the signature document to be re-signed.
+             */
+            var nonWaitListRegistrants = session.Registrants
+                .Where( r => !r.IsOnWaitList )
+                .ToList();
+            var formFieldsShownOnlyToNonWaitListRegistrants = context.RegistrationSettings.Forms
+                .SelectMany( f => f.Fields.Where( ff => !ff.ShowOnWaitlist ) )
+                .ToDictionary( f => f.Guid, f => f );
+            var isAnyFieldShownOnlyToNonWaitListRegistrantsMissingAValue =
+                formFieldsShownOnlyToNonWaitListRegistrants.Any( formField =>
+                    nonWaitListRegistrants.Any( registrant =>
+                    {
+                        var isNonWaitListRegistrantMissingFormFieldShownOnlyToNonWaitListRegistrants =
+                            !registrant.FieldValues.ContainsKey( formField.Key );
+
+                        // If the registrant is missing the field entirely, then we know it's missing.
+                        if ( isNonWaitListRegistrantMissingFormFieldShownOnlyToNonWaitListRegistrants )
+                        {
+                            return true;
+                        }
+
+                        var fieldValue = registrant.FieldValues[formField.Key].ToStringSafe();
+                        var isNonWaitListRegistrantMissingValueForFieldShownOnlyToNonWaitListRegistrants = fieldValue.IsNullOrWhiteSpace();
+
+                        // If the field value is empty, then we know it's missing.
+                        if ( isNonWaitListRegistrantMissingValueForFieldShownOnlyToNonWaitListRegistrants )
+                        {
+                            return true;
+                        }
+
+                        // Some field values are stored as a ListItemBag in JSON format.
+                        // A field with a ListItemBag value is considered empty if its value property is empty.
+                        var fieldValueAsListItemBag = fieldValue.FromJsonOrNull<ListItemBag>();
+                        if ( fieldValueAsListItemBag != null && fieldValueAsListItemBag.Value.IsNullOrWhiteSpace() )
+                        {
+                            return true;
+                        }
+
+                        // This field has a value.
+                        return false;
+                    } )
+                );
+
+            // Determine the starting point. 
+            var allowExternalRegistrationUpdates =
+                // External registration updates are supported if enabled and we are not doing inline signatures...
+                ( context.RegistrationSettings.AllowExternalRegistrationUpdates && !context.RegistrationSettings.IsInlineSignatureRequired )
+                // - OR - if there are any required fees that need to be selected by the registrar (signature doc will need to be signed again, if present)
+                || isAnyRequiredFeeMissing
+                // - OR - if there are any fields that need entry for non-waitlist registrants (signature doc will need to be signed again, if present)
+                || isAnyFieldShownOnlyToNonWaitListRegistrantsMissingAValue;
             var allowRegistrationUpdates = !isExistingRegistration || allowExternalRegistrationUpdates;
-            var startAtBeginning = !isExistingRegistration ||
-                ( allowExternalRegistrationUpdates && PageParameter( PageParameterKey.StartAtBeginning ).AsBoolean() );
+            var startAtBeginning = !isExistingRegistration
+                || ( allowExternalRegistrationUpdates && PageParameter( PageParameterKey.StartAtBeginning ).AsBoolean() );
 
             // Adjust the spots remaining if this is an existing registration. Add to the Spots remaining the number of registrants that are not on the waitlist.
             var adjustedSpotsRemaining = isExistingRegistration && session != null
@@ -4199,6 +4735,30 @@ namespace Rock.Blocks.Event
             }
 
             var isPaymentPlanAllowed = context.RegistrationSettings.IsPaymentPlanAllowed;
+
+            RegistrantEligibilityBag registrantEligibilityBag = null;
+            var registrantEligibilitySettings = context.RegistrationSettings.RegistrantEligibilitySettings;
+            if ( registrantEligibilitySettings != null )
+            {
+                // Age classification and data view eligibility must be checked at submission time
+                // since simple validation values cannot be passed to the UI. In the future, we
+                // may add a "pre-check" block action to perform complex eligibility checks on-demand.
+
+                registrantEligibilityBag = new RegistrantEligibilityBag
+                {
+                    MinimumAge = registrantEligibilitySettings.GetEffectiveMinimumAge(),
+                    MinimumAgeBirthDate = registrantEligibilitySettings.GetEffectiveMinimumAgeBirthDate(),
+                    MaximumAge = registrantEligibilitySettings.GetEffectiveMaximumAge(),
+                    MaximumAgeBirthDate = registrantEligibilitySettings.GetEffectiveMaximumAgeBirthDate(),
+                    Gender = registrantEligibilitySettings.Gender,
+                    // Add Grade DefinedValue Guids since the GradePicker values are Guids.
+                    // Null means any grade is valid.
+                    Grades = registrantEligibilitySettings
+                        .GetGradeDefinedValues()
+                        ?.Select( g => g.Guid )
+                        .ToList()
+                };
+            }
 
             var currencyInfo = new RockCurrencyCodeInfo();
             var viewModel = new RegistrationEntryInitializationBox
@@ -4307,8 +4867,12 @@ namespace Rock.Blocks.Event
                     .ToList(),
 
                 EnableSaveAccount = enableSavedAccount,
+
+                // Lets the success step hide the save-account option for anonymous savers when
+                // Database auth is off, since that path would otherwise force an unusable login.
+                IsDatabaseAuthEnabled = AuthenticationContainer.GetComponent( SystemGuid.EntityType.AUTHENTICATION_DATABASE )?.IsActive == true,
                 SavedAccounts = savedAccounts,
-                DisableCaptchaSupport = GetAttributeValue( AttributeKey.DisableCaptchaSupport ).AsBoolean(),
+                DisableCaptchaSupport = Captcha.CaptchaService.ShouldDisableCaptcha( GetAttributeValue( AttributeKey.DisableCaptchaSupport ).AsBoolean() ),
 
                 // Payment plan
                 IsPaymentPlanAllowed = isPaymentPlanAllowed,
@@ -4323,6 +4887,10 @@ namespace Rock.Blocks.Event
                     Symbol = currencyInfo.Symbol,
                     SymbolLocation = currencyInfo.SymbolLocation,
                 },
+
+                RegistrantEligibility = registrantEligibilityBag,
+
+                AreDuplicateRegistrantsPrevented = registrationTemplate.AreDuplicateRegistrantsPrevented
             };
 
             if ( context.RegistrationSettings.SignatureDocumentTemplateId.HasValue && context.RegistrationSettings.IsInlineSignatureRequired )
@@ -4920,10 +5488,11 @@ namespace Rock.Blocks.Event
         /// Gets the success view model.
         /// </summary>
         /// <param name="registrationId">The registration identifier.</param>
+        /// <param name="financialGatewayId">The financial gateway identifier that processed the transaction.</param>
         /// <param name="transactionCode">The transaction code.</param>
         /// <param name="gatewayPersonIdentifier">The gateway person identifier.</param>
         /// <returns></returns>
-        private RegistrationEntrySuccessBag GetSuccessViewModel( int registrationId, string transactionCode, string gatewayPersonIdentifier )
+        private RegistrationEntrySuccessBag GetSuccessViewModel( int registrationId, int? financialGatewayId, string transactionCode, string gatewayPersonIdentifier )
         {
             // Create a view model with default values in case anything goes wrong
             var viewModel = new RegistrationEntrySuccessBag
@@ -4936,6 +5505,28 @@ namespace Rock.Blocks.Event
                 RegisteredCount = 0,
                 WaitListedCount = 0,
             };
+
+            // Allow the payment method used for this transaction to be saved
+            // for future use.
+            if ( financialGatewayId.HasValue && transactionCode.IsNotNullOrWhiteSpace() && gatewayPersonIdentifier.IsNotNullOrWhiteSpace() )
+            {
+                Guid? financialGatewayGuid;
+
+                using ( var gatewayRockContext = new RockContext() )
+                {
+                    financialGatewayGuid = new FinancialGatewayService( gatewayRockContext ).GetGuid( financialGatewayId.Value );
+                }
+
+                if ( financialGatewayGuid.HasValue )
+                {
+                    var grant = new SecurityGrant()
+                        .AddRule( new Rock.Security.SecurityGrantRules.SaveFinancialAccountSecurityGrantRule( financialGatewayGuid.Value, transactionCode, gatewayPersonIdentifier ) );
+
+                    grant.SetLifetime( TimeSpan.FromMinutes( 60 ) );
+
+                    viewModel.SaveAccountSecurityGrantToken = grant.ToToken();
+                }
+            }
 
             try
             {
@@ -5266,7 +5857,7 @@ namespace Rock.Blocks.Event
                 ActivePaymentPlan = activePaymentPlan?.AsRegistrationPaymentPlanBag(),
                 PreviouslyPaid = alreadyPaid,
                 Slug = PageParameter( PageParameterKey.Slug ),
-                GroupId = PageParameter( PageParameterKey.GroupId ).AsIntegerOrNull()
+                GroupId = GetRegistrationGroupId( rockContext, registrationContext.RegistrationSettings.RegistrationInstanceId )
             };
 
             // Add attributes about the registration itself
@@ -5345,6 +5936,56 @@ namespace Rock.Blocks.Event
         }
 
         /// <summary>
+        /// Determines whether the registration belongs to the person. The person
+        /// must be either the registrar or the person that created the registration.
+        /// </summary>
+        /// <param name="registration">The registration to check.</param>
+        /// <param name="person">The person to check, usually the current person.</param>
+        /// <returns><c>true</c> if the registration belongs to the person; otherwise <c>false</c>.</returns>
+        private static bool IsRegistrationOwnedByPerson( Registration registration, Person person )
+        {
+            if ( registration == null || person == null )
+            {
+                return false;
+            }
+
+            return registration.PersonAlias?.PersonId == person.Id
+                || registration.CreatedByPersonAlias?.PersonId == person.Id;
+        }
+
+        /// <summary>
+        /// Determines whether the person's current values may be returned to
+        /// the current person when getting default field values. The person
+        /// must be the current person, a member of their family or a registrant
+        /// of the current person's registration.
+        /// </summary>
+        /// <param name="rockContext">The Rock database context.</param>
+        /// <param name="person">The person whose values would be returned.</param>
+        /// <param name="currentPerson">The current person.</param>
+        /// <param name="registration">The existing registration that belongs to the current person, may be <c>null</c>.</param>
+        /// <returns><c>true</c> if the person's values may be returned; otherwise <c>false</c>.</returns>
+        private static bool IsPersonAvailableForDefaultValues( RockContext rockContext, Person person, Person currentPerson, Registration registration )
+        {
+            if ( registration != null && registration.Registrants.Any( r => r.PersonAlias?.PersonId == person.Id ) )
+            {
+                return true;
+            }
+
+            if ( currentPerson == null )
+            {
+                return false;
+            }
+
+            if ( currentPerson.Id == person.Id )
+            {
+                return true;
+            }
+
+            return currentPerson.GetFamilyMembers( true, rockContext )
+                .Any( gm => gm.PersonId == person.Id );
+        }
+
+        /// <summary>
         /// Gets the context.
         /// </summary>
         /// <param name="rockContext">The rock context.</param>
@@ -5356,7 +5997,7 @@ namespace Rock.Blocks.Event
             var currentPerson = GetCurrentPerson();
             var registrationInstanceId = GetRegistrationInstanceId( rockContext );
             var registrationService = new RegistrationService( rockContext );
-            var disableCaptcha = GetAttributeValue( AttributeKey.DisableCaptchaSupport ).AsBoolean() || string.IsNullOrWhiteSpace( SystemSettings.GetValue( SystemKey.SystemSetting.CAPTCHA_SITE_KEY ) );
+            var disableCaptcha = Captcha.CaptchaService.ShouldDisableCaptcha( GetAttributeValue( AttributeKey.DisableCaptchaSupport ).AsBoolean() );
 
             // Basic check on the args to see that they appear valid
             if ( args == null )
@@ -5381,6 +6022,35 @@ namespace Rock.Blocks.Event
             if ( context == null )
             {
                 return null;
+            }
+
+            // Make sure an existing registration belongs to the current person,
+            // the same way it is verified when the registration is first loaded.
+            if ( context.Registration != null && !IsRegistrationOwnedByPerson( context.Registration, currentPerson ) )
+            {
+                errorMessage = "Your existing registration was not found";
+                return null;
+            }
+
+            // The wait list flag comes from the client and registrants on the wait
+            // list are not charged. When the template has no wait list nobody new can
+            // be put on it, so clear the flag before any costs or spots are calculated.
+            // Registrants already saved on the wait list keep it, in case the wait list
+            // was turned off after they were added to it.
+            if ( !context.RegistrationSettings.IsWaitListEnabled )
+            {
+                var waitListedRegistrantGuids = context.Registration?.Registrants
+                    .Where( r => r.OnWaitList )
+                    .Select( r => r.Guid )
+                    .ToList() ?? new List<Guid>();
+
+                foreach ( var registrant in args.Registrants )
+                {
+                    if ( !waitListedRegistrantGuids.Contains( registrant.Guid ) )
+                    {
+                        registrant.IsOnWaitList = false;
+                    }
+                }
             }
 
             // Validate the amount to pay today
@@ -5424,7 +6094,8 @@ namespace Rock.Blocks.Event
             var registrationInstanceService = new RegistrationInstanceService( rockContext );
 
             var costs = registrationInstanceService.GetRegistrationCostSummaryInfo( context, args.AsArgsOrNull() );
-            var totalDiscountedCost = costs.Sum( c => c.DiscountedCost );
+
+            var totalDiscountedCost = costs.Sum( c => c.DiscountedCost ).AsCurrency();
 
             if ( context.Registration != null )
             {
@@ -5692,6 +6363,13 @@ namespace Rock.Blocks.Event
                 return;
             }
 
+            // Never allow a registration to add people to a security role.
+            if ( group.IsSecurityRole || group.GroupTypeId == GroupTypeCache.GetSecurityRoleGroupType()?.Id )
+            {
+                ExceptionLogService.LogException( new Exception( $"Registrants of Registration {registration.Id} (Registration Instance {registration.RegistrationInstanceId}) were not added to Group {group.Id} because it is a security role." ) );
+                return;
+            }
+
             foreach ( var registrant in registration.Registrants.Where( r => !r.OnWaitList && r.PersonAliasId.HasValue ).ToList() )
             {
                 var personAlias = personAliasService.Get( registrant.PersonAliasId.Value );
@@ -5766,9 +6444,9 @@ namespace Rock.Blocks.Event
         /// <param name="signatureDocumentTemplate">The signature document template.</param>
         /// <param name="documentData">The document data from a previous signing session.</param>
         /// <param name="entity">The entity that should be associated with the document.</param>
-        /// <param name="signedBy">The <see cref="Person"/> that signed the document.</param>
-        /// <param name="assignedTo">The <see cref="Person"/> that is the responsible party for signing the document.</param>
-        /// <param name="appliesTo">The <see cref="Person"/> that this document will apply to.</param>
+        /// <param name="signedBy">The <see cref="Model.Person"/> that signed the document.</param>
+        /// <param name="assignedTo">The <see cref="Model.Person"/> that is the responsible party for signing the document.</param>
+        /// <param name="appliesTo">The <see cref="Model.Person"/> that this document will apply to.</param>
         /// <returns>A <see cref="SignatureDocument"/> object that can be saved to the database.</returns>
         private static SignatureDocument CreateSignatureDocument( SignatureDocumentTemplate signatureDocumentTemplate, SignedDocumentData documentData, Person signedBy, Person assignedTo, Person appliesTo, String registrantName, String registrationInstanceName )
         {
@@ -5832,7 +6510,14 @@ namespace Rock.Blocks.Event
 
         #endregion Helpers
 
-        #region Internal Classes
+        #region Internal Types
+
+        private enum SubmitRegistrationResult
+        {
+            Success,
+            CapacityFullFailure,
+            FinancialAccountFailure
+        }
 
         /// <summary>
         /// Provides a custom registration object that is used during Lava merge
@@ -6039,6 +6724,837 @@ namespace Rock.Blocks.Event
             public DateTime SignedDateTime { get; set; }
         }
 
-        #endregion
+        /// <summary>
+        /// A POCO used to hold information about a registrant that is missing required fields for logging purposes.
+        /// </summary>
+        private class LogMissingFields
+        {
+            public DateTime CurrentRockDateTime { get; set; } = RockDateTime.Now;
+            public int RegistrationTemplateId { get; set; }
+            public int RegistrationInstanceId { get; set; }
+            public string InstanceOrTemplateName { get; set; }
+            public int? RegistrationId { get; set; }
+            public int? MaxRegistrants { get; set; }
+            public int? MaxAttendees { get; set; }
+            public int? SpotsRemaining { get; set; }
+            public bool IsTimeoutEnabled { get; set; }
+            public int? TimeoutMinutes { get; set; }
+            public int? TimeoutThreshold { get; set; }
+            public bool IsWaitlistEnabled { get; set; }
+            public bool AreCurrentFamilyMembersShown { get; set; }
+            public int? CurrentPersonId { get; set; }
+            public string CurrentPersonName { get; set; }
+            public RegistrarBag Registrar { get; set; }
+            public string RegistrantIndexPosition { get; set; }
+            public RegistrantBag Registrant { get; set; }
+            public List<LogMissingField> MissingFields { get; set; }
+            public List<LogTemplateForm> ExpectedForms { get; set; }
+        }
+
+        /// <summary>
+        /// A POCO used to hold information about a missing field for logging purposes.
+        /// </summary>
+        private class LogMissingField
+        {
+            public int TemplateFormId { get; set; }
+            public Guid TemplateFormFieldGuid { get; set; }
+            public string TemplateFormFieldName { get; set; }
+        }
+
+        /// <summary>
+        /// A POCO used to hold a simplified version of a <see cref="RegistrationTemplateForm"/> for logging purposes.
+        /// </summary>
+        private class LogTemplateForm
+        {
+            public int Id { get; set; }
+            public Guid Guid { get; set; }
+            public DateTime? CreatedDateTime { get; set; }
+            public DateTime? ModifiedDateTime { get; set; }
+            public string Name { get; set; }
+            public int Order { get; set; }
+            public List<LogTemplateFormField> Fields { get; set; }
+
+            public LogTemplateForm( RegistrationTemplateForm model )
+            {
+                Id = model.Id;
+                Guid = model.Guid;
+                CreatedDateTime = model.CreatedDateTime;
+                ModifiedDateTime = model.ModifiedDateTime;
+                Name = model.Name;
+                Order = model.Order;
+                Fields = model.Fields
+                    .OrderBy( f => f.Order )
+                    .Select( f => new LogTemplateFormField( f ) )
+                    .ToList();
+            }
+        }
+
+        /// <summary>
+        /// A POCO used to hold a simplified version of a <see cref="RegistrationTemplateFormField"/> for logging purposes.
+        /// </summary>
+        private class LogTemplateFormField
+        {
+            public int Id { get; set; }
+            public Guid Guid { get; set; }
+            public DateTime? CreatedDateTime { get; set; }
+            public DateTime? ModifiedDateTime { get; set; }
+            public string FieldSource { get; set; }
+            public string PersonFieldType { get; set; }
+            public int? AttributeId { get; set; }
+            public string AttributeName { get; set; }
+            public int? AttributeFieldTypeId { get; set; }
+            public string AttributeFieldTypeName { get; set; }
+            public bool IsSharedValue { get; set; }
+            public bool IsInternal { get; set; }
+            public bool ShowCurrentValue { get; set; }
+            public string PreText { get; set; }
+            public string PostText { get; set; }
+            public bool IsGridField { get; set; }
+            public bool IsRequired { get; set; }
+            public int Order { get; set; }
+            public bool ShowOnWaitlist { get; set; }
+            public string FieldVisibilityRulesJSON { get; set; }
+            public bool IsLockedIfValuesExist { get; set; }
+
+            public LogTemplateFormField( RegistrationTemplateFormField model )
+            {
+                Id = model.Id;
+                Guid = model.Guid;
+                CreatedDateTime = model.CreatedDateTime;
+                ModifiedDateTime = model.ModifiedDateTime;
+                FieldSource = model.FieldSource.ConvertToString();
+                PersonFieldType = model.PersonFieldType.ConvertToString();
+                AttributeId = model.AttributeId;
+                AttributeName = model.Attribute?.Name;
+                AttributeFieldTypeId = model.Attribute?.FieldTypeId;
+                AttributeFieldTypeName = model.Attribute?.FieldType.Name;
+                IsSharedValue = model.IsSharedValue;
+                IsInternal = model.IsInternal;
+                ShowCurrentValue = model.ShowCurrentValue;
+                PreText = model.PreText;
+                PostText = model.PostText;
+                IsGridField = model.IsGridField;
+                IsRequired = model.IsRequired;
+                Order = model.Order;
+                ShowOnWaitlist = model.ShowOnWaitlist;
+                FieldVisibilityRulesJSON = model.FieldVisibilityRulesJSON;
+                IsLockedIfValuesExist = model.IsLockedIfValuesExist;
+            }
+        }
+
+        #region Registrar Person Resolver
+
+        /// <summary>
+        /// Defines a contract for resolving a registrar person during a registration process.
+        /// </summary>
+        public interface IRegistrarPersonResolver
+        {
+            /// <summary>
+            /// Resolves registrar person information based on the specified context.
+            /// </summary>
+            /// <param name="context">The context containing the criteria and data required to resolve registrar person information.</param>
+            /// <returns>
+            /// A <see cref="ResolveRegistrarPersonResult"/> object containing the results of the resolution operation.
+            /// This will never be <see langword="null"/> but the <see cref="ResolveRegistrarPersonResult.Person"/>
+            /// can be <see langword="null"/> if a registrar person isn't resolved.
+            /// </returns>
+            ResolveRegistrarPersonResult Resolve( ResolveRegistrarPersonContext context );
+        }
+
+        /// <summary>
+        /// Provides contextual information required to resolve a registrar person during a registration process.
+        /// </summary>
+        /// <remarks>This context object aggregates relevant data such as the current database context,
+        /// registration context, input arguments, the current person, and the registration entry block. It is typically
+        /// used within registration workflows to facilitate person resolution and related operations.</remarks>
+        public class ResolveRegistrarPersonContext
+        {
+            /// <summary>
+            /// Gets or sets the RockContext for database access.
+            /// </summary>
+            public RockContext RockContext { get; set; }
+
+            /// <summary>
+            /// Gets or sets whether the registration is new.
+            /// </summary>
+            public bool IsNewRegistration { get; set; }
+
+            /// <summary>
+            /// Gets or sets the registrar option.
+            /// </summary>
+            public RegistrarOption RegistrarOption { get; set; }
+
+            /// <summary>
+            /// Gets or sets the entered registrar first name.
+            /// </summary>
+            public string RegistrarFirstName { get; set; }
+
+            /// <summary>
+            /// Gets or sets the entered registrar last name.
+            /// </summary>
+            public string RegistrarLastName { get; set; }
+
+            /// <summary>
+            /// Gets or sets the entered registrar confirmation email address.
+            /// </summary>
+            public string RegistrarConfirmationEmail { get; set; }
+
+            /// <summary>
+            /// Gets or sets the logged in person.
+            /// </summary>
+            public Person CurrentPerson { get; set; }
+
+            /// <summary>
+            /// Gets or sets the value of the first name field.
+            /// </summary>
+            public string FirstRegistrantFirstNameFieldValue { get; set; }
+
+            /// <summary>
+            /// Gets or sets the value of the last name field.
+            /// </summary>
+            public string FirstRegistrantLastNameFieldValue { get; set; }
+
+            /// <summary>
+            /// Gets or sets the value of the email field.
+            /// </summary>
+            public string FirstRegistrantEmailFieldValue { get; set; }
+
+            /// <summary>
+            /// Gets or sets the value of the birthdate field.
+            /// </summary>
+            public DateTime? FirstRegistrantBirthdateFieldValue { get; set; }
+
+            /// <summary>
+            /// Gets or sets the value of the mobile phone number field.
+            /// </summary>
+            public string FirstRegistrantMobilePhoneFieldValue { get; set; }
+
+            /// <summary>
+            /// Gets or sets the existing registration registrar person.
+            /// </summary>
+            public Person ExistingRegistrationRegistrarPerson { get; set; }
+        }
+
+        /// <summary>
+        /// Represents the result of resolving a registrar person, including the matched person and related resolution details.
+        /// </summary>
+        public class ResolveRegistrarPersonResult
+        {
+            /// <summary>
+            /// Represents an empty result for a registrar person resolution operation.
+            /// </summary>
+            /// <remarks>Use this field to indicate that no registrar person information was found or resolved.</remarks>
+            public static readonly ResolveRegistrarPersonResult None = new ResolveRegistrarPersonResult();
+
+            /// <summary>
+            /// Gets or sets the person associated with this instance.
+            /// </summary>
+            /// <value>The resolved <see cref="Model.Person"/> object for the registrar or <see langword="null"/> if not resolved.</value>
+            public Person Person { get; set; }
+
+            /// <summary>
+            /// Gets or sets a value indicating whether the registrar was resolved from the first registrant.
+            /// </summary>
+            public bool IsResolvedFromFirstRegistrant { get; set; }
+
+            /// <summary>
+            /// If the registrar was resolved from the first registrant (<see cref="IsResolvedFromFirstRegistrant"/>),
+            /// gets or sets the first registrant's email form field value.
+            /// </summary>
+            public string FirstRegistrantEmailFieldValue { get; set; }
+
+            /// <summary>
+            /// Creates a new instance of the ResolveRegistrarPersonResults class using the resolved registrar person.
+            /// </summary>
+            /// <param name="person">The person to include in the result.</param>
+            /// <returns>A <see cref="ResolveRegistrarPersonResult"/> object containing the resolved registrar <see cref="Model.Person"/> object.</returns>
+            public static ResolveRegistrarPersonResult Match( Person person )
+            {
+                return new ResolveRegistrarPersonResult
+                {
+                    Person = person
+                };
+            }
+        }
+
+        /// <inheritdoc/>
+        private class RegistrarPersonResolver : IRegistrarPersonResolver
+        {
+            private readonly List<IRegistrarPersonResolver> _resolvers;
+
+            public RegistrarPersonResolver()
+            {
+                // These are in order of precedence.
+                // The first resolver that returns a person will be used as the registrar.
+                _resolvers = new List<IRegistrarPersonResolver>
+                {
+                    new UseLoggedInPersonForNewRegistrationResolver(),
+                    new UseFirstRegistrantForNewRegistrationResolver(),
+                    new UseExistingRegistrationRegistrarResolver(),
+                    new CurrentPersonMatchesRegistrarNameResolver(),
+                    new MatchRegistrarInfoPersonResolver(),
+                };
+            }
+
+            /// <inheritdoc/>
+            public ResolveRegistrarPersonResult Resolve( ResolveRegistrarPersonContext context )
+            {
+                foreach ( var resolver in _resolvers )
+                {
+                    var results = resolver.Resolve( context );
+
+                    if ( results.Person != null )
+                    {
+                        return results;
+                    }
+                }
+
+                return ResolveRegistrarPersonResult.None;
+            }
+
+            private class UseLoggedInPersonForNewRegistrationResolver : IRegistrarPersonResolver
+            {
+                public ResolveRegistrarPersonResult Resolve( ResolveRegistrarPersonContext context )
+                {
+                    if ( context.IsNewRegistration
+                         && context.RegistrarOption == RegistrarOption.UseLoggedInPerson
+                         && context.CurrentPerson != null )
+                    {
+                        var person = new PersonService( context.RockContext ).Get( context.CurrentPerson.Id );
+
+                        if ( person != null )
+                        {
+                            return ResolveRegistrarPersonResult.Match( person );
+                        }
+                    }
+
+                    return ResolveRegistrarPersonResult.None;
+                }
+            }
+
+            private class UseFirstRegistrantForNewRegistrationResolver : IRegistrarPersonResolver
+            {
+                public ResolveRegistrarPersonResult Resolve( ResolveRegistrarPersonContext context )
+                {
+                    if ( context.IsNewRegistration && context.RegistrarOption == RegistrarOption.UseFirstRegistrant )
+                    {
+                        var personQuery = new PersonService.PersonMatchQuery(
+                            context.FirstRegistrantFirstNameFieldValue,
+                            context.FirstRegistrantLastNameFieldValue,
+                            context.FirstRegistrantEmailFieldValue,
+                            context.FirstRegistrantMobilePhoneFieldValue,
+                            birthDate: context.FirstRegistrantBirthdateFieldValue );
+
+                        // Never update the primary email when we are simply resolving
+                        // as resolving shouldn't have any side-effects.
+                        var person = new PersonService( context.RockContext ).FindPerson( personQuery, updatePrimaryEmail: false );
+                        if ( person != null )
+                        {
+                            return new ResolveRegistrarPersonResult
+                            {
+                                Person = person,
+                                IsResolvedFromFirstRegistrant = true,
+                                FirstRegistrantEmailFieldValue = context.FirstRegistrantEmailFieldValue
+                            };
+                        }
+                    }
+
+                    return ResolveRegistrarPersonResult.None;
+                }
+            }
+
+            private class UseExistingRegistrationRegistrarResolver : IRegistrarPersonResolver
+            {
+                public ResolveRegistrarPersonResult Resolve( ResolveRegistrarPersonContext context )
+                {
+                    if ( context.ExistingRegistrationRegistrarPerson != null )
+                    {
+                        return ResolveRegistrarPersonResult.Match( context.ExistingRegistrationRegistrarPerson );
+                    }
+
+                    return ResolveRegistrarPersonResult.None;
+                }
+            }
+
+            private class CurrentPersonMatchesRegistrarNameResolver : IRegistrarPersonResolver
+            {
+                public ResolveRegistrarPersonResult Resolve( ResolveRegistrarPersonContext context )
+                {
+                    var currentPerson = context.CurrentPerson;
+
+                    if ( currentPerson != null )
+                    {
+                        var firstName = context.RegistrarFirstName;
+                        var lastName = context.RegistrarLastName;
+
+                        var isFirstNameSame = currentPerson.NickName.Trim().Equals( firstName, StringComparison.OrdinalIgnoreCase )
+                            || currentPerson.FirstName.Trim().Equals( firstName, StringComparison.OrdinalIgnoreCase );
+                        var isLastNameSame = currentPerson.LastName.Trim().Equals( lastName, StringComparison.OrdinalIgnoreCase );
+
+                        if ( isFirstNameSame && isLastNameSame )
+                        {
+                            // Registrar is sometimes used with save operations later on
+                            // so we need to load a new person that is in our RockContext.
+                            // Fixes #5624.
+                            var personService = new PersonService( context.RockContext );
+                            var person = personService.Get( currentPerson.Id );
+                            if ( person != null )
+                            {
+                                return ResolveRegistrarPersonResult.Match( person );
+                            }
+                        }
+                    }
+
+                    return ResolveRegistrarPersonResult.None;
+                }
+            }
+
+            private class MatchRegistrarInfoPersonResolver : IRegistrarPersonResolver
+            {
+                public ResolveRegistrarPersonResult Resolve( ResolveRegistrarPersonContext context )
+                {
+                    var firstName = context.RegistrarFirstName;
+                    var lastName = context.RegistrarLastName;
+                    var confirmationEmail = context.RegistrarConfirmationEmail;
+
+                    if ( firstName.IsNullOrWhiteSpace()
+                         && lastName.IsNullOrWhiteSpace()
+                         && confirmationEmail.IsNullOrWhiteSpace() )
+                    {
+                        return ResolveRegistrarPersonResult.None;
+                    }
+
+                    // Never update the primary email when we are simply resolving
+                    // as resolving shouldn't have any side-effects. Think of it as
+                    // searching for the best possible match, not find the best match and update the match.
+                    var person = new PersonService( context.RockContext )
+                        .FindPerson( firstName, lastName, confirmationEmail, updatePrimaryEmail: false );
+                    if ( person != null )
+                    {
+                        return ResolveRegistrarPersonResult.Match( person );
+                    }
+
+                    return ResolveRegistrarPersonResult.None;
+                }
+            }
+        }
+
+        #endregion Registrar Person Resolver
+
+        #region Registrant Person Resolver
+
+        private class ResolveRegistrantPersonContext
+        {
+            /// <summary>
+            /// Gets or sets the current RockContext for database access.
+            /// </summary>
+            public RockContext RockContext { get; set; }
+
+            /// <summary>
+            /// Gets or sets the registrar option configured for the registration template.
+            /// </summary>
+            public RegistrarOption RegistrarOption { get; set; }
+
+            /// <summary>
+            /// Gets or sets the current RegistrationRegistrant from the database loaded at the start of the request.
+            /// </summary>
+            public RegistrationRegistrant ExistingRegistrationRegistrant { get; set; }
+
+            /// <summary>
+            /// Gets or sets a value indicating whether the registrant being processed is the first registrant in the list of registrants for this registration session.
+            /// This is important to know because some of the resolution strategies only apply to the first registrant.
+            /// </summary>
+            public bool IsFirstRegistrant { get; set; }
+
+            /// <summary>
+            /// Gets or sets the registrant information associated with this entity.
+            /// This is the latest information from the form fields for this registrant, which may be different from the RegistrationRegistrant.Person if the person information was edited on the form.
+            /// </summary>
+            public RegistrantBag RegistrantBag { get; set; }
+
+            /// <summary>
+            /// Gets or sets the registrar person (the person registering this registrant).
+            /// </summary>
+            public Person RegistrarPerson { get; set; }
+
+            /// <summary>
+            /// Gets or sets the list of person IDs that have been registered during the current session.
+            /// </summary>
+            public List<int> SessionRegisteredPersonIds { get; set; }
+
+            /// <summary>
+            /// Gets or sets the logged in person.
+            /// </summary>
+            public Person CurrentPerson { get; set; }
+
+            /// <summary>
+            /// Gets or sets the value of the first name field.
+            /// </summary>
+            public string FirstNameFieldValue { get; set; }
+
+            /// <summary>
+            /// Gets or sets the value of the last name field.
+            /// </summary>
+            public string LastNameFieldValue { get; set; }
+
+            /// <summary>
+            /// Gets or sets the value of the email field.
+            /// </summary>
+            public string EmailFieldValue { get; set; }
+
+            /// <summary>
+            /// Gets or sets the value of the birthdate field.
+            /// </summary>
+            public DateTime? BirthdateFieldValue { get; set; }
+
+            /// <summary>
+            /// Gets or sets the value of the mobile phone number field.
+            /// </summary>
+            public string MobilePhoneFieldValue { get; set; }
+
+            /// <summary>
+            /// Determines whether the specified person's name matches the form's first and last name fields.
+            /// </summary>
+            /// <remarks>The comparison is case-insensitive. The first name field matches if either
+            /// the person's first name or nickname matches the form's first name field.</remarks>
+            /// <param name="person">The person whose name is compared to the form's name fields. Cannot be null.</param>
+            /// <returns>true if the person's first name or nickname matches the form's first name field and the last name
+            /// matches the form's last name field; otherwise, false.</returns>
+            public bool IsRegistrantFormNameMatch( Person person )
+            {
+                if ( person == null )
+                {
+                    return false;
+                }
+
+                var isFirstNameMatch =
+                    person.FirstName.Equals( FirstNameFieldValue, StringComparison.OrdinalIgnoreCase )
+                    || person.NickName.Equals( FirstNameFieldValue, StringComparison.OrdinalIgnoreCase );
+
+                var isLastNameMatch =
+                    person.LastName.Equals( LastNameFieldValue, StringComparison.OrdinalIgnoreCase );
+
+                return isFirstNameMatch && isLastNameMatch;
+            }
+        }
+
+        private class ResolveRegistrantPersonResult
+        {
+            /// <summary>
+            /// Represents a default, empty result indicating that no registrant person was resolved.
+            /// </summary>
+            public static readonly ResolveRegistrantPersonResult None = new ResolveRegistrantPersonResult();
+
+            /// <summary>
+            /// Gets or sets the resolved person for the registrant.
+            /// </summary>
+            /// <value>The resolved <see cref="Model.Person"/> object for the registrant or <see langword="null"/> if the registrant person was not resolved.</value>
+            public Person Person { get; set; }
+
+            /// <summary>
+            /// Gets or sets a value indicating whether the person is matched to a single family member of the registrar.
+            /// This is used to determine if the caller wants to run other logic after resolving the person.
+            /// </summary>
+            public bool IsSingleRegistrarFamilyMemberMatch { get; set; }
+
+            /// <summary>
+            /// Gets or sets a value indicating whether the person is matched to a single family member of the current user.
+            /// This is used to determine if the caller wants to run other logic after resolving the person.
+            /// </summary>
+            public bool IsSingleCurrentUserFamilyMemberMatch { get; set; }
+
+            /// <summary>
+            /// Creates a new RegistrantPersonResolveResult for the specified person.
+            /// </summary>
+            /// <param name="person">The person to be wrapped in the resolve result. Cannot be null.</param>
+            /// <returns>A RegistrantPersonResolveResult containing the specified person.</returns>
+            public static ResolveRegistrantPersonResult Match( Person person )
+            {
+                return new ResolveRegistrantPersonResult
+                {
+                    Person = person
+                };
+            }
+        }
+
+        /// <summary>
+        /// Resolves a matching person for a registration registrant.
+        /// If a person cannot be resolved, then null is returned.
+        /// </summary>
+        /// <remarks>
+        /// This was added to help break up a large method that was both resolving
+        /// the registrant person and editing entities. The old method was hard to read
+        /// and understand, making it difficult to maintain and enhance. By separating the resolution logic into its own class,
+        /// we can now easily understand and modify the resolution strategies without having to worry about the side-effects of editing entities.
+        /// </remarks>
+        private interface IRegistrantPersonResolver
+        {
+            /// <summary>
+            /// Resolves a registrant person based on the specified context.
+            /// </summary>
+            /// <param name="context">The context containing information required to resolve the registrant person. Cannot be null.</param>
+            /// <returns>A <see cref="ResolveRegistrantPersonResult"/> representing the outcome of the resolution operation. This will never be null.</returns>
+            ResolveRegistrantPersonResult Resolve( ResolveRegistrantPersonContext context );
+        }
+
+        /// <inheritdoc/>
+        private class RegistrantPersonResolver : IRegistrantPersonResolver
+        {
+            private readonly List<IRegistrantPersonResolver> _resolvers;
+
+            public RegistrantPersonResolver()
+            {
+                // These are resolved in order of precedence.
+                // The first resolver that returns a person will be used as the person for the registrant.
+                // This used to be a bunch of if-else-if blocks
+                // but it was refactored into a list of resolvers to make it easier to read and maintain,
+                // and to allow for easier extension in the future.
+                _resolvers = new List<IRegistrantPersonResolver>
+                {
+                    new ExistingRegistrantPersonResolver(),
+                    new PersonMatchFromFormFieldsResolver(),
+                    new RegistrarFamilyMemberPersonResolver(),
+                    /*
+                         4/26/2024 - JMH
+                
+                         If a person match was not made for the registrant at this point,
+                         and if the registrar is not the authenticated person,
+                         then try to find a match from the authenticated person's family.
+
+                         Duplicate prevention may be enhanced in the future to include suffix
+                         or other identifying information.
+                    */
+                    new CurrentUserFamilyMemberPersonResolver(),
+                    new FirstRegistrantUsesRegistrarResolver(),
+                };
+            }
+
+            /// <inheritdoc/>
+            public ResolveRegistrantPersonResult Resolve( ResolveRegistrantPersonContext context )
+            {
+                foreach ( var resolver in _resolvers )
+                {
+                    var result = resolver.Resolve( context );
+
+                    if ( result.Person != null )
+                    {
+                        return result;
+                    }
+                }
+
+                return ResolveRegistrantPersonResult.None;
+            }
+
+            private class ExistingRegistrantPersonResolver : IRegistrantPersonResolver
+            {
+                /// <inheritdoc/>
+                public ResolveRegistrantPersonResult Resolve( ResolveRegistrantPersonContext context )
+                {
+                    if ( context.ExistingRegistrationRegistrant == null )
+                    {
+                        return ResolveRegistrantPersonResult.None;
+                    }
+
+                    var registrantPerson = context.ExistingRegistrationRegistrant.Person;
+
+                    if ( registrantPerson != null )
+                    {
+                        if ( context.FirstNameFieldValue.IsNullOrWhiteSpace()
+                            && context.LastNameFieldValue.IsNullOrWhiteSpace() )
+                        {
+                            // If the first name and last name fields are blank,
+                            // then we'll assume the existing person is correct
+                            // and use it rather than returning null and potentially creating a new person.
+                            return ResolveRegistrantPersonResult.Match( registrantPerson );
+                        }
+
+                        if ( context.IsRegistrantFormNameMatch( registrantPerson ) )
+                        {
+                            // There is an existing RegistrationRegistrant person and the name matches the current form values,
+                            // so we'll assume it's correct and use that person record.
+                            return ResolveRegistrantPersonResult.Match( registrantPerson );
+                        }
+                    }
+                    else if ( context.RegistrantBag.PersonGuid.HasValue )
+                    {
+                        // Use the PersonGuid on the RegistrantBag to find a person match.
+                        // The PersonGuid comes from the client so it is only honored for
+                        // people the current person is allowed to register. Anyone else
+                        // falls through to the normal person matching.
+                        var person = new PersonService( context.RockContext ).Get( context.RegistrantBag.PersonGuid.Value );
+
+                        if ( person != null && IsPersonAvailableForDefaultValues( context.RockContext, person, context.CurrentPerson, context.ExistingRegistrationRegistrant.Registration ) )
+                        {
+                            return ResolveRegistrantPersonResult.Match( person );
+                        }
+                    }
+
+                    return ResolveRegistrantPersonResult.None;
+                }
+            }
+
+            private class PersonMatchFromFormFieldsResolver : IRegistrantPersonResolver
+            {
+                public ResolveRegistrantPersonResult Resolve( ResolveRegistrantPersonContext context )
+                {
+                    var query = new PersonService.PersonMatchQuery(
+                        context.FirstNameFieldValue,
+                        context.LastNameFieldValue,
+                        context.EmailFieldValue,
+                        context.MobilePhoneFieldValue,
+                        gender: null,
+                        birthDate: context.BirthdateFieldValue );
+
+                    var personService = new PersonService( context.RockContext );
+                    var person = personService.FindPerson( query, updatePrimaryEmail: false );
+
+                    /*
+                        3/12/2026 - JMH
+
+                        If the registrar entered the same exact registrant person details twice,
+                        allow the duplicate person to be returned here so Rock can show an appropriate error message.
+                        The person service already completed complex person matching above, so we need further checks
+                        to determine if there are any other registrants for the same person with the same first and last name
+                        as the registrant being processed. If so, then we'll return that person match here for duplicate error handling.
+
+                        1/8/2024 - JPH
+
+                        We've seen scenarios in which different people (i.e. twins who share an email address) are
+                        mistakenly merged into a single person record because of the way our FindPerson(...) method
+                        works. Rock is correctly attempting to prevent the creation of duplicate person records,
+                        but we need to handle this unique scenario by instead keeping track of the person IDs that
+                        have already been tied to a registrant record within this specific registration session,
+                        and if the FindPerson(...) method returns the same person more than once, we'll force Rock
+                        to create a new person record, at the risk of creating duplicate people. This risk is more
+                        tolerable than the risk of failing to save a Person altogether, as in the twin example above.
+
+                        Reason: Attempt to prevent merging different people based on an over-confident match result.
+                     */
+                    if ( person == null
+                         || ( context.SessionRegisteredPersonIds?.Contains( person.Id ) == true
+                              && !context.IsRegistrantFormNameMatch( person ) ) )
+                    {
+                        return ResolveRegistrantPersonResult.None;
+                    }
+
+                    return ResolveRegistrantPersonResult.Match( person );
+                }
+            }
+
+            private class RegistrarFamilyMemberPersonResolver : IRegistrantPersonResolver
+            {
+                public ResolveRegistrantPersonResult Resolve( ResolveRegistrantPersonContext context )
+                {
+                    if ( context.RegistrarPerson == null )
+                    {
+                        return ResolveRegistrantPersonResult.None;
+                    }
+
+                    var registrarFamilyGuid = context.RegistrarPerson?.GetFamily( context.RockContext )?.Guid;
+                    if ( context.RegistrantBag.FamilyGuid == registrarFamilyGuid )
+                    {
+                        var familyMembers = context.RegistrarPerson.GetFamilyMembers( includeSelf: true, context.RockContext )
+                            .Where( m =>
+                                ( m.Person.FirstName == context.FirstNameFieldValue || m.Person.NickName == context.FirstNameFieldValue )
+                                && m.Person.LastName == context.LastNameFieldValue
+                            )
+                            .Select( m => m.Person )
+                            .ToList();
+
+                        // If there is exactly one family member that matches based on name,
+                        // then use that person.
+                        if ( familyMembers.Count == 1 )
+                        {
+                            return new ResolveRegistrantPersonResult
+                            {
+                                Person = familyMembers.First(),
+                                IsSingleRegistrarFamilyMemberMatch = true
+                            };
+                        }
+
+                        // If there are multiple family members that match based on name,
+                        // find the family member that also matches based on email.
+                        // If there is exactly one match, then use that person.
+                        if ( familyMembers.Count > 1 && context.EmailFieldValue.IsNotNullOrWhiteSpace() )
+                        {
+                            familyMembers = familyMembers
+                                .Where( m =>
+                                    m.Email != null &&
+                                    m.Email.Equals( context.EmailFieldValue, StringComparison.OrdinalIgnoreCase ) )
+                                .ToList();
+
+                            if ( familyMembers.Count == 1 )
+                            {
+                                return ResolveRegistrantPersonResult.Match( familyMembers.First() );
+                            }
+                        }
+                    }
+
+                    return ResolveRegistrantPersonResult.None;
+                }
+            }
+
+            private class CurrentUserFamilyMemberPersonResolver : IRegistrantPersonResolver
+            {
+                public ResolveRegistrantPersonResult Resolve( ResolveRegistrantPersonContext context )
+                {
+                    if ( context.CurrentPerson != null
+                         && context.RegistrarPerson?.PrimaryAliasId != context.CurrentPerson.PrimaryAliasId )
+                    {
+                        var familyMembers = context.CurrentPerson.GetFamilyMembers( includeSelf: true, context.RockContext )
+                            .Where( m =>
+                                ( m.Person.FirstName == context.FirstNameFieldValue || m.Person.NickName == context.FirstNameFieldValue )
+                                && m.Person.LastName == context.LastNameFieldValue
+                            )
+                            .Select( m => m.Person )
+                            .ToList();
+
+                        // If there is exactly one family member that matches based on name,
+                        // then use that person.
+                        if ( familyMembers.Count == 1 )
+                        {
+                            return new ResolveRegistrantPersonResult
+                            {
+                                Person = familyMembers.First(),
+                                IsSingleCurrentUserFamilyMemberMatch = true
+                            };
+                        }
+                    }
+
+                    return ResolveRegistrantPersonResult.None;
+                }
+            }
+
+            private class FirstRegistrantUsesRegistrarResolver : IRegistrantPersonResolver
+            {
+                public ResolveRegistrantPersonResult Resolve( ResolveRegistrantPersonContext context )
+                {
+                    /**
+                      * 06/07/2022 - KA
+                      * 
+                      * Logic is as follows. If the Template RegistrarOption was set to UseFirstRegistrant
+                      * then chances are a Person was created or found for the first Registrant and used
+                      * as the Registrar. In that case then we don't create a new Person for the first
+                      * Registrant. Otherwise we go ahead and create a new Person. This is of Particular
+                      * importance when the AccountProtectionProfilesForDuplicateDetectionToIgnore includes
+                      * AccountProtectionProfile.Low. That means the PersonMatch query will return a null
+                      * any time it is called. This prevents us from creating duplicate Person entities for
+                      * both the Registrar and first Registrant who are the same person in this scenario.
+                      */
+                    if ( context.RegistrarOption == RegistrarOption.UseFirstRegistrant
+                        && context.IsFirstRegistrant
+                        && context.RegistrarPerson != null )
+                    {
+                        return ResolveRegistrantPersonResult.Match( context.RegistrarPerson );
+                    }
+
+                    return ResolveRegistrantPersonResult.None;
+                }
+            }
+        }
+
+        #endregion Registrant Person Resolver
+
+        #endregion Internal Types
     }
 }

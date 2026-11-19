@@ -263,6 +263,25 @@ re-aplicar tras un upgrade, todos marcados en el código con `[VidaReal]`:
 **Datos (no son código):** `Scripts/VidaReal/direcciones-gt.sql`, seed idempotente. Un upgrade de
 Rock no lo borra, pero si se restaura la BD hay que volver a correrlo.
 
+### Modificados del core por choque de nombres (upgrade a 19.8.1, 2026-11-19)
+
+Rock 19.x declara el namespace `Rock.Model.Event.*` (opciones de inscripción) y choca con nuestra
+entidad `Rock.Model.Event` de Eventos (`CS0101`). **No se renombra nuestra entidad**: cambiaría la
+ruta REST `/api/Events`, el `EntityType` 1367 y el Lava guardado en la BD. Se movió el namespace de
+upstream a `Rock.Model.EventRegistrationOptions.*` (misma subestructura), con nota `[VidaReal]` en
+cada archivo:
+
+- Declaran el namespace: `Rock/Model/Event/RegistrationInstance/Options/GetSpotsAvailableOptions.cs`,
+  `Rock/Model/Event/RegistrationTemplate/Options/RegistrantEligibilityEvaluationMode.cs`,
+  `Rock/Model/Event/RegistrationTemplate/Options/RegistrantEligibilityEvaluationOptions.cs`
+- Lo usan (`using`): `Rock.Blocks/Event/RegistrationEntry.cs`,
+  `Rock/Model/Event/RegistrationInstance/RegistrationInstanceService.cs`,
+  `Rock/Model/Event/RegistrationSession/RegistrationSessionService.cs`,
+  `Rock/Model/Event/RegistrationTemplate/RegistrantEligibilityEvaluator.cs`
+
+Repetir en cada upgrade: `git grep -n "Rock\.Model\.Event\."` y cambiar el prefijo en declaraciones
+y `using`. Detalle en `docs/HANDOFF/UPGRADE_19.8.1.md`.
+
 ### CheckIn y asistencia
 - `RockWeb/Blocks/CheckIn/Admin.ascx` + `.cs` — Modificaciones al admin de CheckIn
 - Multiples bloques CheckIn con ajustes menores

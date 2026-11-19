@@ -26,6 +26,7 @@ using System.Web.UI.WebControls;
 using Rock;
 using Rock.Attribute;
 using Rock.Data;
+using Rock.Enums.Core.Grid;
 using Rock.Field;
 using Rock.Model;
 using Rock.Reporting;
@@ -467,10 +468,10 @@ namespace RockWeb.Blocks.Finance
             var additionalColumns = this.GetAttributeValue( CustomGridColumnsConfig.AttributeKey ).FromJsonOrNull<CustomGridColumnsConfig>();
             if ( additionalColumns != null )
             {
-                foreach ( var columnConfig in additionalColumns.ColumnsConfig )
+                foreach ( var columnConfig in additionalColumns.Columns )
                 {
                     int insertPosition;
-                    if ( columnConfig.PositionOffsetType == CustomGridColumnsConfig.ColumnConfig.OffsetType.LastColumn )
+                    if ( columnConfig.PositionOffsetType == ColumnPositionAnchor.LastColumn )
                     {
                         insertPosition = tableColumns.Count - columnConfig.PositionOffset;
                     }
@@ -519,6 +520,20 @@ namespace RockWeb.Blocks.Finance
                     if ( dataViewId.HasValue && dataViewId > 0 )
                     {
                         dataView = DataViewCache.Get( dataViewId.Value );
+
+                        // Make sure the data view is a transaction detail data view that the current person is allowed to view.
+                        if ( dataView == null
+                            || dataView.EntityTypeId != EntityTypeCache.GetId<Rock.Model.FinancialTransactionDetail>()
+                            || !dataView.IsAuthorized( Rock.Security.Authorization.VIEW, CurrentPerson ) )
+                        {
+                            phTableRows.Controls.Clear();
+                            nbErrorMessage.NotificationBoxType = NotificationBoxType.Warning;
+                            nbErrorMessage.Text = "The selected data view could not be found or you are not authorized to view it.";
+                            nbErrorMessage.Details = string.Empty;
+                            nbErrorMessage.Visible = true;
+                            return;
+                        }
+
                         var transactionDetailIdsQry = dataView.GetQuery( new GetQueryableOptions { DbContext = rockContext } ).Select( a => a.Id );
                         financialTransactionDetailQuery = financialTransactionDetailQuery.Where( a => transactionDetailIdsQry.Contains( a.Id ) );
                     }

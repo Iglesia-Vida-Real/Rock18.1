@@ -20,7 +20,6 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data.Entity;
 using System.Linq;
-using System.Web;
 
 using Rock.Attribute;
 using Rock.Cms;
@@ -160,21 +159,30 @@ namespace Rock.Blocks.Administration
         /// Loads the layouts based on the specified site.
         /// </summary>
         /// <param name="site">The site.</param>
+        /// <param name="shouldRegisterLayouts">Set to true if we need to call the expensive RegisterLayouts method.</param>
         /// <returns></returns>
-        private List<ListItemBag> LoadLayouts( SiteCache site )
+        private List<ListItemBag> LoadLayouts( SiteCache site, bool shouldRegisterLayouts = false )
         {
             if ( site == null )
             {
                 return new List<ListItemBag>();
             }
 
-            LayoutService.RegisterLayouts( "~", site );
-
-            var layouts = new LayoutService( RockContext ).GetBySiteId( site.Id ).Select( l => new ListItemBag()
+            if ( shouldRegisterLayouts )
             {
-                Text = l.Name,
-                Value = l.Guid.ToString(),
-            } ).ToList();
+                LayoutService.RegisterLayouts( "~", site );
+            }
+
+            // LayoutCache.All() returns all cached layouts; filter by SiteId.
+            var layouts = LayoutCache.All()
+                .Where( lc => lc != null && lc.SiteId == site.Id )
+                .OrderBy( lc => lc.Name )
+                .Select( lc => new ListItemBag
+                {
+                    Text = lc.Name,
+                    Value = lc.Guid.ToString()
+                } )
+                .ToList();
 
             return layouts;
         }
@@ -185,19 +193,15 @@ namespace Rock.Blocks.Administration
         /// <returns></returns>
         private List<ListItemBag> LoadSites()
         {
-            var sites = new List<ListItemBag>();
-
-            foreach ( SiteCache site in new SiteService( RockContext )
-                .Queryable()
+            return SiteCache.All()
+                .Where( s => s != null )
                 .OrderBy( s => s.Name )
-                .Select( a => a.Id )
-                .AsEnumerable()
-                .Select( a => SiteCache.Get( a ) ) )
-            {
-                sites.Add( new ListItemBag() { Text = site.Name, Value = site.Guid.ToString() } );
-            }
-
-            return sites;
+                .Select( s => new ListItemBag
+                {
+                    Text = s.Name,
+                    Value = s.Guid.ToString()
+                } )
+                .ToList();
         }
 
         /// <summary>
@@ -295,7 +299,19 @@ namespace Rock.Blocks.Administration
                 // Existing entity was found, prepare for view mode by default.
                 if ( isViewable )
                 {
-                    box.Entity = enableFullEditMode ? GetEntityBagForEdit( entity ) : GetEntityBagForView( entity );
+                    /*
+                        5/29/26 - MSE
+
+                        When this block is not in full edit mode it opens straight to the
+                        edit form (for example, the page settings modal), so it needs the
+                        edit-formatted bag. Matrix and Content Channel Item store their view
+                        and edit values in different formats, so giving the edit form a view
+                        value makes it crash.
+
+                        Reason: https://app.asana.com/1/20866866924293/project/1208321217019996/task/1214719530367018
+                    */
+                    var rendersEditFormDirectly = !enableFullEditMode;
+                    box.Entity = rendersEditFormDirectly ? GetEntityBagForEdit( entity ) : GetEntityBagForView( entity );
                 }
                 else
                 {
@@ -331,9 +347,16 @@ namespace Rock.Blocks.Administration
             {
                 return null;
             }
-
+            
             var pageReference = new PageReference( entity.Id );
-            var pageUrl = pageReference.BuildUrl();
+
+            var baseUrl = entity.Site?.DefaultDomainUri is Uri u
+                 && !u.Host.Equals( "localhost", StringComparison.OrdinalIgnoreCase )
+                    ? u.ToString()
+                    : "/";
+
+            var pageUrl = baseUrl + pageReference.BuildUrl().TrimStart('/');
+
             var intents = new List<ListItemBag>();
 
             if ( entity.Id > 0 && InteractionIntentDefinedTypeCache != null )
@@ -710,8 +733,11 @@ namespace Rock.Blocks.Administration
             }
 
             var page = pageService.GetQueryableByKey( pageId, !PageCache.Layout.Site.DisablePredictableIds )
-                .Include( "Layout" )
-                .Include( "PageRoutes" )
+                .Include( p => p.Layout )
+                .Include( p => p.PageRoutes )
+                .Include( p => p.Site )
+                .Include( p => p.Site.SiteDomains )
+
                 .FirstOrDefault();
 
             if ( page == null )
@@ -904,6 +930,7 @@ namespace Rock.Blocks.Administration
                 return actionError;
             }
 
+            var originalParentPageId = entity.ParentPageId;
             var editorRoutes = box.Bag.PageRoute.SplitDelimitedValues().Distinct();
 
             // Ensure everything is valid before saving.
@@ -919,6 +946,18 @@ namespace Rock.Blocks.Administration
             }
 
             var parentPageId = entity.ParentPageId;
+
+            // Make sure the person can edit the parent page when adding a new
+            // page or moving the page to a different parent.
+            if ( parentPageId.HasValue && ( entity.Id == 0 || parentPageId != originalParentPageId ) )
+            {
+                var parentPageCache = PageCache.Get( parentPageId.Value );
+
+                if ( parentPageCache == null || !parentPageCache.IsAuthorized( Authorization.EDIT, RequestContext.CurrentPerson ) )
+                {
+                    return ActionBadRequest( "Not authorized to edit the parent page." );
+                }
+            }
 
             if ( parentPageId.HasValue && parentPageId != 0 && entity.Id == 0 )
             {
@@ -1070,7 +1109,7 @@ namespace Rock.Blocks.Administration
         {
             var site = SiteCache.Get( siteGuid );
 
-            var layouts = LoadLayouts( site );
+            var layouts = LoadLayouts( site, shouldRegisterLayouts: true );
 
             return ActionOk( new { Layouts = layouts } );
         }
@@ -1086,6 +1125,11 @@ namespace Rock.Blocks.Administration
             var pageService = new PageService( RockContext );
             var qryParams = new Dictionary<string, string>();
             var page = PageCache.GetByIdKey( bag.Key );
+
+            if ( page != null && !page.IsAuthorized( Authorization.VIEW, RequestContext.CurrentPerson ) )
+            {
+                return ActionBadRequest( $"Not authorized to view {Page.FriendlyTypeName}." );
+            }
 
             if ( page != null )
             {

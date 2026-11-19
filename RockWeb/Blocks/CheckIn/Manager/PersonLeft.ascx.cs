@@ -528,8 +528,8 @@ namespace RockWeb.Blocks.CheckIn.Manager
                     btnShare.Visible = false;
                 }
 
-                lName.Text = person.FullName;
-                lSmsRecipient.Text = person.FullName;
+                lName.Text = person.FullName.EncodeHtml();
+                lSmsRecipient.Text = person.FullName.EncodeHtml();
 
                 string photoTag = Rock.Model.Person.GetPersonPhotoImageTag( person, 200, 200 );
                 if ( person.PhotoId.HasValue )
@@ -585,7 +585,7 @@ namespace RockWeb.Blocks.CheckIn.Manager
                     .ThenBy( m => m.Person.BirthDate )
                     .Select( m => new PersonInfo
                     {
-                        PhotoTag = Rock.Model.Person.GetPersonPhotoImageTag( m.Person, 64, 64, className: "d-block mb-1" ),
+                        PhotoTag = Rock.Model.Person.GetPersonPhotoImageTag( m.Person, 64, 64, className: "d-block mb-spacing-tiny" ),
                         Url = GetRelatedPersonUrl( m.Person.Guid ),
                         NickName = m.Person.NickName
                     } )
@@ -745,7 +745,15 @@ namespace RockWeb.Blocks.CheckIn.Manager
         {
             if ( imgSmsImage.BinaryFileId.IsNotNullOrZero() )
             {
-                var binaryFile = new BinaryFileService( new RockContext() ).Get( imgSmsImage.BinaryFileId.Value );
+                var binaryFileService = new BinaryFileService( new RockContext() );
+
+                // Only accept a new upload by the current person.
+                if ( !binaryFileService.IsUploadedBinaryFileAllowedForPerson( imgSmsImage.BinaryFileId, null, CurrentPerson ) )
+                {
+                    return null;
+                }
+
+                var binaryFile = binaryFileService.Get( imgSmsImage.BinaryFileId.Value );
                 return new List<BinaryFile> { binaryFile };
             }
 

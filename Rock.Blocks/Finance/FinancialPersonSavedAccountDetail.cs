@@ -121,8 +121,8 @@ namespace Rock.Blocks.Finance
                 return;
             }
 
-            var isViewable = entity.IsAuthorized( Authorization.VIEW, RequestContext.CurrentPerson );
-            box.IsEditable = entity.IsAuthorized( Authorization.EDIT, RequestContext.CurrentPerson );
+            var isViewable = IsOwnerOrAuthorized( entity );
+            box.IsEditable = isViewable;
 
             if ( entity.Id != 0 )
             {
@@ -166,11 +166,11 @@ namespace Rock.Blocks.Finance
 
             Guid? currencyTypeValueGuid = null;
 
-            if( entity.FinancialPaymentDetail?.CurrencyTypeValue == null && entity.FinancialPaymentDetail?.CurrencyTypeValueId > 0 )
+            if ( entity.FinancialPaymentDetail?.CurrencyTypeValue == null && entity.FinancialPaymentDetail?.CurrencyTypeValueId > 0 )
             {
                 currencyTypeValueGuid = DefinedValueCache.Get( entity.FinancialPaymentDetail.CurrencyTypeValueId.Value )?.Guid;
             }
-            else if( entity.FinancialPaymentDetail?.CurrencyTypeValue != null )
+            else if ( entity.FinancialPaymentDetail?.CurrencyTypeValue != null )
             {
                 currencyTypeValueGuid = entity.FinancialPaymentDetail.CurrencyTypeValue.Guid;
             }
@@ -318,13 +318,33 @@ namespace Rock.Blocks.Finance
                 return false;
             }
 
-            if ( !entity.IsAuthorized( Authorization.EDIT, RequestContext.CurrentPerson ) )
+            if ( !IsOwnerOrAuthorized( entity ) )
             {
-                error = ActionBadRequest( $"Not authorized to edit ${FinancialPersonSavedAccount.FriendlyTypeName}." );
+                error = ActionBadRequest( $"Not authorized to edit {FinancialPersonSavedAccount.FriendlyTypeName}." );
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Determines if the current person may view or edit the saved account.
+        /// Allowed when the current person owns the saved account or is authorized
+        /// to edit the saved account itself.
+        /// </summary>
+        /// <param name="entity">The saved account to check.</param>
+        /// <returns><c>true</c> if the current person is authorized; otherwise <c>false</c>.</returns>
+        private bool IsOwnerOrAuthorized( FinancialPersonSavedAccount entity )
+        {
+            var currentPerson = RequestContext.CurrentPerson;
+
+            if ( currentPerson == null || entity == null )
+            {
                 return false;
             }
 
-            return true;
+            var isOwner = entity.PersonAlias?.PersonId == currentPerson.Id;
+
+            return isOwner || entity.IsAuthorized( Authorization.EDIT, currentPerson );
         }
 
         #endregion

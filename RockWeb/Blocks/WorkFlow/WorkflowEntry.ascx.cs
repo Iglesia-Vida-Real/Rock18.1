@@ -65,7 +65,6 @@ namespace RockWeb.Blocks.WorkFlow
         Description = "Lava template for determining the title of the block. If not specified, the name of the Workflow Type will be shown.",
         Key = AttributeKey.BlockTitleTemplate,
         EditorMode = CodeEditorMode.Lava,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 100,
         IsRequired = false,
         Order = 2 )]
@@ -401,7 +400,7 @@ namespace RockWeb.Blocks.WorkFlow
         /// <param name="eventArgument">A <see cref="T:System.String" /> that represents an optional event argument to be passed to the event handler.</param>
         public void RaisePostBackEvent( string eventArgument )
         {
-            var disableCaptchaSupport = GetAttributeValue( AttributeKey.DisableCaptchaSupport ).AsBoolean();
+            var disableCaptchaSupport = Captcha.CaptchaService.ShouldDisableCaptcha( GetAttributeValue( AttributeKey.DisableCaptchaSupport ).AsBoolean() );
             if ( !disableCaptchaSupport && cpCaptcha.IsAvailable && !IsCaptchaValid )
             {
                 ShowMessage( NotificationBoxType.Validation, string.Empty, "There was an issue processing your request. Please try again. If the issue persists please contact us." );
@@ -483,8 +482,8 @@ namespace RockWeb.Blocks.WorkFlow
             // Get the block setting to disable passing WorkflowTypeID set.
             bool allowPassingWorkflowTypeId = !this.GetAttributeValue( AttributeKey.DisablePassingWorkflowTypeId ).AsBoolean();
 
-            var disableCaptchaSupport = GetAttributeValue( AttributeKey.DisableCaptchaSupport ).AsBoolean() || !cpCaptcha.IsAvailable;
-            pnlCaptcha.Visible = !disableCaptchaSupport;
+            var disableCaptchaSupport = Captcha.CaptchaService.ShouldDisableCaptcha( GetAttributeValue( AttributeKey.DisableCaptchaSupport ).AsBoolean() );
+            pnlCaptcha.Visible = !( disableCaptchaSupport || !cpCaptcha.IsAvailable );
 
             if ( workflowType == null )
             {
@@ -630,9 +629,38 @@ namespace RockWeb.Blocks.WorkFlow
 
                 foreach ( var param in RockPage.PageParameters() )
                 {
-                    if ( param.Value != null && param.Value.ToString().IsNotNullOrWhiteSpace() )
+                    if ( _workflow.Attributes.TryGetValue( param.Key, out var attribute ) )
                     {
-                        _workflow.SetAttributeValue( param.Key, param.Value.ToString() );
+                        var field = attribute.FieldType.Field;
+                        var rules = field.GetValidationRules( attribute.ConfigurationValues );
+                        var value = param.Value.ToString();
+
+                        if ( param.Value != null && param.Value.ToString().IsNotNullOrWhiteSpace() )
+                        {
+                            try
+                            {
+                                StringValueValidator.Validate( value, rules, typeof( AttributeValue ), nameof( AttributeValue.Value ) );
+                            }
+                            catch ( PropertyValidationException ex )
+                            {
+                                if ( DbContext.EnableStringValidation )
+                                {
+                                    throw new AttributeValueValidationException( attribute, _workflow.Id, ex.Reason, null );
+                                }
+                                else
+                                {
+                                    // Captures the full current call stack, all callers
+                                    // included so that we get more information about
+                                    // where this happened in the log.
+                                    var stack = new System.Diagnostics.StackTrace( true ).ToString();
+                                    var ex2 = new AttributeValueValidationException( attribute, _workflow.Id, ex.Reason, stack );
+
+                                    ExceptionLogService.LogException( ex2, System.Web.HttpContext.Current );
+                                }
+                            }
+
+                            _workflow.SetAttributeValue( param.Key, value );
+                        }
                     }
                 }
 
@@ -695,7 +723,7 @@ namespace RockWeb.Blocks.WorkFlow
                     /* if user isn't authorized to edit, limit to ones that are any of the following conditions
                     // - Not assigned
                     // - Assigned to current person
-                    // - Assigned to a group that the current user is a member of
+                    // - Assigned to a group that the current user is member (non-inactive) of
                     */
 
                     activeWorkflowActivitiesList = activeWorkflowActivitiesList.Where( a =>
@@ -712,7 +740,7 @@ namespace RockWeb.Blocks.WorkFlow
                             return true;
                         }
 
-                        if ( a.AssignedGroup != null && a.AssignedGroup.Members.Any( m => m.PersonId == personId ) )
+                        if ( a.AssignedGroup != null && a.AssignedGroup.Members.Any( m => m.PersonId == personId && m.GroupMemberStatus != GroupMemberStatus.Inactive ) )
                         {
                             // Assigned to a group that the current user is a member of
                             return true;
@@ -1297,9 +1325,9 @@ namespace RockWeb.Blocks.WorkFlow
                 ShowNotes( false );
             }
 
-            var disableCaptcha = GetAttributeValue( AttributeKey.DisableCaptchaSupport ).AsBoolean() || !cpCaptcha.IsAvailable;
+            var disableCaptcha = Captcha.CaptchaService.ShouldDisableCaptcha( GetAttributeValue( AttributeKey.DisableCaptchaSupport ).AsBoolean() );
 
-            if ( disableCaptcha || IsCaptchaValid )
+            if ( disableCaptcha || !cpCaptcha.IsAvailable || IsCaptchaValid )
             {
                 AddSubmitButtons( form );
             }
@@ -2064,11 +2092,26 @@ namespace RockWeb.Blocks.WorkFlow
 
             if ( matchedPerson != null )
             {
+                // Capture the matched person's real name before the editor overwrites it. See issue #6834.
+                var originalFirstName = matchedPerson.FirstName;
+                var originalNickName = matchedPerson.NickName;
+
                 // If we are using a matched person let the PersonEditor which PersonId we are editing
                 personEditor.SetPersonId( matchedPerson.Id );
 
                 // if a match was found, update that person
                 personEditor.UpdatePerson( matchedPerson, rockContext );
+
+                // If the submitted first name is actually the matched person's nick name, the submitter is
+                // referring to them by their nickname. Preserve the real first name rather than overwriting
+                // it with the nickname (which would also cause the nick name to be blanked on the next save).
+                // This mirrors the guard in Rock/Workflow/WorkflowPersonEntryProcessor.cs. See issue #6834.
+                if ( originalNickName.IsNotNullOrWhiteSpace() && personEditor.FirstName.Equals( originalNickName, StringComparison.OrdinalIgnoreCase ) )
+                {
+                    matchedPerson.FirstName = originalFirstName;
+                    matchedPerson.NickName = originalNickName;
+                }
+
                 return matchedPerson;
             }
             else
@@ -2113,7 +2156,33 @@ namespace RockWeb.Blocks.WorkFlow
 
                     if ( item != null )
                     {
-                        item.SetAttributeValue( attribute.Key, attribute.FieldType.Field.GetEditValue( attribute.GetControl( control ), attribute.QualifierValues ) );
+                        var field = attribute.FieldType.Field;
+                        var rules = field.GetValidationRules( attribute.ConfigurationValues );
+                        var value = field.GetEditValue( attribute.GetControl( control ), attribute.QualifierValues );
+
+                        try
+                        {
+                            StringValueValidator.Validate( value, rules, typeof( AttributeValue ), nameof( AttributeValue.Value ) );
+                        }
+                        catch ( PropertyValidationException ex )
+                        {
+                            if ( DbContext.EnableStringValidation )
+                            {
+                                throw new AttributeValueValidationException( attribute, item.Id, ex.Reason, null );
+                            }
+                            else
+                            {
+                                // Captures the full current call stack, all callers
+                                // included so that we get more information about
+                                // where this happened in the log.
+                                var stack = new System.Diagnostics.StackTrace( true ).ToString();
+                                var ex2 = new AttributeValueValidationException( attribute, item.Id, ex.Reason, stack );
+
+                                ExceptionLogService.LogException( ex2, System.Web.HttpContext.Current );
+                            }
+                        }
+
+                        item.SetAttributeValue( attribute.Key, value );
                     }
                 }
             }
@@ -2558,9 +2627,14 @@ namespace RockWeb.Blocks.WorkFlow
             }
             else
             {
-                // If this isn't a Person, assume it is an email address.
-                string recipientEmailAddress = recipientWorkflowAttributeValue;
-                recipients.Add( RockEmailMessageRecipient.CreateAnonymous( recipientEmailAddress, workflowMergeFields ) );
+                // If this isn't a Person, assume it is an email address. The value may have
+                // been submitted on the form and the email transport renders the address as
+                // Lava, so only send to a valid address that contains no Lava.
+                string recipientEmailAddress = recipientWorkflowAttributeValue?.Trim();
+                if ( recipientEmailAddress.IsNotNullOrWhiteSpace() && !recipientEmailAddress.IsLavaTemplate() && EmailAddressFieldValidator.IsValid( recipientEmailAddress ) )
+                {
+                    recipients.Add( RockEmailMessageRecipient.CreateAnonymous( recipientEmailAddress, workflowMergeFields ) );
+                }
             }
 
             SendFormBuilderCommunication( confirmationEmailSettings.Source, recipients );
@@ -2669,13 +2743,13 @@ namespace RockWeb.Blocks.WorkFlow
                     customBody = formEmailSourceSettings.Body;
                 }
 
-                Dictionary<string, object> workflowMergeFields = GetWorkflowEntryMergeFields();
-
+                // The body is rendered once by the email transport using each recipient's
+                // merge fields. Rendering it here too would run submitted values as Lava.
                 var emailMessage = new RockEmailMessage
                 {
                     ReplyToEmail = formEmailSourceSettings.ReplyTo,
                     Subject = formEmailSourceSettings.Subject,
-                    Message = customBody?.ResolveMergeFields( workflowMergeFields )
+                    Message = customBody
                 };
 
                 emailMessage.SetRecipients( recipients );
@@ -2912,6 +2986,21 @@ namespace RockWeb.Blocks.WorkFlow
                 return;
             }
 
+            /*
+                10/18/2026 - MSE
+
+                The drawn signature data is posted by the client in a hidden field
+                and is placed into HTML that the server renders into a PDF. It must
+                be a base64 PNG data URL.
+
+                Reason: Prevent SSRF and HTML injection in signed documents.
+            */
+            if ( signatureDocumentTemplate.SignatureType == SignatureType.Drawn && !ElectronicSignatureHelper.IsValidDrawnSignatureDataUrl( escElectronicSignatureControl.DrawnSignatureImageDataUrl ) )
+            {
+                ShowMessage( NotificationBoxType.Danger, "Signature Error", "Invalid signature data received." );
+                return;
+            }
+
             var signedByPersonAliasId = electronicSignatureWorkflowAction.GetSignedByPersonAliasId( rockContext, workflowAction, this.CurrentPersonAliasId );
             Person signedByPerson;
             if ( signedByPersonAliasId.HasValue )
@@ -2966,14 +3055,23 @@ namespace RockWeb.Blocks.WorkFlow
             // Needed before determing SignatureInformation (Signed Name, metadata)
             signatureDocument.SignatureVerificationHash = SignatureDocumentService.CalculateSignatureVerificationHash( signatureDocument );
 
+            /*
+                10/18/2026 - MSE
+
+                The signed name and client IP address come from the request and are
+                placed into HTML that is rendered into the signed PDF. The helper
+                expects these to be encoded by the caller.
+
+                Reason: Prevent HTML injection in signed documents.
+            */
             var signatureInformationHtmlArgs = new GetSignatureInformationHtmlOptions
             {
                 SignatureType = signatureDocumentTemplate.SignatureType,
-                SignedName = escElectronicSignatureControl.SignedName,
+                SignedName = escElectronicSignatureControl.SignedName.EncodeHtml(),
                 DrawnSignatureDataUrl = escElectronicSignatureControl.DrawnSignatureImageDataUrl,
                 SignedByPerson = signedByPerson,
                 SignedDateTime = signatureDocument.SignedDateTime,
-                SignedClientIp = signatureDocument.SignedClientIp,
+                SignedClientIp = signatureDocument.SignedClientIp.EncodeHtml(),
                 SignatureVerificationHash = signatureDocument.SignatureVerificationHash
             };
 

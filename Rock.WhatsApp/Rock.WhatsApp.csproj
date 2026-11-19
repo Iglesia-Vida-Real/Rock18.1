@@ -2,19 +2,14 @@
 
   <PropertyGroup>
     <TargetFramework>net472</TargetFramework>
-    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+    <!-- [VidaReal] 19.x: versión desde Directory.Build.props (como upstream). AssemblyTitle viene de Properties/AssemblyInfo.cs. -->
+    <GenerateAssemblyTitleAttribute>false</GenerateAssemblyTitleAttribute>
     <RockWebPath>..\RockWeb</RockWebPath>
     <CopyToRockWeb>True</CopyToRockWeb>
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\Rock.Version\AssemblySharedInfo.cs">
-      <Link>Properties\AssemblySharedInfo.cs</Link>
-    </Compile>
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="RestSharp" Version="105.2.3" />
   </ItemGroup>
 

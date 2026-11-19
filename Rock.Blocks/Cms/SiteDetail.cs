@@ -18,20 +18,18 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.IO;
 using System.Linq;
-using System.Web.Hosting;
 
 using Rock.Attribute;
+using Rock.Configuration;
 using Rock.Constants;
 using Rock.Data;
 using Rock.Model;
-using Rock.Utility;
 using Rock.ViewModels.Blocks;
 using Rock.ViewModels.Blocks.Cms.SiteDetail;
-using Rock.ViewModels.Blocks.Communication.SnippetTypeDetail;
 using Rock.ViewModels.Utility;
 using Rock.Web.Cache;
+using Rock.Web.UI;
 
 namespace Rock.Blocks.Cms
 {
@@ -105,12 +103,19 @@ namespace Rock.Blocks.Cms
         {
             var options = new SiteDetailOptionsBag();
 
-            options.Themes = new List<ListItemBag>();
+            // Enumerate the theme folders directly so that every installed theme
+            // is selectable, including ones that have just been added and are not
+            // yet assigned to any site. Deriving the list from existing sites
+            // hid any theme that was not already in use.
+            options.Themes = RockTheme.GetThemes()
+                .OrderBy( t => t.Name )
+                .Select( t => new ListItemBag
+                {
+                    Text = t.Name,
+                    Value = t.Name
+                } )
+                .ToList();
 
-            var physicalRootFolder = AppDomain.CurrentDomain.BaseDirectory;
-            string physicalFolder = Path.Combine( physicalRootFolder, RequestContext.ResolveRockUrl( "~~/" ).RemoveLeadingForwardslash() );
-            var di = new DirectoryInfo( physicalFolder );
-            options.Themes.AddRange( di.Parent.EnumerateDirectories().OrderBy( a => a.Name ).Select( themeDir => new ListItemBag() { Text = themeDir.Name, Value = themeDir.Name } ) );
             return options;
         }
 
@@ -189,6 +194,11 @@ namespace Rock.Blocks.Cms
                 return null;
             }
 
+            var interactionChannelService = new InteractionChannelService( RockContext );
+            int channelMediumWebsiteValueId = DefinedValueCache.Get( SystemGuid.DefinedValue.INTERACTIONCHANNELTYPE_WEBSITE.AsGuid() ).Id;
+            var interactionChannelForSite = interactionChannelService.Queryable()
+                .Where( a => a.ChannelTypeMediumValueId == channelMediumWebsiteValueId && a.ChannelEntityId == entity.Id ).FirstOrDefault();
+
             var bag = new SiteBag
             {
                 IdKey = entity.IdKey,
@@ -227,6 +237,7 @@ namespace Rock.Blocks.Cms
                 RegistrationPage = entity.RegistrationPage.ToListItemBag(),
                 RegistrationPageRoute = entity.RegistrationPageRoute.ToListItemBag(),
                 RequiresEncryption = entity.RequiresEncryption,
+                RetentionDuration = interactionChannelForSite?.RetentionDuration ?? ( int? ) null,
                 SiteLogoBinaryFile = entity.SiteLogoBinaryFile.ToListItemBag(),
                 Theme = entity.Theme,
                 SiteUrl = $"{this.RequestContext.ResolveRockUrl( "~/page/" )}{entity.DefaultPageId}"
@@ -461,9 +472,6 @@ namespace Rock.Blocks.Cms
             box.IfValidProperty( nameof( box.Bag.Theme ),
                 () => entity.Theme = box.Bag.Theme );
 
-            box.IfValidProperty( nameof( box.Bag.Theme ),
-                () => entity.Theme = box.Bag.Theme );
-
             box.IfValidProperty( nameof( box.Bag.SiteDomains ),
                 () => UpdateSiteDomains( entity, box, RockContext ) );
 
@@ -633,6 +641,37 @@ namespace Rock.Blocks.Cms
                 .ToList();
         }
 
+        /// <summary>
+        /// Updates the site's applied page attributes.
+        /// </summary>
+        /// <param name="box">The box that contains all the information required to save.</param>
+        /// <param name="entity">The site entity being updated.</param>
+        private void UpdateSitePageAttributes( ValidPropertiesBox<SiteBag> box, Site entity )
+        {
+            // Save the attributes using convention, then handle order manually
+            SaveAttributes( new Page().TypeId, "SiteId", entity.Id.ToString(), box.Bag.SiteAttributes, RockContext );
+
+            // Grab all the attributes in one query
+            var attributeService = new AttributeService( RockContext );
+            var attributes = attributeService.GetByGuids( box.Bag.SiteAttributes
+                .Where( a => a.Guid.HasValue )
+                .Select( a => a.Guid.Value )
+                .ToList()
+            );
+
+            // Update the order of the attributes
+            foreach ( var attributeBag in box.Bag.SiteAttributes )
+            {
+                var attribute = attributes.FirstOrDefault( a => a.Guid == attributeBag.Guid );
+                if ( attribute != null )
+                {
+                    attribute.Order = box.Bag.SiteAttributes.IndexOf( attributeBag );
+                }
+            }
+
+            RockContext.SaveChanges();
+        }
+
         #endregion
 
         #region Block Actions
@@ -695,12 +734,29 @@ namespace Rock.Blocks.Cms
 
             var isNew = entity.Id == 0;
 
+            // Make sure the image files are either the current ones or newly
+            // uploaded files.
+            var uploadedFileService = new BinaryFileService( RockContext );
+
+            if ( !uploadedFileService.IsUploadedBinaryFileAllowedForPerson( entity.FavIconBinaryFileId, existingIconId, RequestContext.CurrentPerson )
+                || !uploadedFileService.IsUploadedBinaryFileAllowedForPerson( entity.SiteLogoBinaryFileId, existingLogoId, RequestContext.CurrentPerson ) )
+            {
+                return ActionBadRequest( "Invalid file." );
+            }
+
+            // Make sure the page attributes are either new or already belong
+            // to this site.
+            if ( !PublicAttributeHelper.AreAttributeEditsAllowed( box.Bag.SiteAttributes, new Page().TypeId, "SiteId", isNew ? null : entity.Id.ToString(), RockContext ) )
+            {
+                return ActionBadRequest( "Invalid attribute." );
+            }
+
             RockContext.WrapTransaction( () =>
             {
                 RockContext.SaveChanges();
                 entity.SaveAttributeValues( RockContext );
 
-                SaveAttributes( new Page().TypeId, "SiteId", entity.Id.ToString(), box.Bag.SiteAttributes, RockContext );
+                UpdateSitePageAttributes( box, entity );
 
                 if ( existingIconId.HasValue && existingIconId.Value != entity.FavIconBinaryFileId )
                 {
@@ -761,7 +817,7 @@ namespace Rock.Blocks.Cms
                 var pageService = new PageService( RockContext );
 
                 // Create the layouts for the site, and find the first one
-                string applicationRootPath = HostingEnvironment.MapPath( "~" );
+                string applicationRootPath = RockApp.Current.MapPath( "~" );
                 LayoutService.RegisterLayouts( applicationRootPath, siteCache );
 
                 var layoutService = new LayoutService( RockContext );

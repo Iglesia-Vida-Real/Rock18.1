@@ -407,9 +407,19 @@
                         <div class="col-md-6">
                             <Rock:PagePicker ID="ppEditSmsConversationPage" runat="server" Label="SMS Conversation Page" Help="If you are using the SMS conversations, then set this to the page that contains the SMS Conversation block." />
                         </div>
+
                         <div class="col-md-6">
-                          <Rock:PagePicker ID="ppEditChatPage" runat="server" Label="Chat Page" />
+                            <Rock:PagePicker ID="ppEditChatPage" runat="server" Label="Chat Page" />
                       </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <Rock:PagePicker ID="ppEditOutreachToolboxTouchpointPage" runat="server" Label="Outreach Toolbox Touchpoint Page" Help="If you are using the Outreach Toolbox, this should be set to the page that has the Touchpoint Detail block on it. When an individual receives and taps on a notification from the Outreach Toolbox they will be taken to this page." />
+                        </div>
+
+                        <div class="col-md-6">
+                        </div>
                     </div>
 
                     <div class="row">
@@ -488,6 +498,10 @@
 
                                 <div class="col-md-6">
                                     <Rock:DefinedValuePicker ID="dvpAuth0RecordStatus" runat="server" Label="Record Status" Help="When an Auth0 login creates a person, this record status will be used.." />
+                                </div>
+
+                                <div class="col-md-6">
+                                    <Rock:RockCheckBox ID="cbAuth0RequireVerifiedEmail" runat="server" Label="Require Verified Email" Help="When enabled, a first Auth0 sign-in from the app is matched to an existing person only if Auth0 reports the email address as verified. Otherwise a new person is created. Disable this only if every email address in your Auth0 tenant is verified by other means." />
                                 </div>
                             </div>
                             <hr class="section-header-hr" />

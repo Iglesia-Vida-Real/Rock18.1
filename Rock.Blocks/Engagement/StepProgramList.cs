@@ -210,6 +210,11 @@ namespace Rock.Blocks.Engagement
         [BlockAction]
         public BlockActionResult ReorderItem( string key, string beforeKey )
         {
+            if ( !BlockCache.IsAuthorized( Authorization.EDIT, RequestContext.CurrentPerson ) )
+            {
+                return ActionBadRequest( $"Not authorized to reorder {StepProgram.FriendlyTypeName}." );
+            }
+
             var stepProgramService = new StepProgramService( RockContext );
 
             // Get the queryable and make sure it is ordered correctly.
@@ -237,26 +242,90 @@ namespace Rock.Blocks.Engagement
         [BlockAction]
         public BlockActionResult Delete( string key )
         {
-            var entityService = new StepProgramService( RockContext );
-            var entity = entityService.Get( key, !PageCache.Layout.Site.DisablePredictableIds );
-
-            if ( entity == null )
-            {
-                return ActionBadRequest( $"{StepProgram.FriendlyTypeName} not found." );
-            }
-
             if ( !BlockCache.IsAuthorized( Authorization.EDIT, RequestContext.CurrentPerson ) )
             {
                 return ActionBadRequest( $"Not authorized to delete {StepProgram.FriendlyTypeName}." );
             }
 
-            if ( !entityService.CanDelete( entity, out var errorMessage ) )
+            var entityService = new StepProgramService( RockContext );
+            var entity = entityService.Get( key, !PageCache.Layout.Site.DisablePredictableIds );
+
+            /*
+                10/19/2026 - MSE
+
+                Block EDIT alone let a block editor delete any step program by key,
+                including programs outside the block's categories, and with them every
+                step type and Step record. The program must be one this block lists
+                and one the person may edit, the same rule Step Program Detail uses.
+
+                Reason: Only delete listed step programs the person may edit.
+            */
+            var entityId = entity?.Id ?? 0;
+            if ( entity == null || !GetListQueryable( RockContext ).Any( sp => sp.Id == entityId ) )
+            {
+                return ActionBadRequest( $"{StepProgram.FriendlyTypeName} not found." );
+            }
+
+            if ( !entity.IsAuthorized( Authorization.EDIT, RequestContext.CurrentPerson ) )
+            {
+                return ActionBadRequest( $"Not authorized to delete {StepProgram.FriendlyTypeName}." );
+            }
+
+            if ( entity.IsSystem )
+            {
+                return ActionBadRequest( "You cannot delete a system Step Program." );
+            }
+
+            string errorMessage = null;
+
+            /*
+                10/19/2026 - MSE
+
+                The step types used to be deleted and saved before the program's
+                CanDelete check, and WrapTransaction always commits, so a refused
+                program delete still removed its step types and every Step record.
+                Check the program first and roll back on every refusal.
+
+                Reason: A refused delete must not remove anything.
+            */
+            RockContext.WrapTransactionIf( () =>
+            {
+                if ( !entityService.CanDelete( entity, out errorMessage ) )
+                {
+                    return false;
+                }
+
+                var stepTypes = entity.StepTypes.ToList();
+                var stepTypeService = new StepTypeService( RockContext );
+
+                foreach ( var stepType in stepTypes )
+                {
+                    if ( stepType.IsSystem )
+                    {
+                        errorMessage = $"This program contains the Step Type, '{stepType.Name}', which is a system Step Type and cannot be deleted.";
+                        return false;
+                    }
+
+                    if ( !stepTypeService.CanDelete( stepType, out errorMessage ) )
+                    {
+                        return false;
+                    }
+
+                    stepTypeService.Delete( stepType );
+                }
+
+                RockContext.SaveChanges();
+
+                entityService.Delete( entity );
+                RockContext.SaveChanges();
+
+                return true;
+            } );
+
+            if ( !string.IsNullOrWhiteSpace( errorMessage ) )
             {
                 return ActionBadRequest( errorMessage );
             }
-
-            entityService.Delete( entity );
-            RockContext.SaveChanges();
 
             return ActionOk();
         }

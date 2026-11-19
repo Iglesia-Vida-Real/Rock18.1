@@ -31,6 +31,7 @@ using Rock.Utility;
 using Rock.ViewModels.Blocks;
 using Rock.ViewModels.Blocks.Event.EventItemDetail;
 using Rock.ViewModels.Utility;
+using Rock.Web;
 using Rock.Web.Cache;
 
 namespace Rock.Blocks.Event
@@ -50,8 +51,9 @@ namespace Rock.Blocks.Event
     #endregion
 
     [Rock.SystemGuid.EntityTypeGuid( "e09743b1-cc81-4d00-b3e1-5825a178a473" )]
-    [Rock.SystemGuid.BlockTypeGuid( "63d0dfb8-1f9e-464a-a603-2252034bc6af" )]
-    public class EventItemDetail : RockDetailBlockType
+    [Rock.SystemGuid.BlockTypeGuid( "39E3476D-1BA1-438D-887F-03DD23639221" )]
+    // was [Rock.SystemGuid.BlockTypeGuid( "63d0dfb8-1f9e-464a-a603-2252034bc6af" )]
+    public class EventItemDetail : RockDetailBlockType, IBreadCrumbBlock
     {
         #region Keys
 
@@ -127,6 +129,110 @@ namespace Rock.Blocks.Event
         }
 
         /// <summary>
+        /// Resolves the calendar that the block is operating within, mirroring the legacy
+        /// Web Forms "_calendarId" logic. This is the calendar indicated by the page parameter,
+        /// or - when no page parameter is supplied - the first calendar (ordered by name) that
+        /// the current person is authorized to edit.
+        /// </summary>
+        /// <param name="rockContext">The rock context.</param>
+        /// <returns>The resolved calendar identifier, or <c>null</c> if none could be determined.</returns>
+        private int? GetEditContextCalendarId( RockContext rockContext )
+        {
+            var idParam = PageParameter( PageParameterKey.EventCalendarId );
+            var calendarId = IdHasher.Instance.GetId( idParam ) ?? idParam.AsIntegerOrNull();
+
+            if ( calendarId.HasValue )
+            {
+                return calendarId;
+            }
+
+            // No calendar was specified on the page, so fall back to the first calendar (by name)
+            // that the current person is authorized to edit.
+            var currentPerson = RequestContext.CurrentPerson;
+            foreach ( var calendar in new EventCalendarService( rockContext )
+                .Queryable().AsNoTracking()
+                .OrderBy( c => c.Name ) )
+            {
+                if ( calendar.IsAuthorized( Authorization.EDIT, currentPerson ) )
+                {
+                    return calendar.Id;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Determines whether the current person is authorized to add, edit, or delete the event
+        /// item. This mirrors the legacy Web Forms block exactly: edit rights are granted by either
+        /// block-level Edit security or Edit security on the calendar the block is operating within
+        /// (see <see cref="GetEditContextCalendarId"/>). In addition, an existing item may only be
+        /// edited from a calendar it actually belongs to. Event items are not
+        /// secured individually; they inherit their edit authorization from their calendars.
+        /// </summary>
+        /// <param name="entity">The event item being added, edited, or deleted.</param>
+        /// <param name="rockContext">The rock context.</param>
+        /// <returns><c>true</c> if the current person is authorized to edit the event item; otherwise <c>false</c>.</returns>
+        private bool IsAuthorizedToEdit( EventItem entity, RockContext rockContext )
+        {
+            var currentPerson = RequestContext.CurrentPerson;
+            var contextCalendarId = GetEditContextCalendarId( rockContext );
+
+            // Edit rights come from block-level Edit security or Edit security on the context calendar.
+            var canEdit = BlockCache.IsAuthorized( Authorization.EDIT, currentPerson );
+
+            if ( !canEdit && contextCalendarId.HasValue )
+            {
+                var contextCalendar = new EventCalendarService( rockContext ).Get( contextCalendarId.Value );
+                canEdit = contextCalendar != null && contextCalendar.IsAuthorized( Authorization.EDIT, currentPerson );
+            }
+
+            if ( !canEdit )
+            {
+                return false;
+            }
+
+            // An existing item may only be edited from a calendar it belongs to.
+            if ( entity.Id != 0 && !entity.EventCalendarItems.Any( i => i.EventCalendarId == ( contextCalendarId ?? 0 ) ) )
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Determines whether the current person is authorized to approve (or unapprove) the event
+        /// item. This mirrors the legacy Web Forms "_canApprove": block-level Administrate rights, or
+        /// Approve/Administrate rights on the calendar the block is operating within. Edit rights alone
+        /// do not grant approval.
+        /// </summary>
+        /// <param name="rockContext">The rock context.</param>
+        /// <returns><c>true</c> if the current person is authorized to approve the event item; otherwise <c>false</c>.</returns>
+        private bool IsAuthorizedToApprove( RockContext rockContext )
+        {
+            var currentPerson = RequestContext.CurrentPerson;
+
+            // Block-level Administrate rights always allow approving.
+            if ( BlockCache.IsAuthorized( Authorization.ADMINISTRATE, currentPerson ) )
+            {
+                return true;
+            }
+
+            // Otherwise approving requires Approve or Administrate rights on the context calendar.
+            var contextCalendarId = GetEditContextCalendarId( rockContext );
+            if ( !contextCalendarId.HasValue )
+            {
+                return false;
+            }
+
+            var contextCalendar = new EventCalendarService( rockContext ).Get( contextCalendarId.Value );
+            return contextCalendar != null
+                && ( contextCalendar.IsAuthorized( Authorization.APPROVE, currentPerson )
+                    || contextCalendar.IsAuthorized( Authorization.ADMINISTRATE, currentPerson ) );
+        }
+
+        /// <summary>
         /// Sets the initial entity state of the box. Populates the Entity or
         /// ErrorMessage properties depending on the entity and permissions.
         /// </summary>
@@ -142,8 +248,10 @@ namespace Rock.Blocks.Event
                 return;
             }
 
-            var isViewable = entity.IsAuthorized( Authorization.VIEW, RequestContext.CurrentPerson );
-            box.IsEditable = entity.IsAuthorized( Authorization.EDIT, RequestContext.CurrentPerson );
+            // The legacy Web Forms block applied no entity-level View check: it rendered the event item
+            // read-only to anyone who could see the block.
+            var isViewable = true;
+            box.IsEditable = IsAuthorizedToEdit( entity, rockContext );
 
             entity.LoadAttributes( rockContext );
 
@@ -295,6 +403,17 @@ namespace Rock.Blocks.Event
                 return false;
             }
 
+            // Make sure a new photo is one the current person is allowed to use.
+            if ( box.IsValidProperty( nameof( box.Entity.Photo ) ) )
+            {
+                var photoId = box.Entity.Photo.GetEntityId<BinaryFile>( rockContext );
+
+                if ( !new BinaryFileService( rockContext ).IsUploadedBinaryFileAllowedForPerson( photoId, entity.PhotoId, RequestContext.CurrentPerson ) )
+                {
+                    return false;
+                }
+            }
+
             box.IfValidProperty( nameof( box.Entity.Description ),
                 () => entity.Description = box.Entity.Description );
 
@@ -306,9 +425,6 @@ namespace Rock.Blocks.Event
 
             box.IfValidProperty( nameof( box.Entity.Name ),
                 () => entity.Name = box.Entity.Name );
-
-            box.IfValidProperty( nameof( box.Entity.Photo ),
-                () => entity.PhotoId = box.Entity.Photo.GetEntityId<BinaryFile>( rockContext ) );
 
             box.IfValidProperty( nameof( box.Entity.Summary ),
                 () => entity.Summary = box.Entity.Summary );
@@ -372,17 +488,51 @@ namespace Rock.Blocks.Event
         /// <returns>A dictionary of key names and URL values.</returns>
         private Dictionary<string, string> GetBoxNavigationUrls()
         {
-            var calendarId = PageParameter( PageParameterKey.EventCalendarId ).AsIntegerOrNull();
+            var calendarId = PageParameter( PageParameterKey.EventCalendarId );
             var qryParams = new Dictionary<string, string>();
 
-            if ( calendarId.HasValue )
+            if ( !string.IsNullOrWhiteSpace( calendarId ) )
             {
-                qryParams.Add( "EventCalendarId", calendarId.Value.ToString() );
+                qryParams.Add( "EventCalendarId", calendarId );
             }
 
             return new Dictionary<string, string>
             {
                 [NavigationUrlKey.ParentPage] = this.GetParentPageUrl( qryParams )
+            };
+        }
+
+        /// <inheritdoc/>
+        public BreadCrumbResult GetBreadCrumbs( PageReference pageReference )
+        {
+            var key = pageReference.GetPageParameter( PageParameterKey.EventItemId );
+            var pageParameters = new Dictionary<string, string>();
+
+            string name = null;
+
+            using ( var rockContext = new RockContext() )
+            {
+                name = new EventItemService( rockContext )
+                   .GetSelect( key, e => e.Name );
+            }
+
+            if ( name != null )
+            {
+                pageParameters.Add( PageParameterKey.EventItemId, key );
+            }
+
+            var eventCalendarIdKey = pageReference.GetPageParameter( PageParameterKey.EventCalendarId );
+            if ( !string.IsNullOrWhiteSpace( eventCalendarIdKey ) )
+            {
+                pageParameters.Add( PageParameterKey.EventCalendarId, eventCalendarIdKey );
+            }
+
+            var breadCrumbPageRef = new PageReference( pageReference.PageId, 0, pageParameters );
+            var breadCrumb = new BreadCrumbLink( name ?? "New Calendar Item", breadCrumbPageRef );
+
+            return new BreadCrumbResult
+            {
+                BreadCrumbs = new List<IBreadCrumb> { breadCrumb }
             };
         }
 
@@ -412,6 +562,25 @@ namespace Rock.Blocks.Event
             var securityGrant = new Rock.Security.SecurityGrant();
 
             securityGrant.AddRulesForAttributes( entity, RequestContext.CurrentPerson );
+
+            /*
+                6/16/2026 - MSE
+
+                The Event Calendar Item attributes are edited from this block as well, so
+                their field type rules must also be added to the grant. Without them, inline
+                controls such as the Defined Value editor (used when an attribute allows
+                adding new values) are denied with an HTTP 401 when calling their REST endpoints.
+
+                Reason: https://github.com/SparkDevNetwork/Rock/issues/6881
+            */
+            if ( entity?.EventCalendarItems != null )
+            {
+                foreach ( var eventCalendarItem in entity.EventCalendarItems )
+                {
+                    eventCalendarItem.LoadAttributes();
+                    securityGrant.AddRulesForAttributes( eventCalendarItem, RequestContext.CurrentPerson );
+                }
+            }
 
             return securityGrant.ToToken();
         }
@@ -449,9 +618,9 @@ namespace Rock.Blocks.Event
                 return false;
             }
 
-            if ( !entity.IsAuthorized( Authorization.EDIT, RequestContext.CurrentPerson ) )
+            if ( !IsAuthorizedToEdit( entity, rockContext ) )
             {
-                error = ActionBadRequest( $"Not authorized to edit ${EventItem.FriendlyTypeName}." );
+                error = ActionBadRequest( $"Not authorized to edit {EventItem.FriendlyTypeName}." );
                 return false;
             }
 
@@ -565,11 +734,18 @@ namespace Rock.Blocks.Event
                 rockContext.SaveChanges();
             }
 
-            // Update the Attributes that were assigned in the UI
+            // The attributes are coming from the frontend already sorted in the correct order.
+            int attributeOrder = 0;
             foreach ( var attributeState in eventAttributes )
             {
-                Helper.SaveAttributeEdits( attributeState, entityTypeId, qualifierColumn, qualifierValue, rockContext );
+                var attr = Helper.SaveAttributeEdits( attributeState, entityTypeId, qualifierColumn, qualifierValue, rockContext );
+                if ( attr != null )
+                {
+                    attr.Order = attributeOrder++;
+                }
             }
+
+            rockContext.SaveChanges();
         }
 
         /// <summary>
@@ -592,7 +768,7 @@ namespace Rock.Blocks.Event
                     {
                         EventCalendarGuid = eventCalendarItem.EventCalendar?.Guid ?? eventCalendarService.Get( eventCalendarItem.EventCalendarId ).Guid,
                         EventCalendarName = eventCalendarItem.EventCalendar?.Name ?? eventCalendarService.Get( eventCalendarItem.EventCalendarId ).Name,
-                        Attributes = eventCalendarItem.GetPublicAttributesForView( GetCurrentPerson(), true ),
+                        Attributes = eventCalendarItem.GetPublicAttributesForEdit( GetCurrentPerson(), enforceSecurity: true ),
                         AttributeValues = eventCalendarItem.GetPublicAttributeValuesForEdit( GetCurrentPerson(), enforceSecurity: true )
                     };
 
@@ -635,6 +811,12 @@ namespace Rock.Blocks.Event
 
             foreach ( var eventCalendar in eventCalendarService.GetByGuids( addCalendarsGuids ) )
             {
+                // Make sure user is authorized to add the calendar, the same check used to build the list of available calendars.
+                if ( !BlockCache.IsAuthorized( Authorization.EDIT, GetCurrentPerson() ) && !eventCalendar.IsAuthorized( Authorization.EDIT, GetCurrentPerson() ) )
+                {
+                    continue;
+                }
+
                 entity.EventCalendarItems.Add( new EventCalendarItem
                 {
                     EventCalendarId = eventCalendar.Id,
@@ -649,6 +831,14 @@ namespace Rock.Blocks.Event
         /// <param name="entity">The entity.</param>
         private void SaveApprovalDetails( DetailBlockBox<EventItemBag, EventItemDetailOptionsBag> box, EventItem entity )
         {
+            // Only a user authorized to approve ( block-level Administrate, or Approve/Administrate on
+            // the context calendar ) may change the approval state. This mirrors the legacy "_canApprove"
+            // gating and prevents Edit-only users from approving or unapproving an event item.
+            if ( !IsAuthorizedToApprove( RockContext ) )
+            {
+                return;
+            }
+
             if ( !entity.IsApproved && box.Entity.IsApproved )
             {
                 entity.ApprovedByPersonAliasId = GetCurrentPerson().PrimaryAliasId;
@@ -672,16 +862,13 @@ namespace Rock.Blocks.Event
         /// <param name="entity">The entity.</param>
         private void SavePhoto( DetailBlockBox<EventItemBag, EventItemDetailOptionsBag> box, RockContext rockContext, EventItem entity )
         {
-            if ( box.Entity.Photo != null )
+            var binaryFileId = box.Entity.Photo?.GetEntityId<BinaryFile>( rockContext );
+            if ( entity.PhotoId != binaryFileId )
             {
-                var binaryFileId = box.Entity.Photo.GetEntityId<BinaryFile>( rockContext );
-                if ( entity.PhotoId != binaryFileId )
-                {
-                    MarkOldImageAsTemporary( entity.PhotoId, binaryFileId, rockContext );
-                    entity.PhotoId = binaryFileId;
-                    // Ensure that the Image is not set as IsTemporary=True
-                    EnsureCurrentImageIsNotMarkedAsTemporary( entity.PhotoId, rockContext );
-                }
+                MarkOldImageAsTemporary( entity.PhotoId, binaryFileId, rockContext );
+                entity.PhotoId = binaryFileId;
+                // Ensure that the Image is not set as IsTemporary=True
+                EnsureCurrentImageIsNotMarkedAsTemporary( entity.PhotoId, rockContext );
             }
         }
 
@@ -778,11 +965,36 @@ namespace Rock.Blocks.Event
                     return ActionBadRequest( validationMessage );
                 }
 
+                // Make sure the occurrence attributes are either new or already
+                // belong to this event item.
+                if ( !PublicAttributeHelper.AreAttributeEditsAllowed( box.Entity.EventOccurenceAttributes?.ConvertAll( e => e.Attribute ), new EventItemOccurrence().TypeId, "EventItemId", entity.Id == 0 ? null : entity.Id.ToString(), rockContext ) )
+                {
+                    return ActionBadRequest( "Invalid attribute." );
+                }
+
                 rockContext.WrapTransaction( () =>
                 {
                     rockContext.SaveChanges();
-                    entity.SaveAttributeValues( rockContext );
 
+                    /*
+                        8/6/26 - NA
+
+                        This block previously called entity.SaveAttributeValues( rockContext )
+                        here, but that call was removed as part of the fix for issue #6962.
+                        The original WebForms EventItemDetail block did not call it either;
+                        it was added by mistake when the block was rewritten in Obsidian.
+
+                        EventItem implements IHasInheritedAttributes and its Attributes
+                        collection includes EventCalendarItem-scoped attributes, so
+                        Helper.SaveAttributeValues wrote those inherited values back with
+                        EntityId = EventItem.Id instead of the EventCalendarItem.Id, which
+                        corrupted attribute values on unrelated events and caused the Index
+                        Content Collections job to fail with a duplicate key error. Calendar-
+                        item attribute values are persisted correctly by the per-
+                        EventCalendarItem loop below and must not be persisted here.
+
+                        Reason: https://github.com/SparkDevNetwork/Rock/issues/6962
+                    */
                     foreach ( EventCalendarItem eventCalendarItem in entity.EventCalendarItems )
                     {
                         var eventCalendarAttribute = box.Entity.EventCalendarItemAttributes.Find( a => a.EventCalendarGuid == eventCalendarItem.EventCalendar?.Guid );

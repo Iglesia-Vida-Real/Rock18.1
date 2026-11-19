@@ -147,6 +147,14 @@ namespace RockWeb.Blocks.CheckIn.Config
         {
             GroupTypeService groupTypeService = new GroupTypeService( new RockContext() );
             GroupType groupType = groupTypeService.Get( int.Parse( hfGroupTypeId.Value ) );
+
+            // The group type id comes from a hidden field, so re-check edit rights before showing the edit form.
+            if ( groupType == null || !CanEditGroupType( groupType ) )
+            {
+                nbEditModeMessage.Text = EditModeMessage.ReadOnlyEditActionNotAllowed( GroupType.FriendlyTypeName );
+                return;
+            }
+
             var pageRef = new PageReference( CurrentPageReference.PageId, CurrentPageReference.RouteId );
             ShowEditDetails( groupType );
         }
@@ -164,6 +172,13 @@ namespace RockWeb.Blocks.CheckIn.Config
 
             if ( groupType != null )
             {
+                // The group type id comes from a hidden field, so re-check edit rights before deleting.
+                if ( !CanEditGroupType( groupType ) )
+                {
+                    mdDeleteWarning.Show( EditModeMessage.ReadOnlyEditActionNotAllowed( GroupType.FriendlyTypeName ), ModalAlertType.Information );
+                    return;
+                }
+
                 string errorMessage;
                 if ( !groupTypeService.CanDelete( groupType, out errorMessage ) )
                 {
@@ -209,12 +224,26 @@ namespace RockWeb.Blocks.CheckIn.Config
             if ( groupTypeId.HasValue && groupTypeId.Value > 0 )
             {
                 groupType = groupTypeService.Get( groupTypeId.Value );
+
+                // The group type id comes from a hidden field, so re-check edit rights before applying any changes.
+                if ( groupType != null && !CanEditGroupType( groupType ) )
+                {
+                    nbEditModeMessage.Text = EditModeMessage.ReadOnlyEditActionNotAllowed( GroupType.FriendlyTypeName );
+                    return;
+                }
             }
 
             bool newGroupType = false;
 
             if ( groupType == null )
             {
+                // Adding a new check-in type needs the same rights that ShowDetail() checks for a new one.
+                if ( !CanEditGroupType( new GroupType() ) )
+                {
+                    nbEditModeMessage.Text = EditModeMessage.ReadOnlyEditActionNotAllowed( GroupType.FriendlyTypeName );
+                    return;
+                }
+
                 groupType = new GroupType();
                 groupTypeService.Add( groupType );
 
@@ -315,6 +344,8 @@ namespace RockWeb.Blocks.CheckIn.Config
                 groupType.SetAttributeValue(
                     Rock.SystemKey.GroupTypeAttributeKey.CHECKIN_REGISTRATION_OPTIONALATTRIBUTESFORFAMILIES,
                     lbRegistrationOptionalAttributesForFamilies.SelectedValues.AsDelimited( "," ) );
+
+                templateSettings.DisplayAddressOnFamilies = ddlRegistrationDisplayAddressOnFamilies.SelectedValueAsEnum<RequirementLevel>();
 
                 groupType.SetAttributeValue(
                     Rock.SystemKey.GroupTypeAttributeKey.CHECKIN_REGISTRATION_DISPLAYBIRTHDATEONCHILDREN,
@@ -472,6 +503,17 @@ namespace RockWeb.Blocks.CheckIn.Config
         #region Internal Methods
 
         /// <summary>
+        /// Determines whether the current person can edit the check-in type. This mirrors
+        /// the check in <see cref="ShowDetail(int)"/> that decides whether the edit button is shown.
+        /// </summary>
+        /// <param name="groupType">The group type.</param>
+        /// <returns><c>true</c> if the current person can edit the group type; otherwise, <c>false</c>.</returns>
+        private bool CanEditGroupType( GroupType groupType )
+        {
+            return IsUserAuthorized( Authorization.EDIT ) && groupType.IsAuthorized( Authorization.EDIT, CurrentPerson );
+        }
+
+        /// <summary>
         /// Shows the detail.
         /// </summary>
         /// <param name="groupTypeId">The groupType identifier.</param>
@@ -627,6 +669,7 @@ namespace RockWeb.Blocks.CheckIn.Config
 
                 lbRegistrationRequiredAttributesForFamilies.SetValues( groupType.GetAttributeValue( Rock.SystemKey.GroupTypeAttributeKey.CHECKIN_REGISTRATION_REQUIREDATTRIBUTESFORFAMILIES ).SplitDelimitedValues() );
                 lbRegistrationOptionalAttributesForFamilies.SetValues( groupType.GetAttributeValue( Rock.SystemKey.GroupTypeAttributeKey.CHECKIN_REGISTRATION_OPTIONALATTRIBUTESFORFAMILIES ).SplitDelimitedValues() );
+                ddlRegistrationDisplayAddressOnFamilies.SetValue( templateSettings.DisplayAddressOnFamilies.ToString() );
 
                 ddlRegistrationDisplayBirthdateOnChildren.SetValue( groupType.GetAttributeValue( Rock.SystemKey.GroupTypeAttributeKey.CHECKIN_REGISTRATION_DISPLAYBIRTHDATEONCHILDREN ) );
                 ddlRegistrationDisplayBirthdateOnAdults.SetValue( groupType.GetAttributeValue( Rock.SystemKey.GroupTypeAttributeKey.CHECKIN_REGISTRATION_DISPLAYBIRTHDATEONADULTS ) );
@@ -874,10 +917,11 @@ namespace RockWeb.Blocks.CheckIn.Config
                     var descendantGroupTypeIds = new GroupTypeService( rockContext ).GetCheckinAreaDescendants( groupType.Id ).Select( a => a.Id );
                     scheduleList = new GroupLocationService( rockContext )
                         .Queryable().AsNoTracking()
-                        .Where( a =>
-                            a.Group.GroupType.Id == groupType.Id ||
-                            descendantGroupTypeIds.Contains( a.Group.GroupTypeId ) )
-                        .SelectMany( a => a.Schedules )
+                        .Where( gl =>
+                            gl.Group.GroupType.Id == groupType.Id ||
+                            descendantGroupTypeIds.Contains( gl.Group.GroupTypeId ) )
+                        .Where( gl => gl.Group.IsActive && !gl.Group.IsArchived )
+                        .SelectMany( gl => gl.Schedules )
                         .Where( s => s.IsActive )
                         .Select( s => s.Name )
                         .Distinct()
@@ -1004,6 +1048,11 @@ namespace RockWeb.Blocks.CheckIn.Config
                 lbRegistrationRequiredAttributesForFamilies.Items.Add( new ListItem( groupTypeFamilyAttribute.Name, groupTypeFamilyAttribute.Value ) );
                 lbRegistrationOptionalAttributesForFamilies.Items.Add( new ListItem( groupTypeFamilyAttribute.Name, groupTypeFamilyAttribute.Value ) );
             }
+
+            ddlRegistrationDisplayAddressOnFamilies.Items.Clear();
+            ddlRegistrationDisplayAddressOnFamilies.Items.Add( new ListItem( ControlOptions.HIDE, RequirementLevel.Unavailable.ToString() ) );
+            ddlRegistrationDisplayAddressOnFamilies.Items.Add( new ListItem( ControlOptions.OPTIONAL, RequirementLevel.Optional.ToString() ) );
+            ddlRegistrationDisplayAddressOnFamilies.Items.Add( new ListItem( ControlOptions.REQUIRED, RequirementLevel.Required.ToString() ) );
 
             ddlSuccessTemplateOverrideDisplayMode.Items.Clear();
             ddlSuccessTemplateOverrideDisplayMode.BindToEnum<SuccessLavaTemplateDisplayMode>();

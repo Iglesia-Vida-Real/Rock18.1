@@ -372,10 +372,18 @@ namespace Rock.Blocks.Cms
             rockContext.SaveChanges();
 
             // Update the Attributes that were assigned in the UI
-            foreach ( var attr in attributes )
+            // The attributes are coming from the frontend already sorted in the correct order.
+            int order = 0;
+            foreach ( var attrBag in attributes )
             {
-                Rock.Attribute.Helper.SaveAttributeEdits( attr, entityTypeId, qualifierColumn, qualifierValue, rockContext );
+                var attr = Rock.Attribute.Helper.SaveAttributeEdits( attrBag, entityTypeId, qualifierColumn, qualifierValue, rockContext );
+                if ( attr != null )
+                {
+                    attr.Order = order++;
+                }
             }
+
+            rockContext.SaveChanges();
         }
 
         #endregion
@@ -436,6 +444,18 @@ namespace Rock.Blocks.Cms
                     return ActionBadRequest( validationMessage );
                 }
 
+                // Make sure the channel and item attributes are either new or
+                // already belong to this content channel type.
+                var qualifierValue = entity.Id == 0 ? null : entity.Id.ToString();
+                var channelEntityTypeId = EntityTypeCache.Get( typeof( ContentChannel ) ).Id;
+                var itemEntityTypeId = EntityTypeCache.Get( typeof( ContentChannelItem ) ).Id;
+
+                if ( !PublicAttributeHelper.AreAttributeEditsAllowed( box.Entity.ChannelAttributes, channelEntityTypeId, "ContentChannelTypeId", qualifierValue, rockContext )
+                    || !PublicAttributeHelper.AreAttributeEditsAllowed( box.Entity.ItemAttributes, itemEntityTypeId, "ContentChannelTypeId", qualifierValue, rockContext ) )
+                {
+                    return ActionBadRequest( "Invalid attribute." );
+                }
+
                 if ( entity.Id == 0 )
                 {
                     entity.CreatedByPersonAliasId = GetCurrentPerson()?.PrimaryAliasId;
@@ -477,62 +497,6 @@ namespace Rock.Blocks.Cms
         public BlockActionResult RefreshAttributes( DetailBlockBox<ContentChannelTypeBag, ContentChannelTypeDetailOptionsBag> box )
         {
             return ActionBadRequest( "Attributes are not supported by this block." );
-        }
-
-        /// <summary>
-        /// Reorders the Item attributes.
-        /// </summary>
-        /// <param name="idKey">The identifier key.</param>
-        /// <param name="guid">The unique identifier.</param>
-        /// <param name="beforeGuid">The before unique identifier.</param>
-        /// <returns></returns>
-        [BlockAction]
-        public BlockActionResult ReorderItemAttributes( string idKey, Guid guid, Guid? beforeGuid )
-        {
-            using ( var rockContext = new RockContext() )
-            {
-                // Get the queryable and make sure it is ordered correctly.
-                var id = Rock.Utility.IdHasher.Instance.GetId( idKey );
-
-                var attributes = GetAttributes( rockContext, id ?? 0, new ContentChannelItem().TypeId );
-
-                if ( !attributes.ReorderEntity( guid.ToString(), beforeGuid.ToString() ) )
-                {
-                    return ActionBadRequest( "Invalid reorder attempt." );
-                }
-
-                rockContext.SaveChanges();
-
-                return ActionOk();
-            }
-        }
-
-        /// <summary>
-        /// Reorders the channel attributes.
-        /// </summary>
-        /// <param name="idKey">The identifier key.</param>
-        /// <param name="guid">The unique identifier.</param>
-        /// <param name="beforeGuid">The before unique identifier.</param>
-        /// <returns></returns>
-        [BlockAction]
-        public BlockActionResult ReorderChannelAttributes( string idKey, Guid guid, Guid? beforeGuid )
-        {
-            using ( var rockContext = new RockContext() )
-            {
-                // Get the queryable and make sure it is ordered correctly.
-                var id = Rock.Utility.IdHasher.Instance.GetId( idKey );
-
-                var attributes = GetAttributes( rockContext, id ?? 0, new ContentChannel().TypeId );
-
-                if ( !attributes.ReorderEntity( guid.ToString(), beforeGuid.ToString() ) )
-                {
-                    return ActionBadRequest( "Invalid reorder attempt." );
-                }
-
-                rockContext.SaveChanges();
-
-                return ActionOk();
-            }
         }
 
         #endregion

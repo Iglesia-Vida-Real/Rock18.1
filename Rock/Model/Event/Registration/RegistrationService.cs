@@ -293,7 +293,7 @@ namespace Rock.Model
             bool isExistingRegistration = false;
             if ( registrationId.HasValue )
             {
-                isExistingRegistration = new RegistrationService( Context as RockContext ).Get( registrationId.Value ) != null;
+                isExistingRegistration = new RegistrationService( Context as RockContext ).Queryable().Any( r => r.Id == registrationId.Value );
             }
 
             if ( !isExistingRegistration )
@@ -596,6 +596,10 @@ namespace Rock.Model
                 SignatureDocumentTerm = template.RequiredSignatureDocumentTemplate?.DocumentTerm;
                 SignatureDocumentTemplateName = template.RequiredSignatureDocumentTemplate?.Name;
             }
+
+            RegistrantEligibilitySettings = template.GetRegistrantEligibilitySettingsOrNull();
+
+            AreDuplicateRegistrantsPrevented = template.AreDuplicateRegistrantsPrevented;
         }
 
         /// <summary>
@@ -656,10 +660,10 @@ namespace Rock.Model
         public List<RegistrationTemplateForm> Forms { get; private set; }
 
         /// <summary>
-        /// Gets or sets the maximum attendees. If null, there is no cap.
+        /// Gets or sets the maximum attendees (registrants) for the entire registration instance. If null, there is no cap.
         /// </summary>
         /// <value>
-        /// The maximum attendees.
+        /// The maximum attendees (registrants) for the entire registration instance.
         /// </value>
         public int? MaxAttendees { get; private set; }
 
@@ -744,10 +748,10 @@ namespace Rock.Model
         public bool AreCurrentFamilyMembersShown { get; private set; }
 
         /// <summary>
-        /// Gets the maximum registrants.
+        /// Gets the maximum number of registrants that the registrar can register for the registration.
         /// </summary>
         /// <value>
-        /// The maximum registrants.
+        /// The maximum number of registrants that the registrar can register for the registration.
         /// </value>
         public int? MaxRegistrants { get; private set; }
 
@@ -1000,5 +1004,17 @@ namespace Rock.Model
         /// The name of the signature document template.
         /// </value>
         public string SignatureDocumentTemplateName { get; private set; }
+
+        /// <summary>
+        /// Gets the eligibility settings that determine which registrants are allowed to register using this template.
+        /// </summary>
+        public RegistrationTemplate.RegistrantEligibilitySettings RegistrantEligibilitySettings { get; private set; }
+        
+        /// <summary>
+        /// Gets or sets a value indicating whether duplicate registrants are prevented.
+        /// When <see langword="true"/>, a Person may only be associated once with a given Registration Instance.
+        /// When <see langword="false"/>, duplicate registrants are allowed.
+        /// </summary>
+        public bool AreDuplicateRegistrantsPrevented { get; private set; }
     }
 }

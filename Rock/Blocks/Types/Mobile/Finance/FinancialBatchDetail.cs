@@ -31,6 +31,7 @@ using Rock.Attribute;
 using Rock.Common.Mobile.Blocks.Finance.FinancialBatchDetail;
 using Rock.Common.Mobile.ViewModel;
 using Rock.Data;
+using Rock.Lava;
 using Rock.Model;
 using Rock.Security;
 using Rock.SystemGuid;
@@ -96,6 +97,26 @@ namespace Rock.Blocks.Types.Mobile.Finance
         Key = AttributeKeys.RequiredControlItemCount,
         Order = 7 )]
 
+    [DefinedValueField(
+        "Currency Types",
+        Description = "The currency type to show in the scan settings page.",
+        DefinedTypeGuid = SystemGuid.DefinedType.FINANCIAL_CURRENCY_TYPE,
+        IsRequired = false,
+        AllowMultiple = true,
+        DefaultValue = null,
+        Key = AttributeKeys.CurrencyType,
+        Order = 8 )]
+
+    [DefinedValueField(
+        "Transaction Source",
+        Description = "The Transaction Source to show in the scan settings page.",
+        DefinedTypeGuid = SystemGuid.DefinedType.FINANCIAL_SOURCE_TYPE,
+        IsRequired = false,
+        AllowMultiple = true,
+        DefaultValue = null,
+        Key = AttributeKeys.TransactionSource,
+        Order = 9 )]
+
     #endregion
 
     [Rock.SystemGuid.EntityTypeGuid( Rock.SystemGuid.EntityType.MOBILE_FINANCE_FINANCIAL_BATCH_DETAIL_BLOCK_TYPE )]
@@ -107,6 +128,8 @@ namespace Rock.Blocks.Types.Mobile.Finance
         private List<Guid> Accounts => GetAttributeValue( AttributeKeys.Accounts ).SplitDelimitedValues().AsGuidList();
 
         #endregion
+
+        #region Keys
 
         /// <summary>
         /// Keys for the attributes used in this block.
@@ -147,12 +170,24 @@ namespace Rock.Blocks.Types.Mobile.Finance
             /// The key for the Accounts Allocation Required attribute.
             /// </summary>
             public const string AccountAllocationRequired = "AccountAllocationRequired";
+
+            /// <summary>
+            /// The key for the Currency Types attribute.
+            /// </summary>
+            public const string CurrencyType = "CurrencyTypes";
+
+            /// <summary>
+            /// The key for the Transaction Source attribute.
+            /// </summary>
+            public const string TransactionSource = "TransactionSource";
         }
 
         /// <summary>
         /// The authorization action required to reopen a batch.
         /// </summary>
         private const string AuthorizationReopenBatch = "ReopenBatch";
+
+        #endregion
 
         #region Methods
 
@@ -251,16 +286,7 @@ namespace Rock.Blocks.Types.Mobile.Finance
                 return new List<ListItemViewModel>();
             }
 
-            var financialAccountService = new FinancialAccountService( rockContext );
-
-            var availableAccounts = financialAccountService.Queryable()
-            .Where( f =>
-                f.IsActive
-                    && f.IsPublic.HasValue
-                    && f.IsPublic.Value
-                    && ( f.StartDate == null || f.StartDate <= RockDateTime.Today )
-                    && ( f.EndDate == null || f.EndDate >= RockDateTime.Today ) );
-            availableAccounts = availableAccounts.Where( a => Accounts.Contains( a.Guid ) );
+            var availableAccounts = GetAvailableAccountQuery( rockContext );
 
             var accounts = availableAccounts.OrderBy( f => f.Order )
                 .ToList()
@@ -275,13 +301,30 @@ namespace Rock.Blocks.Types.Mobile.Finance
         }
 
         /// <summary>
+        /// Gets the query of active, public accounts that are in the block's Accounts setting.
+        /// </summary>
+        /// <param name="rockContext">The rock context.</param>
+        private IQueryable<Rock.Model.FinancialAccount> GetAvailableAccountQuery( RockContext rockContext )
+        {
+            return new FinancialAccountService( rockContext ).Queryable()
+                .Where( f =>
+                    f.IsActive
+                        && f.IsPublic.HasValue
+                        && f.IsPublic.Value
+                        && ( f.StartDate == null || f.StartDate <= RockDateTime.Today )
+                        && ( f.EndDate == null || f.EndDate >= RockDateTime.Today ) )
+                .Where( a => Accounts.Contains( a.Guid ) );
+        }
+
+        /// <summary>
         /// Processes the image and generates a financial transaction based on the provided image and batch information.
         /// </summary>
         /// <param name="processImageBag"></param>
-        /// <param name="image"></param>
+        /// <param name="batch">The batch that ProcessImage has already authorized.</param>
+        /// <param name="imageId"></param>
         /// <returns></returns>
         /// <exception cref="ArgumentException"></exception>
-        private void ProcessImageAndGenerateTransaction( ProcessImageBag processImageBag, Rock.Model.BinaryFile image )
+        private void ProcessImageAndGenerateTransaction( ProcessImageBag processImageBag, FinancialBatch batch, int imageId )
         {
             // Create FinancialPaymentDetail
             if ( processImageBag.BatchIdKey.IsNullOrWhiteSpace() )
@@ -302,7 +345,6 @@ namespace Rock.Blocks.Types.Mobile.Finance
 
             // Create FinancialTransaction
             FinancialTransaction financialTransaction = new FinancialTransaction();
-            FinancialBatch batch = new FinancialBatchService( RockContext ).Get( processImageBag.BatchIdKey );
             financialTransaction.BatchId = batch.Id;
             financialTransaction.TransactionCode = string.Empty;
             financialTransaction.Summary = string.Empty;
@@ -331,7 +373,7 @@ namespace Rock.Blocks.Types.Mobile.Finance
 
             if ( isCheck )
             {
-                _ = Task.Run( () => ExtractAndPopulateMicrDataAsync( image, financialTransaction.IdKey ) );
+                _ = Task.Run( () => ExtractAndPopulateMicrDataAsync( imageId, financialTransaction.IdKey ) );
             }
 
             // Create the FinancialTransactionImage
@@ -351,10 +393,10 @@ namespace Rock.Blocks.Types.Mobile.Finance
         /// <summary>
         /// Extracts the MICR data from the provided image and populates the financial transaction with the extracted data.
         /// </summary>
-        /// <param name="image"></param>
+        /// <param name="imageId">The Id of the BinaryFile containing the scanned check image. The entity is intentionally re-fetched inside this method's RockContext so the background task never touches a proxy attached to the (already-disposed) block-level context.</param>
         /// <param name="idKey"></param>
         /// <returns></returns>
-        private async Task ExtractAndPopulateMicrDataAsync( Rock.Model.BinaryFile image, string idKey )
+        private async Task ExtractAndPopulateMicrDataAsync( int imageId, string idKey )
         {
             using ( var rockContext = new RockContext() )
             {
@@ -362,6 +404,13 @@ namespace Rock.Blocks.Types.Mobile.Finance
 
                 try
                 {
+                    var image = new BinaryFileService( rockContext ).Get( imageId );
+                    if ( image == null )
+                    {
+                        Logger.LogError( "BinaryFile with Id {imageId} not found while extracting MICR data.", imageId );
+                        return;
+                    }
+
                     // Extract the MICR using Azure Document Intelligence and save the information in the FinancialTransactionScannedCheck.
                     var scannedInfo = await ExtractMicrInformationAsync( image, cts.Token );
 
@@ -752,11 +801,68 @@ namespace Rock.Blocks.Types.Mobile.Finance
                 return ActionBadRequest( "Binary file is not a MICR check." );
             }
 
+            var batch = processImageBag.BatchIdKey.IsNotNullOrWhiteSpace()
+                ? new FinancialBatchService( RockContext ).Get( processImageBag.BatchIdKey )
+                : null;
+
+            if ( batch == null )
+            {
+                return ActionNotFound( $"{FinancialBatch.FriendlyTypeName} not found." );
+            }
+
+            if ( batch.Status == BatchStatus.Closed || batch.IsAutomated )
+            {
+                return ActionBadRequest( "A transaction cannot be added to a closed or automated batch." );
+            }
+
+            if ( !batch.IsAuthorized( Rock.Security.Authorization.EDIT, RequestContext.CurrentPerson ) )
+            {
+                return ActionBadRequest( $"Not authorized to edit {FinancialBatch.FriendlyTypeName}." );
+            }
+
+            // Only allow an image the current person uploaded that is not
+            // already attached to a transaction.
+            var isImageAttached = new FinancialTransactionImageService( RockContext ).Queryable()
+                .Any( i => i.BinaryFileId == image.Id );
+            var imageCreatorPersonId = image.CreatedByPersonAliasId.HasValue
+                ? new PersonAliasService( RockContext ).GetPersonId( image.CreatedByPersonAliasId.Value )
+                : null;
+
+            if ( isImageAttached || !imageCreatorPersonId.HasValue || imageCreatorPersonId.Value != RequestContext.CurrentPerson?.Id )
+            {
+                return ActionBadRequest( "This image cannot be used for a new transaction." );
+            }
+
+            if ( processImageBag.AccountBox == null )
+            {
+                return ActionBadRequest( "Invalid account." );
+            }
+
+            var allowedAccountIds = Accounts.Any()
+                ? GetAvailableAccountQuery( RockContext ).Select( a => a.Id ).ToList()
+                : new List<int>();
+
+            foreach ( var accountBox in processImageBag.AccountBox )
+            {
+                var account = accountBox != null ? FinancialAccountCache.GetByIdKey( accountBox.Text ) : null;
+
+                if ( account == null || !allowedAccountIds.Contains( account.Id ) )
+                {
+                    return ActionBadRequest( "Invalid account." );
+                }
+
+                var amount = accountBox.Value.AsDecimalOrNull();
+                if ( amount.HasValue && amount.Value < 0 )
+                {
+                    return ActionBadRequest( "Amounts cannot be negative." );
+                }
+            }
+
             try
             {
-                ProcessImageAndGenerateTransaction( processImageBag, image );
+                ProcessImageAndGenerateTransaction( processImageBag, batch, image.Id );
             }
-            catch (Exception ex)
+            catch ( Exception ex )
             {
                 ExceptionLogService.LogException( ex );
                 // If the image could not be loaded, return an error.
@@ -774,17 +880,15 @@ namespace Rock.Blocks.Types.Mobile.Finance
         [BlockAction( "OpenBatch" )]
         public BlockActionResult OpenBatch( string batchIdKey )
         {
-            var financialBatchService = new FinancialBatchService( RockContext );
-            var batch = financialBatchService.Get( batchIdKey );
-
-            if ( batch == null )
+            // TryGetEntityForEditAction creates a new batch for a blank key.
+            if ( batchIdKey.IsNullOrWhiteSpace() )
             {
                 return ActionNotFound( $"{FinancialBatch.FriendlyTypeName} not found." );
             }
 
-            if ( batch.Status == BatchStatus.Closed && !batch.IsAuthorized( AuthorizationReopenBatch, RequestContext.CurrentPerson ) )
+            if ( !TryGetEntityForEditAction( batchIdKey, RockContext, out var batch, out var actionError ) )
             {
-                return ActionUnauthorized( "User is not authorized to reopen a closed batch" );
+                return actionError;
             }
 
             batch.Status = BatchStatus.Open;
@@ -802,22 +906,48 @@ namespace Rock.Blocks.Types.Mobile.Finance
         {
             var isCheckScannerConfigured = GetAttributeValue( AttributeKeys.ApiKey ).IsNotNullOrWhiteSpace() && GetAttributeValue( AttributeKeys.EndPoint ).IsNotNullOrWhiteSpace();
 
-            var cashCurrencyType = DefinedValueCache.Get( SystemGuid.DefinedValue.CURRENCY_TYPE_CASH.AsGuid() );
-            var checkCurrencyType = DefinedValueCache.Get( SystemGuid.DefinedValue.CURRENCY_TYPE_CHECK.AsGuid() );
+            var selectedCurrencyType = GetAttributeValue( AttributeKeys.CurrencyType );
+            var selectedTransactionSource = GetAttributeValue( AttributeKeys.TransactionSource );
 
-            if ( cashCurrencyType == null || checkCurrencyType == null )
+            var currencyTypeGuids = selectedCurrencyType.SplitDelimitedValues().Select( s => s.ConvertToGuidOrThrow() ).ToList();
+            List<ListItemViewModel> currencyType = new List<ListItemViewModel>();
+            if ( currencyTypeGuids.Count == 0 )
             {
-                throw new Exception( "Cash or currency type is not defined." );
-            }
-
-            var transactionSources = DefinedTypeCache.Get( SystemGuid.DefinedType.FINANCIAL_SOURCE_TYPE.AsGuid() )
-                    .DefinedValues
+                currencyType = DefinedTypeCache.Get( SystemGuid.DefinedType.FINANCIAL_CURRENCY_TYPE ).DefinedValues
                     .Select( dv => new ListItemViewModel
                     {
                         Text = dv.Value,
-                        Value = dv.IdKey
-                    } )
-                    .ToList();
+                        Value = dv.Guid.ToString(),
+                    } ).ToList();
+            }
+            else
+            {
+                currencyType = DefinedValueCache.GetMany( currencyTypeGuids ).Select( dv => new ListItemViewModel
+                {
+                    Text = dv.Value,
+                    Value = dv.Guid.ToString(),
+                } ).ToList();
+            }
+
+            var transactionSourceGuids = selectedTransactionSource.SplitDelimitedValues().Select( s => s.ConvertToGuidOrThrow() ).ToList();
+            List<ListItemViewModel> transactionSources = new List<ListItemViewModel>();
+            if ( transactionSourceGuids.Count == 0 )
+            {
+                transactionSources = DefinedTypeCache.Get( SystemGuid.DefinedType.FINANCIAL_SOURCE_TYPE ).DefinedValues
+                    .Select( dv => new ListItemViewModel
+                    {
+                        Text = dv.Value,
+                        Value = dv.IdKey,
+                    } ).ToList();
+            }
+            else
+            {
+                transactionSources = DefinedValueCache.GetMany( transactionSourceGuids ).Select( dv => new ListItemViewModel
+                {
+                    Text = dv.Value,
+                    Value = dv.IdKey,
+                } ).ToList();
+            }
 
             return new Rock.Common.Mobile.Blocks.Finance.FinancialBatchDetail.Configuration
             {
@@ -827,19 +957,7 @@ namespace Rock.Blocks.Types.Mobile.Finance
                 CheckScannerEnabled = isCheckScannerConfigured,
                 TransactionDetailPageGuid = GetAttributeValue( AttributeKeys.DetailPage ).AsGuidOrNull(),
                 Accounts = GetAvailableAccounts( RockContext ),
-                CurrencyTypes = new List<ListItemViewModel>()
-                {
-                    new ListItemViewModel
-                    {
-                        Text = cashCurrencyType.Value,
-                        Value = cashCurrencyType.Guid.ToString()
-                    },
-                    new ListItemViewModel
-                    {
-                        Text = checkCurrencyType.Value,
-                        Value = checkCurrencyType.Guid.ToString()
-                    }
-                },
+                CurrencyTypes = currencyType,
                 TransactionSources = transactionSources,
             };
         }

@@ -105,7 +105,7 @@ class TwilioSmsResponseAsync : TwilioDefaultResponseAsync
     /// <param name="fromPhone"></param>
     /// <param name="body"></param>
     /// <returns></returns>
-    public override Twilio.TwiML.Message ProcessMessage( HttpRequest request, string toPhone, string fromPhone, string body )
+    public override Twilio.TwiML.Messaging.Message ProcessMessage( HttpRequest request, string toPhone, string fromPhone, string body )
     {
         var message = new SmsMessage
         {
@@ -140,6 +140,14 @@ class TwilioSmsResponseAsync : TwilioDefaultResponseAsync
                         {
                             string imageUrl = request.Params[string.Format( "MediaUrl{0}", i )];
                             string mimeType = request.Params[string.Format( "MediaContentType{0}", i )];
+
+                            // The Twilio credentials are sent with this request, so
+                            // only download media that is hosted by Twilio.
+                            if ( !IsTwilioMediaUrl( imageUrl ) )
+                            {
+                                continue;
+                            }
+
                             imageGuid = Guid.NewGuid();
 
                             var httpWebRequest = ( HttpWebRequest ) HttpWebRequest.Create( imageUrl );
@@ -163,12 +171,31 @@ class TwilioSmsResponseAsync : TwilioDefaultResponseAsync
 
                 var outcomes = SmsActionService.ProcessIncomingMessage( message, smsPipelineId );
                 var smsResponse = SmsActionService.GetResponseFromOutcomes( outcomes );
-                var twilioMessage = new Twilio.TwiML.Message();
 
                 if ( smsResponse == null )
                 {
                     return null;
                 }
+
+                var fromPersonAliasId = message.FromPerson?.PrimaryAliasId;
+                if ( fromPersonAliasId.HasValue )
+                {
+                    var responseCommunicationId = SmsActionService.CreateAndEnqueueResponseCommunication(
+                        smsResponse,
+                        fromPersonAliasId.Value,
+                        message.ToNumber,
+                        rockContext
+                    );
+
+                    if ( responseCommunicationId.HasValue )
+                    {
+                        // There's no need to send a message object back to the caller of this method since we've
+                        // already queued a response to be sent.
+                        return null;
+                    }
+                }
+
+                var twilioMessage = new Twilio.TwiML.Messaging.Message();
 
                 if ( smsResponse.Message.IsNotNullOrWhiteSpace() )
                 {
@@ -179,7 +206,10 @@ class TwilioSmsResponseAsync : TwilioDefaultResponseAsync
                 {
                     foreach ( var binaryFile in smsResponse.Attachments )
                     {
-                        twilioMessage.Media( binaryFile.Url );
+                        if ( Uri.TryCreate( binaryFile.Url, UriKind.Absolute, out var uri ) )
+                        {
+                            twilioMessage.Media( uri );
+                        }
                     }
                 }
 
@@ -188,5 +218,23 @@ class TwilioSmsResponseAsync : TwilioDefaultResponseAsync
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Determines whether the URL is an HTTPS URL on a Twilio host, such as
+    /// api.twilio.com or a regional Twilio API host.
+    /// </summary>
+    /// <param name="url">The media URL from the incoming message.</param>
+    /// <returns><c>true</c> if the URL is hosted by Twilio; otherwise <c>false</c>.</returns>
+    private static bool IsTwilioMediaUrl( string url )
+    {
+        Uri uri;
+        if ( !Uri.TryCreate( url, UriKind.Absolute, out uri ) || uri.Scheme != Uri.UriSchemeHttps )
+        {
+            return false;
+        }
+
+        return uri.Host.Equals( "api.twilio.com", StringComparison.OrdinalIgnoreCase )
+            || uri.Host.EndsWith( ".twilio.com", StringComparison.OrdinalIgnoreCase );
     }
 }

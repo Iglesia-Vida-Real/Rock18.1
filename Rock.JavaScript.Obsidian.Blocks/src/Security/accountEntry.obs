@@ -69,7 +69,7 @@
 </template>
 
 <script setup lang="ts">
-    import { computed, ref } from "vue";
+    import { computed, ref, onMounted, nextTick } from "vue";
     import Captcha from "@Obsidian/Controls/captcha.obs";
     import CompletedStep from "./AccountEntry/completedStep.partial.obs";
     import ConfirmationSentStep from "./AccountEntry/confirmationSentStep.partial.obs";
@@ -106,6 +106,7 @@
 
     const disableCaptchaSupport = ref(config.disableCaptchaSupport);
     const captchaElement = ref<InstanceType<typeof Captcha> | undefined>();
+    const isCaptchaComplete = ref<boolean>(false);
 
     const stepStack = ref<AccountEntryStep[]>([]);
     const accountEntryStep = computed<AccountEntryStep | null | undefined>(() => stepStack.value.length ? stepStack.value[stepStack.value.length - 1] : config.accountEntryRegisterStepBox?.step || null);
@@ -215,13 +216,13 @@
 
             if (captchaElement.value) {
                 actionContext.captcha = await captchaElement.value.getToken();
-                captchaElement.value.refreshToken();
             }
 
             const result = await invokeBlockAction<void>("ForgotUsername", { bag }, actionContext);
 
             if (!result?.isSuccess) {
                 showError(result?.errorMessage || "Ocurrió un error inesperado.");
+                triggerCaptchaRevalidationIfNeeded(accountEntryStep.value ?? AccountEntryStep.Registration);
                 return;
             }
 
@@ -293,6 +294,19 @@
         });
     }
 
+    /**
+     * Ensures the captcha is reset and revalidated for the provided step.
+     */
+    function triggerCaptchaRevalidationIfNeeded(step: AccountEntryStep | null | undefined): void {
+        if (disableCaptchaSupport.value || step === AccountEntryStep.Completed) {
+            return;
+        }
+        isCaptchaComplete.value = false;
+        nextTick(() => {
+            waitForCaptcha();
+        });
+    }
+
     async function register(): Promise<void> {
         try {
             isRegistering.value = true;
@@ -303,16 +317,16 @@
 
             if (captchaElement.value) {
                 actionContext.captcha = await captchaElement.value.getToken();
-                captchaElement.value.refreshToken();
             }
 
             const response = await invokeBlockAction<AccountEntryRegisterResponseBox>("Register", { box: registrationInfo.value }, actionContext);
 
-            if (response?.data?.step || response?.data?.step === AccountEntryStep.Registration) {
+            if (response?.isSuccess && response.data || response?.data?.step === AccountEntryStep.Registration) {
                 displayStep(response.data);
             }
             else {
                 showError(response?.errorMessage || "Ocurrió un error inesperado.");
+                triggerCaptchaRevalidationIfNeeded(accountEntryStep.value ?? AccountEntryStep.Registration);
             }
         }
         finally {
@@ -389,12 +403,27 @@
                 showRegistrationStepNext();
                 break;
         }
+
+        triggerCaptchaRevalidationIfNeeded(data.step);
+    }
+
+    async function waitForCaptcha(): Promise<void> {
+        if (disableCaptchaSupport.value || !captchaElement.value) {
+            isCaptchaComplete.value = true;
+            return;
+        }
+
+        const token = await captchaElement.value.getToken();
+        isCaptchaComplete.value = !!token;
     }
 
     //#endregion
 
     displayStep(config.accountEntryRegisterStepBox || { step: AccountEntryStep.Registration });
     onConfigurationValuesChanged(useReloadBlock());
+    onMounted(() => {
+        waitForCaptcha();
+    });
 </script>
 
 <style>

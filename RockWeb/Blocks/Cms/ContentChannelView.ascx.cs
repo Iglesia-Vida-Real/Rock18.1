@@ -84,7 +84,6 @@ namespace RockWeb.Blocks.Cms
         "Template",
         Description = "The template to use when formatting the list of items.",
         EditorMode = CodeEditorMode.Lava,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 600,
         IsRequired = false,
         Category = "CustomSetting",
@@ -444,7 +443,8 @@ namespace RockWeb.Blocks.Cms
             var rockContext = new RockContext();
             DataViewFilterService dataViewFilterService = new DataViewFilterService( rockContext );
 
-            int? dataViewFilterId = hfDataFilterId.Value.AsIntegerOrNull();
+            // Only delete the filter that is stored in this block's settings.
+            int? dataViewFilterId = GetAttributeValue( AttributeKey.FilterId ).AsIntegerOrNull();
             if ( dataViewFilterId.HasValue )
             {
                 var oldDataViewFilter = dataViewFilterService.Get( dataViewFilterId.Value );
@@ -904,21 +904,41 @@ $(document).ready(function() {
         /// <returns>a string value</returns>
         private string GetMetaValueFromAttribute( string input, List<ContentChannelItem> content )
         {
-            string attributeEntityType = input.Split( '^' )[0].ToString() ?? "C";
-            string attributeKey = input.Split( '^' )[1].ToString() ?? "";
-
-            string attributeValue = string.Empty;
+            var attributeEntityType = input.Split( '^' )[0].ToString() ?? "C";
+            var attributeKey = input.Split( '^' )[1].ToString() ?? "";
 
             if ( attributeEntityType == "C" )
             {
-                attributeValue = content.FirstOrDefault().ContentChannel.AttributeValues.Where( a => a.Key == attributeKey ).Select( a => a.Value.Value ).FirstOrDefault();
+                // Get the meta value from the parent ContentChannel's attribute.
+                var contentChannel = content.FirstOrDefault()?.ContentChannel;
+
+                if ( contentChannel != null )
+                {
+                    if ( contentChannel.AttributeValues == null )
+                    {
+                        contentChannel.LoadAttributes();
+                    }
+
+                    return contentChannel.GetAttributeValue( attributeKey );
+                }
             }
             else
             {
-                attributeValue = content.FirstOrDefault().AttributeValues.Where( a => a.Key == attributeKey ).Select( a => a.Value.Value ).FirstOrDefault();
+                // Get the meta value from the first ContentChannelItem's attribute.
+                var firstContentChannelItem = content.FirstOrDefault();
+
+                if ( firstContentChannelItem != null )
+                {
+                    if ( firstContentChannelItem.AttributeValues == null )
+                    {
+                        firstContentChannelItem.LoadAttributes();
+                    }
+
+                    return firstContentChannelItem.GetAttributeValue( attributeKey );
+                }
             }
 
-            return attributeValue;
+            return string.Empty;
         }
 
         /// <summary>
@@ -1479,7 +1499,7 @@ $(document).ready(function() {
         /// </summary>
         public void ShowEdit()
         {
-            int? filterId = hfDataFilterId.Value.AsIntegerOrNull();
+            int? filterId = GetAttributeValue( AttributeKey.FilterId ).AsIntegerOrNull();
 
             if ( ChannelGuid.HasValue )
             {

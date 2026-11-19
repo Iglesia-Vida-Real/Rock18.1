@@ -253,8 +253,8 @@ namespace Rock.Field.Types
                 {
                     TextValue = privateValue,
                     CondensedTextValue = privateValue,
-                    HtmlValue = privateValue,
-                    CondensedHtmlValue = privateValue
+                    HtmlValue = privateValue?.EncodeHtml(),
+                    CondensedHtmlValue = privateValue?.EncodeHtml(),
                 };
             }
 
@@ -272,8 +272,8 @@ namespace Rock.Field.Types
             {
                 TextValue = textValue,
                 CondensedTextValue = condensedTextValue,
-                HtmlValue = textValue,
-                CondensedHtmlValue = condensedTextValue
+                HtmlValue = textValue.EncodeHtml(),
+                CondensedHtmlValue = condensedTextValue.EncodeHtml(),
             };
         }
 
@@ -320,20 +320,30 @@ namespace Rock.Field.Types
                     publicConfigurationValues[CUSTOM_VALUES_PUBLIC_KEY] = publicConfigurationValues[VALUES_KEY];
                 }
 
-                var options = Helper.GetConfiguredValues( privateConfigurationValues )
-                    .Select( kvp => new
-                    {
-                        value = kvp.Key,
-                        text = kvp.Value
-                    } );
-
-                if ( usage == ConfigurationValueUsage.View )
+                try
                 {
-                    var selectedValues = privateValue.Split( new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries ).ToList();
-                    options = options.Where( o => selectedValues.Contains( o.value ) );
-                }
+                    var options = Helper.GetConfiguredValues( privateConfigurationValues )
+                        .Select( kvp => new
+                        {
+                            value = kvp.Key,
+                            text = kvp.Value
+                        } );
 
-                publicConfigurationValues[VALUES_KEY] = options.ToCamelCaseJson( false, true );
+                    if ( usage == ConfigurationValueUsage.View )
+                    {
+                        var selectedValues = privateValue.Split( new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries ).ToList();
+                        options = options.Where( o => selectedValues.Contains( o.value ) );
+                    }
+
+                    publicConfigurationValues[VALUES_KEY] = options.ToCamelCaseJson( false, true );
+                }
+                catch
+                {
+                    // If there was an error parsing the configured values,
+                    // return an empty set. In the future this should probably
+                    // also include some sort of error message for the UI.
+                    publicConfigurationValues[VALUES_KEY] = "[]";
+                }
             }
             else
             {

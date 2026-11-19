@@ -303,3 +303,15 @@ Via `RockSMSMessage` cualquier Workflow Action de envío de SMS puede rutear men
 - **Limitación conocida:** el medium SMS de Rock admite UN solo transport activo (atributo `TransportContainer`); no hay ruteo por número de sistema.
 - **Limitación conocida:** el estado `read` de WhatsApp solo se escribe en `StatusNote`; no genera interacción de comunicación (no cuenta como "open" en los reportes de Email Analytics).
 - **PENDIENTE (2026-10-15):** limpiar los cuatro Global Attributes `Twilio*` huérfanos del Check-in Manager (ver "Notificaciones desde el Check-in Manager"); pueden seguir guardando credenciales de Twilio en la base sin que nada las use.
+
+## Upgrade a Rock 19.8.1 (2026-11-19, rama `Test_Update_18.1_a_18.8`, solo local)
+
+Sin cambios de código. Dos ajustes en `Rock.WhatsApp.csproj` para que compile con la 19:
+
+- `Newtonsoft.Json` 13.0.1 → **13.0.4**: `Rock.Common` de la 19 exige ≥ 13.0.4 (sin esto el restore falla con `NU1605`).
+- Versionado SDK como el resto de los proyectos de upstream: se quitó `GenerateAssemblyInfo=False` y el
+  enlace a `..\Rock.Version\AssemblySharedInfo.cs` (upstream eliminó ese archivo) y se agregó
+  `GenerateAssemblyTitleAttribute=false` (el título sigue en `Properties/AssemblyInfo.cs`). La DLL ahora
+  reporta la versión de `Directory.Build.props` (19.8.1).
+
+Detalle en `docs/HANDOFF/UPGRADE_19.8.1.md`.

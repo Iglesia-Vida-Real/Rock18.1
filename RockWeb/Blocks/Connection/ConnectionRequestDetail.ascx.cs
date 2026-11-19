@@ -28,6 +28,7 @@ using Rock;
 using Rock.Attribute;
 using Rock.Constants;
 using Rock.Data;
+using Rock.Enums.Connection;
 using Rock.Model;
 using Rock.Security;
 using Rock.Web;
@@ -207,6 +208,21 @@ namespace RockWeb.Blocks.Connection
         </div>
     </div>
 {% endfor %}";
+
+            public const string IndicatorLabelTemplate = @"
+<div class='board-card-pills'>
+    {% if IndicatorOptions.IsAssignedToYou %}
+    <span class='label label-info' data-toggle='tooltip' data-original-title='Assigned To You' data-html='true'><i class='ti ti-user-circle'></i></span>
+    {% elseif IndicatorOptions.IsUnassigned %}
+    <span class='label label-default' data-toggle='tooltip' data-original-title='Unassigned' data-html='true'><i class='ti ti-user-off'></i></span>
+    {% endif %}
+    {% if IndicatorOptions.IsOverdue %}
+    <span class='label label-danger' data-toggle='tooltip' data-original-title='{{ IndicatorOptions.OverdueHtml }}' data-html='true'><i class='ti ti-exclamation-circle'></i></span>
+    {% elseif IndicatorOptions.IsDueSoon %}
+    <span class='label label-warning' data-toggle='tooltip' data-original-title='{{ IndicatorOptions.DueSoonHtml }}' data-html='true'><i class='ti ti-calendar-due'></i></span>
+    {% endif %}
+</div>
+";
         }
 
         #endregion Lava
@@ -521,7 +537,7 @@ namespace RockWeb.Blocks.Connection
             var service = new ConnectionRequestService( rockContext );
             var request = service.Get( connectionRequestId.Value );
 
-            if ( request == null )
+            if ( request == null || !CanEditConnectionRequest( request, rockContext ) )
             {
                 return;
             }
@@ -555,7 +571,13 @@ namespace RockWeb.Blocks.Connection
         {
             using ( var rockContext = new RockContext() )
             {
-                ShowEditDetails( new ConnectionRequestService( rockContext ).Get( hfConnectionRequestId.ValueAsInt() ), rockContext );
+                var connectionRequest = new ConnectionRequestService( rockContext ).Get( hfConnectionRequestId.ValueAsInt() );
+                if ( !CanEditConnectionRequest( connectionRequest, rockContext ) )
+                {
+                    return;
+                }
+
+                ShowEditDetails( connectionRequest, rockContext );
             }
         }
 
@@ -569,13 +591,19 @@ namespace RockWeb.Blocks.Connection
             int connectionRequestId = hfConnectionRequestId.ValueAsInt();
             if ( connectionRequestId > 0 )
             {
+                var connectionRequest = new ConnectionRequestService( new RockContext() ).Get( connectionRequestId );
+                if ( !CanViewConnectionRequest( connectionRequest ) )
+                {
+                    return;
+                }
+
                 /*
                  SK - 09/04/2022
                  Technically Show Add as well as IsDeleteEnabled will always be true here as User with Edit access can only reach to Edit Panel and invoke the current event.
                  */
                 gConnectionRequestActivities.Actions.ShowAdd = true;
                 gConnectionRequestActivities.IsDeleteEnabled = true;
-                ShowReadonlyDetails( new ConnectionRequestService( new RockContext() ).Get( connectionRequestId ) );
+                ShowReadonlyDetails( connectionRequest );
                 pnlReadDetails.Visible = true;
                 pnlConnectionRequestActivities.Visible = true;
                 wpConnectionRequestWorkflow.Visible = true;
@@ -601,7 +629,7 @@ namespace RockWeb.Blocks.Connection
                 {
                     ConnectionRequestService connectionRequestService = new ConnectionRequestService( rockContext );
 
-                    int connectionOpportunityId = hfConnectionOpportunityId.ValueAsInt();
+                    int connectionOpportunityId = GetConnectionOpportunityId( rockContext );
 
                     // Check if this person already has a connection request for this opportunity.
                     var connectionRequest = connectionRequestService.Queryable().AsNoTracking()
@@ -649,13 +677,23 @@ namespace RockWeb.Blocks.Connection
                     ConnectionRequest connectionRequest = null;
 
                     int connectionRequestId = hfConnectionRequestId.ValueAsInt();
+                    var isAddMode = false;
+
+                    // The request (or the opportunity of a new request) must be one the current person can edit.
+                    var editableConnectionRequest = GetEditableConnectionRequest( rockContext );
+                    if ( editableConnectionRequest == null )
+                    {
+                        ShowErrorMessage( "Not Authorized", EditModeMessage.ReadOnlyEditActionNotAllowed( ConnectionRequest.FriendlyTypeName ) );
+                        return;
+                    }
 
                     // if adding a new connection request
                     if ( connectionRequestId.Equals( 0 ) )
                     {
+                        isAddMode = true;
                         connectionRequest = new ConnectionRequest();
-                        connectionRequest.ConnectionOpportunityId = hfConnectionOpportunityId.ValueAsInt();
-                        connectionRequest.ConnectionTypeId = new ConnectionOpportunityService( rockContext ).Get( connectionRequest.ConnectionOpportunityId ).ConnectionTypeId;
+                        connectionRequest.ConnectionOpportunityId = editableConnectionRequest.ConnectionOpportunityId;
+                        connectionRequest.ConnectionTypeId = editableConnectionRequest.ConnectionTypeId;
 
                         if ( cpCampus.SelectedCampusId.HasValue )
                         {
@@ -694,7 +732,38 @@ namespace RockWeb.Blocks.Connection
                         connectionRequest.ConnectionState = ConnectionState.Active;
                     }
 
-                    connectionRequest.ConnectionStatusId = rblStatus.SelectedValueAsId().Value;
+                    var connectionStatusId = rblStatus.SelectedValueAsInt() ?? 0;
+                    var connectionType = ConnectionTypeCache.Get( connectionRequest.ConnectionTypeId );
+                    var isSequentialAddMode = isAddMode && connectionType.IsSequentialStatusEnforced;
+
+                    if ( isSequentialAddMode || connectionStatusId == 0 )
+                    {
+                        var allStatuses = connectionType.OrderedStatuses;
+
+                        if ( isSequentialAddMode )
+                        {
+                            // If sequential, default is the first active status (ignoring [IsDefault] flag).
+                            connectionStatusId = allStatuses
+                                .FirstOrDefault( s => s.IsActive )
+                                ?.Id ?? 0;
+                        }
+                        else
+                        {
+                            // If not sequential, default is the first active [IsDefault] status.
+                            connectionStatusId = allStatuses
+                                .FirstOrDefault( s => s.IsActive && s.IsDefault )
+                                ?.Id ?? 0;
+                        }
+
+                        if ( connectionStatusId == 0 )
+                        {
+                            cvConnectionRequest.IsValid = false;
+                            cvConnectionRequest.ErrorMessage = "Unable to determine Connection Status.";
+                            return;
+                        }
+                    }
+
+                    connectionRequest.ConnectionStatusId = connectionStatusId;
 
                     if ( oldState != ConnectionState.Connected )
                     {
@@ -781,6 +850,11 @@ namespace RockWeb.Blocks.Connection
                     .FirstOrDefault( cr => cr.Id == connectionRequestId );
 
                 if ( connectionRequest == null || connectionRequest.PersonAlias == null || connectionRequest.ConnectionOpportunity == null )
+                {
+                    return;
+                }
+
+                if ( !CanEditConnectionRequest( connectionRequest, rockContext ) )
                 {
                     return;
                 }
@@ -931,7 +1005,8 @@ namespace RockWeb.Blocks.Connection
                 var connectionRequest = connectionRequestService.Get( hfConnectionRequestId.ValueAsInt() );
                 if ( connectionRequest != null &&
                     connectionRequest.ConnectionOpportunity != null &&
-                    connectionRequest.ConnectionOpportunity.ConnectionType != null )
+                    connectionRequest.ConnectionOpportunity.ConnectionType != null &&
+                    CanEditConnectionRequest( connectionRequest, rockContext ) )
                 {
                     pnlReadDetails.Visible = false;
                     pnlConnectionRequestActivities.Visible = false;
@@ -943,9 +1018,13 @@ namespace RockWeb.Blocks.Connection
                     // Filter opportunities to only those associated with the current request's campus
                     var currentCampusId = connectionRequest.CampusId;
                     var associatedCampusOpportunities = connectionRequest.ConnectionOpportunity.ConnectionType.ConnectionOpportunities
-                        .Where( 
-                            o => o.IsActive && 
-                            o.ConnectionOpportunityCampuses.Any( c => currentCampusId.HasValue && c.CampusId == currentCampusId.Value ) )
+                        .Where(
+                            o => o.IsActive
+                            && (
+                                !currentCampusId.HasValue
+                                || o.ConnectionOpportunityCampuses.Any( c => currentCampusId.HasValue && c.CampusId == currentCampusId.Value )
+                            )
+                        )
                         .OrderBy( o => o.Order )
                         .ThenBy( o => o.Name );
 
@@ -961,7 +1040,8 @@ namespace RockWeb.Blocks.Connection
 
                     rbTransferCurrentConnector.Text = string.Format( "Current Connector: {0}", connectionRequest.ConnectorPersonAlias != null ? connectionRequest.ConnectorPersonAlias.ToString() : "No Connector" );
                     ddlTransferOpportunity.SetValue( connectionRequest.ConnectionOpportunityId );
-                    ddlTransferOpportunity_SelectedIndexChanged( null, null );
+
+                    RebindTransferOpportunityConnector( connectionRequest.ConnectionOpportunity, true, rockContext );
                 }
             }
         }
@@ -976,10 +1056,6 @@ namespace RockWeb.Blocks.Connection
             var rockContext = new RockContext();
             var connectionOpportunityID = ddlTransferOpportunity.SelectedValue.AsIntegerOrNull();
             var connectionOpportunity = new ConnectionOpportunityService( rockContext ).Get( connectionOpportunityID.Value );
-            if ( connectionOpportunity != null )
-            {
-                rbTransferDefaultConnector.Text = "Default Connector for " + connectionOpportunity.Name;
-            }
 
             RebindTransferOpportunityConnector( connectionOpportunity, true, rockContext );
         }
@@ -1012,6 +1088,23 @@ namespace RockWeb.Blocks.Connection
                     var connectionWorkflow = new ConnectionWorkflowService( rockContext ).Get( e.CommandArgument.ToString().AsInteger() );
                     if ( connectionRequest != null && connectionWorkflow != null && connectionWorkflow.WorkflowType.IsAuthorized( Authorization.VIEW, CurrentPerson ) )
                     {
+                        // The request and workflow come from client values, so require that the request can be
+                        // viewed and that the workflow is one of the manual workflows ShowReadonlyDetails lists for it.
+                        if ( !CanViewConnectionRequest( connectionRequest ) )
+                        {
+                            return;
+                        }
+
+                        var isListedWorkflow = connectionWorkflow.TriggerType == ConnectionWorkflowTriggerType.Manual
+                            && ( connectionWorkflow.ConnectionOpportunityId == connectionRequest.ConnectionOpportunityId
+                                || ( connectionWorkflow.ConnectionTypeId.HasValue && connectionWorkflow.ConnectionTypeId == connectionRequest.ConnectionOpportunity.ConnectionTypeId ) )
+                            && ( connectionWorkflow.ManualTriggerFilterConnectionStatusId == null || connectionWorkflow.ManualTriggerFilterConnectionStatusId == connectionRequest.ConnectionStatusId );
+
+                        if ( !isListedWorkflow )
+                        {
+                            return;
+                        }
+
                         LaunchWorkflow( rockContext, connectionRequest, connectionWorkflow );
                     }
                 }
@@ -1061,18 +1154,11 @@ namespace RockWeb.Blocks.Connection
         {
             using ( var rockContext = new RockContext() )
             {
-                var connectionRequestService = new ConnectionRequestService( rockContext );
-                var connectionRequest = connectionRequestService.Get( hfConnectionRequestId.ValueAsInt() );
+                // The request (or the opportunity of a new request) must be one the current person can edit.
+                var connectionRequest = GetEditableConnectionRequest( rockContext );
                 if ( connectionRequest == null )
                 {
-                    connectionRequest = new ConnectionRequest();
-                    var connectionOpportunity = new ConnectionOpportunityService( rockContext ).Get( hfConnectionOpportunityId.ValueAsInt() );
-                    if ( connectionOpportunity != null )
-                    {
-                        connectionRequest.ConnectionOpportunity = connectionOpportunity;
-                        connectionRequest.ConnectionOpportunityId = connectionOpportunity.Id;
-                        connectionRequest.ConnectionTypeId = connectionOpportunity.ConnectionTypeId;
-                    }
+                    return;
                 }
 
                 RebindGroupsAndConnectors( connectionRequest, rockContext );
@@ -1083,18 +1169,11 @@ namespace RockWeb.Blocks.Connection
         {
             using ( var rockContext = new RockContext() )
             {
-                var connectionRequestService = new ConnectionRequestService( rockContext );
-                var connectionRequest = connectionRequestService.Get( hfConnectionRequestId.ValueAsInt() );
+                // The request (or the opportunity of a new request) must be one the current person can edit.
+                var connectionRequest = GetEditableConnectionRequest( rockContext );
                 if ( connectionRequest == null )
                 {
-                    connectionRequest = new ConnectionRequest();
-                    var connectionOpportunity = new ConnectionOpportunityService( rockContext ).Get( hfConnectionOpportunityId.ValueAsInt() );
-                    if ( connectionOpportunity != null )
-                    {
-                        connectionRequest.ConnectionOpportunity = connectionOpportunity;
-                        connectionRequest.ConnectionOpportunityId = connectionOpportunity.Id;
-                        connectionRequest.ConnectionTypeId = connectionOpportunity.ConnectionTypeId;
-                    }
+                    return;
                 }
 
                 RebindGroupRole( connectionRequest, rockContext );
@@ -1105,18 +1184,11 @@ namespace RockWeb.Blocks.Connection
         {
             using ( var rockContext = new RockContext() )
             {
-                var connectionRequestService = new ConnectionRequestService( rockContext );
-                var connectionRequest = connectionRequestService.Get( hfConnectionRequestId.ValueAsInt() );
+                // The request (or the opportunity of a new request) must be one the current person can edit.
+                var connectionRequest = GetEditableConnectionRequest( rockContext );
                 if ( connectionRequest == null )
                 {
-                    connectionRequest = new ConnectionRequest();
-                    var connectionOpportunity = new ConnectionOpportunityService( rockContext ).Get( hfConnectionOpportunityId.ValueAsInt() );
-                    if ( connectionOpportunity != null )
-                    {
-                        connectionRequest.ConnectionOpportunity = connectionOpportunity;
-                        connectionRequest.ConnectionOpportunityId = connectionOpportunity.Id;
-                        connectionRequest.ConnectionTypeId = connectionOpportunity.ConnectionTypeId;
-                    }
+                    return;
                 }
 
                 RebindGroupStatus( connectionRequest, rockContext );
@@ -1158,7 +1230,7 @@ namespace RockWeb.Blocks.Connection
                 var connectionRequestActivityService = new ConnectionRequestActivityService( rockContext );
 
                 var connectionRequest = connectionRequestService.Get( hfConnectionRequestId.ValueAsInt() );
-                if ( connectionRequest != null )
+                if ( connectionRequest != null && CanEditConnectionRequest( connectionRequest, rockContext ) )
                 {
                     int? newOpportunityId = ddlTransferOpportunity.SelectedValueAsId();
 
@@ -1179,6 +1251,19 @@ namespace RockWeb.Blocks.Connection
                     if ( newOpportunityId.HasValue && transferredActivityId > 0 )
                     {
                         var newOpportunity = new ConnectionOpportunityService( rockContext ).Get( newOpportunityId.Value );
+
+                        // The target must be one of the opportunities lbTransfer_Click offers: an active opportunity
+                        // of the same connection type that serves the request's campus, or any campus when the
+                        // request has none.
+                        var currentCampusId = connectionRequest.CampusId;
+                        if ( newOpportunity == null
+                            || !newOpportunity.IsActive
+                            || newOpportunity.ConnectionTypeId != connectionRequest.ConnectionOpportunity.ConnectionTypeId
+                            || ( currentCampusId.HasValue && !newOpportunity.ConnectionOpportunityCampuses.Any( c => c.CampusId == currentCampusId.Value ) ) )
+                        {
+                            nbTranferFailed.Visible = true;
+                            return;
+                        }
 
                         ConnectionRequestActivity connectionRequestActivity = new ConnectionRequestActivity();
                         connectionRequestActivity.ConnectionRequestId = connectionRequest.Id;
@@ -1265,7 +1350,8 @@ namespace RockWeb.Blocks.Connection
                 var connectionRequest = connectionRequestService.Get( hfConnectionRequestId.ValueAsInt() );
                 if ( connectionRequest != null &&
                     connectionRequest.ConnectionOpportunity != null &&
-                    connectionRequest.ConnectionOpportunity.ConnectionType != null )
+                    connectionRequest.ConnectionOpportunity.ConnectionType != null &&
+                    CanEditConnectionRequest( connectionRequest, rockContext ) )
                 {
                     cblCampus.DataSource = CampusCache.All();
                     cblCampus.DataBind();
@@ -1298,7 +1384,8 @@ namespace RockWeb.Blocks.Connection
                 var connectionRequest = connectionRequestService.Get( hfConnectionRequestId.ValueAsInt() );
                 if ( connectionRequest != null &&
                     connectionRequest.ConnectionOpportunity != null &&
-                    connectionRequest.ConnectionOpportunity.ConnectionType != null )
+                    connectionRequest.ConnectionOpportunity.ConnectionType != null &&
+                    CanEditConnectionRequest( connectionRequest, rockContext ) )
                 {
                     var connectionOpportunityService = new ConnectionOpportunityService( rockContext );
                     var connectionTypeId = connectionRequest.ConnectionOpportunity.ConnectionTypeId;
@@ -1344,19 +1431,20 @@ namespace RockWeb.Blocks.Connection
 
             using ( var rockContext = new RockContext() )
             {
+                var connectionRequestService = new ConnectionRequestService( rockContext );
+                var connectionRequest = connectionRequestService.Get( hfConnectionRequestId.ValueAsInt() );
+
                 // only allow deleting if current user created the activity, and not a system activity
+                // The activity must also belong to this request, which the current person must be able to view.
                 var connectionRequestActivityService = new ConnectionRequestActivityService( rockContext );
                 var activity = connectionRequestActivityService.Get( activityId );
-                if ( activity != null &&
-                    ( activity.CreatedByPersonAliasId.Equals( CurrentPersonAliasId ) || activity.ConnectorPersonAliasId.Equals( CurrentPersonAliasId ) ) &&
-                    activity.ConnectionActivityType.ConnectionTypeId.HasValue )
+                if ( CanEditActivity( activity ) &&
+                    CanViewConnectionRequest( connectionRequest ) &&
+                    IsActivityListedForRequest( activity, connectionRequest ) )
                 {
                     connectionRequestActivityService.Delete( activity );
                     rockContext.SaveChanges();
                 }
-
-                var connectionRequestService = new ConnectionRequestService( rockContext );
-                var connectionRequest = connectionRequestService.Get( hfConnectionRequestId.ValueAsInt() );
             }
 
             var pageParams = new Dictionary<string, string>
@@ -1390,7 +1478,7 @@ namespace RockWeb.Blocks.Connection
             {
                 var connectionRequestService = new ConnectionRequestService( rockContext );
                 var connectionRequest = connectionRequestService.Get( hfConnectionRequestId.ValueAsInt() );
-                if ( connectionRequest != null )
+                if ( CanViewConnectionRequest( connectionRequest ) )
                 {
                     var instantiatedWorkflows = connectionRequest.ConnectionRequestWorkflows
                         .Where( c =>
@@ -1477,7 +1565,7 @@ namespace RockWeb.Blocks.Connection
                 var personAliasService = new PersonAliasService( rockContext );
 
                 var connectionRequest = connectionRequestService.Get( hfConnectionRequestId.ValueAsInt() );
-                if ( connectionRequest != null )
+                if ( CanViewConnectionRequest( connectionRequest ) )
                 {
                     int? activityTypeId = ddlActivity.SelectedValueAsId();
                     int? personAliasId = personAliasService.GetPrimaryAliasId( ddlActivityConnector.SelectedValueAsId() ?? 0 );
@@ -1488,6 +1576,22 @@ namespace RockWeb.Blocks.Connection
                         if ( guid.HasValue )
                         {
                             connectionRequestActivity = connectionRequestActivityService.Get( guid.Value );
+                        }
+
+                        if ( connectionRequestActivity != null )
+                        {
+                            // Editing an existing activity uses the grid's rule (gConnectionRequestActivities_Edit),
+                            // and the activity must be one listed for this request.
+                            if ( !CanEditActivity( connectionRequestActivity ) || !IsActivityListedForRequest( connectionRequestActivity, connectionRequest ) )
+                            {
+                                return;
+                            }
+                        }
+                        else if ( ViewState[ViewStateKey.ActivityWebViewMode]?.ToStringOrDefault( "False" ) == "False" && !CanEditConnectionRequest( connectionRequest, rockContext ) )
+                        {
+                            // The activities grid only offers Add to people who can edit the request
+                            // (the Lava activity view offers it to anyone who can view the request).
+                            return;
                         }
 
                         if ( connectionRequestActivity == null )
@@ -1540,7 +1644,7 @@ namespace RockWeb.Blocks.Connection
             {
                 var connectionRequestService = new ConnectionRequestService( rockContext );
                 var connectionRequest = connectionRequestService.Get( hfConnectionRequestId.ValueAsInt() );
-                if ( connectionRequest != null )
+                if ( CanViewConnectionRequest( connectionRequest ) )
                 {
                     BindConnectionRequestActivitiesGrid( connectionRequest, rockContext );
                 }
@@ -1566,10 +1670,12 @@ namespace RockWeb.Blocks.Connection
         {
             // only allow editing if current user created the activity, and not a system activity
             var activityGuid = e.RowKeyValue.ToString().AsGuid();
-            var activity = new ConnectionRequestActivityService( new RockContext() ).Get( activityGuid );
-            if ( activity != null &&
-                ( activity.CreatedByPersonAliasId.Equals( CurrentPersonAliasId ) || activity.ConnectorPersonAliasId.Equals( CurrentPersonAliasId ) ) &&
-                activity.ConnectionActivityType.ConnectionTypeId.HasValue )
+            var rockContext = new RockContext();
+            var activity = new ConnectionRequestActivityService( rockContext ).Get( activityGuid );
+            var connectionRequest = new ConnectionRequestService( rockContext ).Get( hfConnectionRequestId.ValueAsInt() );
+            if ( CanEditActivity( activity ) &&
+                CanViewConnectionRequest( connectionRequest ) &&
+                IsActivityListedForRequest( activity, connectionRequest ) )
             {
                 ShowActivityDialog( activityGuid );
             }
@@ -1613,16 +1719,22 @@ namespace RockWeb.Blocks.Connection
                 var activityGuid = e.RowKeyValue.ToString().AsGuid();
                 var connectionRequestActivityService = new ConnectionRequestActivityService( rockContext );
                 var activity = connectionRequestActivityService.Get( activityGuid );
-                if ( activity != null &&
-                    ( activity.CreatedByPersonAliasId.Equals( CurrentPersonAliasId ) || activity.ConnectorPersonAliasId.Equals( CurrentPersonAliasId ) ) &&
-                    activity.ConnectionActivityType.ConnectionTypeId.HasValue )
+
+                var connectionRequestService = new ConnectionRequestService( rockContext );
+                var connectionRequest = connectionRequestService.Get( hfConnectionRequestId.ValueAsInt() );
+
+                // Delete is only enabled for people who can edit the request, and the activity must be listed for it.
+                if ( !CanEditConnectionRequest( connectionRequest, rockContext ) )
+                {
+                    return;
+                }
+
+                if ( CanEditActivity( activity ) && IsActivityListedForRequest( activity, connectionRequest ) )
                 {
                     connectionRequestActivityService.Delete( activity );
                     rockContext.SaveChanges();
                 }
 
-                var connectionRequestService = new ConnectionRequestService( rockContext );
-                var connectionRequest = connectionRequestService.Get( hfConnectionRequestId.ValueAsInt() );
                 BindConnectionRequestActivitiesGrid( connectionRequest, rockContext );
             }
         }
@@ -1774,7 +1886,14 @@ namespace RockWeb.Blocks.Connection
             ddlTransferOpportunityConnector.Items.Clear();
             ddlTransferOpportunityConnector.Items.Add( new ListItem() );
 
+            rbTransferDefaultConnector.Text = "Default Connector for " + connectionOpportunity.Name;
+
             var connectionRequest = new ConnectionRequestService( new RockContext() ).Get( hfConnectionRequestId.ValueAsInt() );
+            if ( connectionRequest != null && !CanEditConnectionRequest( connectionRequest, rockContext ) )
+            {
+                connectionRequest = null;
+            }
+
             if ( connectionOpportunity != null )
             {
                 if ( connectionOpportunity.ConnectionType != null && connectionRequest != null )
@@ -1852,8 +1971,8 @@ namespace RockWeb.Blocks.Connection
         /// <returns></returns>
         private List<ConnectorViewModel> GetConnectors( bool includeCurrentPerson, int? campusId )
         {
-            var connectionOpportunityId = hfConnectionOpportunityId.ValueAsInt();
             var rockContext = new RockContext();
+            var connectionOpportunityId = GetConnectionOpportunityId( rockContext );
             var service = new ConnectionOpportunityConnectorGroupService( rockContext );
 
             var connectors = service.Queryable()
@@ -2067,40 +2186,7 @@ namespace RockWeb.Blocks.Connection
                     lTitle.Text = string.Format( "New {0} Connection Request", connectionOpportunity.Name );
                 }
 
-                // Only users that have edit rights to the opportunity
-                if ( !editAllowed )
-                {
-                    editAllowed = connectionRequest.IsAuthorized( Authorization.EDIT, CurrentPerson );
-                }
-
-                // Grants edit access to those in the opportunity's connector groups
-                if ( !editAllowed && CurrentPersonId.HasValue )
-                {
-                    var qryConnectionOpportunityConnectorGroups = new ConnectionOpportunityConnectorGroupService( rockContext ).Queryable().AsNoTracking()
-                        .Where( a => a.ConnectionOpportunityId == connectionOpportunity.Id );
-
-                    var campuses = CampusCache.All().Where( c => c.IsActive ?? true ).ToList();
-                    // Grant edit access to any of those in a non campus-specific connector group
-                    editAllowed = qryConnectionOpportunityConnectorGroups
-                        .Any( g =>
-                            ( campuses.Count == 1 || !g.CampusId.HasValue ) &&
-                            g.ConnectorGroup != null &&
-                            g.ConnectorGroup.Members.Any( m => m.PersonId == CurrentPersonId && m.GroupMemberStatus == GroupMemberStatus.Active ) );
-
-                    if ( !editAllowed )
-                    {
-                        // If this is a new request, grant edit access to any connector group. Otherwise, match the request's campus to the corresponding campus-specific connector group
-                        foreach ( var groupCampus in qryConnectionOpportunityConnectorGroups
-                            .Where( g =>
-                                ( connectionRequest.Id == 0 || ( connectionRequest.CampusId.HasValue && g.CampusId == connectionRequest.CampusId.Value ) ) &&
-                                g.ConnectorGroup != null &&
-                                g.ConnectorGroup.Members.Any( m => m.PersonId == CurrentPersonId ) ) )
-                        {
-                            editAllowed = true;
-                            break;
-                        }
-                    }
-                }
+                editAllowed = IsConnectionRequestEditAllowed( connectionRequest, connectionOpportunity, rockContext );
 
                 lbConnect.Visible = editAllowed;
                 lbEdit.Visible = editAllowed;
@@ -2137,6 +2223,172 @@ namespace RockWeb.Blocks.Connection
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Determines whether the current person can edit the connection request. This is
+        /// the rule <see cref="ShowDetail(int, int?)"/> uses to show the edit controls.
+        /// </summary>
+        /// <param name="connectionRequest">The connection request.</param>
+        /// <param name="connectionOpportunity">The connection opportunity of the request.</param>
+        /// <param name="rockContext">The rock context.</param>
+        /// <returns><c>true</c> if the current person can edit the request; otherwise, <c>false</c>.</returns>
+        private bool IsConnectionRequestEditAllowed( ConnectionRequest connectionRequest, ConnectionOpportunity connectionOpportunity, RockContext rockContext )
+        {
+            // Only users that have edit rights to the opportunity
+            var editAllowed = connectionRequest.IsAuthorized( Authorization.EDIT, CurrentPerson );
+
+            // Grants edit access to those in the opportunity's connector groups
+            if ( !editAllowed && CurrentPersonId.HasValue )
+            {
+                var qryConnectionOpportunityConnectorGroups = new ConnectionOpportunityConnectorGroupService( rockContext ).Queryable().AsNoTracking()
+                    .Where( a => a.ConnectionOpportunityId == connectionOpportunity.Id );
+
+                var campuses = CampusCache.All().Where( c => c.IsActive ?? true ).ToList();
+                // Grant edit access to any of those in a non campus-specific connector group
+                editAllowed = qryConnectionOpportunityConnectorGroups
+                    .Any( g =>
+                        ( campuses.Count == 1 || !g.CampusId.HasValue ) &&
+                        g.ConnectorGroup != null &&
+                        g.ConnectorGroup.Members.Any( m => m.PersonId == CurrentPersonId && m.GroupMemberStatus == GroupMemberStatus.Active ) );
+
+                if ( !editAllowed )
+                {
+                    // If this is a new request, grant edit access to any connector group. Otherwise, match the request's campus to the corresponding campus-specific connector group
+                    foreach ( var groupCampus in qryConnectionOpportunityConnectorGroups
+                        .Where( g =>
+                            ( connectionRequest.Id == 0 || ( connectionRequest.CampusId.HasValue && g.CampusId == connectionRequest.CampusId.Value ) ) &&
+                            g.ConnectorGroup != null &&
+                            g.ConnectorGroup.Members.Any( m => m.PersonId == CurrentPersonId ) ) )
+                    {
+                        editAllowed = true;
+                        break;
+                    }
+                }
+            }
+
+            return editAllowed;
+        }
+
+        /// <summary>
+        /// Determines whether the current person can view the connection request,
+        /// the same check <see cref="ShowDetail(int, int?)"/> applies.
+        /// </summary>
+        /// <param name="connectionRequest">The connection request.</param>
+        /// <returns><c>true</c> if the request exists and the current person can view it; otherwise, <c>false</c>.</returns>
+        private bool CanViewConnectionRequest( ConnectionRequest connectionRequest )
+        {
+            return connectionRequest != null
+                && connectionRequest.ConnectionOpportunity != null
+                && connectionRequest.IsAuthorized( Authorization.VIEW, CurrentPerson );
+        }
+
+        /// <summary>
+        /// Determines whether the current person can view and edit the connection request,
+        /// the same checks <see cref="ShowDetail(int, int?)"/> applies before showing the edit controls.
+        /// </summary>
+        /// <param name="connectionRequest">The connection request.</param>
+        /// <param name="rockContext">The rock context.</param>
+        /// <returns><c>true</c> if the request exists and the current person can edit it; otherwise, <c>false</c>.</returns>
+        private bool CanEditConnectionRequest( ConnectionRequest connectionRequest, RockContext rockContext )
+        {
+            return CanViewConnectionRequest( connectionRequest )
+                && IsConnectionRequestEditAllowed( connectionRequest, connectionRequest.ConnectionOpportunity, rockContext );
+        }
+
+        /// <summary>
+        /// Gets the connection opportunity identifier this block is working with. The
+        /// hidden field is client controlled, so for an existing request this is the
+        /// request's opportunity and for a new request it is the page parameter.
+        /// </summary>
+        /// <param name="rockContext">The rock context.</param>
+        /// <returns>The connection opportunity identifier.</returns>
+        private int GetConnectionOpportunityId( RockContext rockContext )
+        {
+            var connectionRequestId = hfConnectionRequestId.ValueAsInt();
+            if ( connectionRequestId > 0 )
+            {
+                return new ConnectionRequestService( rockContext ).Queryable()
+                    .AsNoTracking()
+                    .Where( r => r.Id == connectionRequestId )
+                    .Select( r => r.ConnectionOpportunityId )
+                    .FirstOrDefault();
+            }
+
+            return PageParameter( PageParameterKey.ConnectionOpportunityId ).AsInteger();
+        }
+
+        /// <summary>
+        /// Gets the connection request being edited, or a new unsaved request for the
+        /// page parameter's opportunity when adding one, only if the current person can
+        /// edit it.
+        /// </summary>
+        /// <param name="rockContext">The rock context.</param>
+        /// <returns>The connection request, or <c>null</c> if it does not exist or the current person cannot edit it.</returns>
+        private ConnectionRequest GetEditableConnectionRequest( RockContext rockContext )
+        {
+            var connectionRequestId = hfConnectionRequestId.ValueAsInt();
+            if ( connectionRequestId > 0 )
+            {
+                var existingConnectionRequest = new ConnectionRequestService( rockContext ).Get( connectionRequestId );
+                return CanEditConnectionRequest( existingConnectionRequest, rockContext ) ? existingConnectionRequest : null;
+            }
+
+            var connectionOpportunity = new ConnectionOpportunityService( rockContext ).Get( GetConnectionOpportunityId( rockContext ) );
+            if ( connectionOpportunity == null )
+            {
+                return null;
+            }
+
+            var connectionRequest = new ConnectionRequest();
+            connectionRequest.ConnectionOpportunity = connectionOpportunity;
+            connectionRequest.ConnectionOpportunityId = connectionOpportunity.Id;
+            connectionRequest.ConnectionTypeId = connectionOpportunity.ConnectionTypeId;
+
+            return CanEditConnectionRequest( connectionRequest, rockContext ) ? connectionRequest : null;
+        }
+
+        /// <summary>
+        /// Determines whether the activity is one the activities grid lists for the connection request.
+        /// </summary>
+        /// <param name="activity">The activity.</param>
+        /// <param name="connectionRequest">The connection request.</param>
+        /// <returns><c>true</c> if the activity is listed for the request; otherwise, <c>false</c>.</returns>
+        private bool IsActivityListedForRequest( ConnectionRequestActivity activity, ConnectionRequest connectionRequest )
+        {
+            if ( activity == null || connectionRequest == null || connectionRequest.PersonAlias == null
+                || activity.ConnectionRequest == null || activity.ConnectionRequest.PersonAlias == null || activity.ConnectionOpportunity == null )
+            {
+                return false;
+            }
+
+            if ( activity.ConnectionRequest.PersonAlias.PersonId != connectionRequest.PersonAlias.PersonId )
+            {
+                return false;
+            }
+
+            // Match BindConnectionRequestActivitiesGrid.
+            if ( connectionRequest.ConnectionOpportunity != null &&
+                connectionRequest.ConnectionOpportunity.ConnectionType != null &&
+                connectionRequest.ConnectionOpportunity.ConnectionType.EnableFullActivityList )
+            {
+                return activity.ConnectionOpportunity.ConnectionTypeId == connectionRequest.ConnectionOpportunity.ConnectionTypeId;
+            }
+
+            return activity.ConnectionRequestId == connectionRequest.Id;
+        }
+
+        /// <summary>
+        /// Determines whether the current person can edit or delete the activity, the rule
+        /// the activities grid uses for its CanEdit column.
+        /// </summary>
+        /// <param name="activity">The activity.</param>
+        /// <returns><c>true</c> if the current person can edit the activity; otherwise, <c>false</c>.</returns>
+        private bool CanEditActivity( ConnectionRequestActivity activity )
+        {
+            return activity != null &&
+                ( activity.CreatedByPersonAliasId.Equals( CurrentPersonAliasId ) || activity.ConnectorPersonAliasId.Equals( CurrentPersonAliasId ) ) &&
+                activity.ConnectionActivityType.ConnectionTypeId.HasValue;
         }
 
         /// <summary>
@@ -2235,8 +2487,30 @@ namespace RockWeb.Blocks.Connection
 
             BindPhoto( person );
 
-            lComments.Text = connectionRequest != null && connectionRequest.Comments != null ? connectionRequest.Comments.ConvertMarkdownToHtml() : string.Empty;
+            lComments.Text = connectionRequest != null && connectionRequest.Comments != null ? connectionRequest.Comments.ConvertMarkdownToHtml().SanitizeHtml( strict: false ) : string.Empty;
             lRequestDate.Text = connectionRequest != null && connectionRequest.CreatedDateTime.HasValue ? connectionRequest.CreatedDateTime.Value.ToShortDateString() : string.Empty;
+
+            if ( !connectionRequest.DueDate.HasValue )
+            {
+                lDueDate.Visible = false;
+            }
+            else
+            {
+                // We're setting the bare minimum on this model to display due date details.
+                var connectionRequestViewModel = new ConnectionRequestViewModel
+                {
+                    ConnectionState = connectionRequest.ConnectionState,
+                    DueDate = connectionRequest.DueDate,
+                    DueSoonDate = connectionRequest.DueSoonDate
+                };
+
+                var textClass = connectionRequestViewModel.IsDueSoon ? "text-warning" : string.Empty;
+
+                lDueDate.Text = connectionRequestViewModel.IsOverdue
+                    ? $"<span class='text-danger'>{connectionRequestViewModel.DueDate.Value:d} ({connectionRequestViewModel.OverdueDaysText} Overdue)</span>"
+                    : $"<span class='{textClass}'>{connectionRequestViewModel.DueDate.Value:d} ({connectionRequestViewModel.DueInDaysText})</span>";
+            }
+
             if ( connectionRequest != null && connectionRequest.AssignedGroup != null )
             {
                 var qryParams = new Dictionary<string, string>();
@@ -2312,7 +2586,7 @@ namespace RockWeb.Blocks.Connection
                         .Distinct();
 
                     var workflowTypeOrder = connectionRequest.ConnectionOpportunity.GetAdditionalSettingsOrNull<List<int>>( "WorkflowTypeOrder" ) ?? new List<int>();
-                    
+
                     var orderedManualWorkflows = manualWorkflows
                         .OrderBy( w =>
                         {
@@ -2353,6 +2627,18 @@ namespace RockWeb.Blocks.Connection
                 lHeading.Text = GetAttributeValue( AttributeKeys.LavaHeadingTemplate ).ResolveMergeFields( mergeFields );
                 lBadgeBar.Text = GetAttributeValue( AttributeKeys.LavaBadgeBar ).ResolveMergeFields( mergeFields );
 
+                // We're setting the bare minimum on this model to display status indicators.
+                var connectionRequestViewModel = new ConnectionRequestViewModel
+                {
+                    ConnectionState = connectionRequest.ConnectionState,
+                    DueDate = connectionRequest.DueDate,
+                    DueSoonDate = connectionRequest.DueSoonDate,
+                    IsAssignedToYou = connectionRequest.ConnectorPersonAliasId.GetValueOrDefault() == CurrentPersonAliasId,
+                    IsUnassigned = !connectionRequest.ConnectorPersonAliasId.HasValue
+                };
+
+                lRequestViewModeStatusIndicators.Text = ConnectionRequestService.GetIndicatorLabelHtml( connectionRequestViewModel, Lava.IndicatorLabelTemplate );
+
                 var activityLavaTemplate = GetAttributeValue( AttributeKeys.ActivityLavaTemplate ).ResolveMergeFields( mergeFields );
                 var activityWebViewMode = !string.IsNullOrEmpty( activityLavaTemplate );
                 if ( activityWebViewMode )
@@ -2380,6 +2666,12 @@ namespace RockWeb.Blocks.Connection
                 lblWorkflows.Visible = false;
                 lbConnect.Enabled = false;
             }
+
+            var connectionType = ConnectionTypeCache.Get( connectionRequest.ConnectionTypeId );
+            var isGroupPlacementEnabled = connectionType?.EnabledFeatures.HasFlag( EnabledFeatureFlags.GroupPlacement ) == true;
+
+            lPlacementGroup.Visible = isGroupPlacementEnabled;
+            phGroupMemberAttributesView.Visible = isGroupPlacementEnabled;
         }
 
         private void EnableActivityWebViewMode( string activityLavaTemplate )
@@ -2443,25 +2735,60 @@ namespace RockWeb.Blocks.Connection
             tbComments.Text = connectionRequest.Comments;
 
             // Status
+            var isAddMode = connectionRequest.Id == 0;
+            var connectionType = ConnectionTypeCache.Get( connectionRequest.ConnectionTypeId );
+            var isSequentialStatusEnforced = connectionType.IsSequentialStatusEnforced;
+
             rblStatus.Items.Clear();
 
-            var allStatuses = connectionRequest.ConnectionOpportunity.ConnectionType.ConnectionStatuses.OrderBy( a => a.Order ).ThenByDescending( a => a.IsDefault ).ThenBy( a => a.Name );
+            var allStatuses = connectionType.OrderedStatuses;
+            var currentStatusId = connectionRequest?.ConnectionStatusId;
 
             foreach ( var status in allStatuses )
             {
                 // Add Status to selection list only if marked as active or currently selected.
-                if ( status.IsActive
-                     || status.Id == connectionRequest.ConnectionStatusId )
+                var isCurrentStatus = currentStatusId.HasValue && status.Id == currentStatusId.Value;
+
+                if ( status.IsActive || isCurrentStatus )
                 {
-                    rblStatus.Items.Add( new ListItem( status.Name, status.Id.ToString().ToUpper() ) );
+                    // In non-sequential status mode, all active statuses should be enabled.
+                    // In sequential mode, only the current status and the one immediately following should be enabled.
+                    var isEnabled = !isSequentialStatusEnforced
+                        || isCurrentStatus
+                        || ConnectionType.IsNextSequentialActiveStatus(
+                            connectionType.Id,
+                            currentStatusId ?? 0,
+                            status.Id
+                        );
+
+                    var statusListItem = new ListItem( status.Name, status.Id.ToString().ToUpper(), isEnabled );
+
+                    rblStatus.Items.Add( statusListItem );
                 }
             }
 
             rblStatus.SelectedValue = connectionRequest.ConnectionStatusId.ToString();
 
+            if ( isAddMode && isSequentialStatusEnforced )
+            {
+                // If sequential, default is the first active status (ignoring [IsDefault] flag).
+                var defaultStatus = allStatuses.FirstOrDefault( s => s.IsActive );
+                lRequestModalAddModeSequentialStatus.Text = defaultStatus?.Name;
+                pnlRequestModalAddModeSequentialStatus.Visible = true;
+
+                // Go ahead and set this even though we're hiding it (in case some legacy code depends on it being set).
+                rblStatus.SelectedValue = defaultStatus?.Id.ToString();
+                rblStatus.Visible = false;
+            }
+            else
+            {
+                rblStatus.Visible = true;
+                pnlRequestModalAddModeSequentialStatus.Visible = false;
+            }
+
             // Campus
-            var campusIds = connectionRequest.ConnectionOpportunity.ConnectionOpportunityCampuses.Select(c => c.CampusId).ToList();
-            var campuses = CampusCache.All(false).Where(c => campusIds.Contains(c.Id) && (c.IsActive ?? false)).ToList();
+            var campusIds = connectionRequest.ConnectionOpportunity.ConnectionOpportunityCampuses.Select( c => c.CampusId ).ToList();
+            var campuses = CampusCache.All( false ).Where( c => campusIds.Contains( c.Id ) && ( c.IsActive ?? false ) ).ToList();
             cpCampus.Campuses = campuses;
             cpCampus.SelectedCampusId = connectionRequest.CampusId;
 
@@ -2612,6 +2939,16 @@ namespace RockWeb.Blocks.Connection
             }
 
             RebindGroupRole( connectionRequest, rockContext );
+
+            var connectionType = ConnectionTypeCache.Get( connectionRequest.ConnectionTypeId );
+            var isGroupPlacementEnabled = connectionType?.EnabledFeatures.HasFlag( EnabledFeatureFlags.GroupPlacement ) == true;
+
+            ddlPlacementGroup.Visible = isGroupPlacementEnabled;
+            if ( !isGroupPlacementEnabled )
+            {
+                ddlPlacementGroupRole.Visible = false;
+                ddlPlacementGroupStatus.Visible = false;
+            }
         }
 
         private void RebindGroupRole( ConnectionRequest connectionRequest, RockContext rockContext )
@@ -2857,7 +3194,7 @@ namespace RockWeb.Blocks.Connection
                 bool passedAllRequirements = true;
 
                 var connectionRequest = new ConnectionRequestService( rockContext ).Get( connectionRequestId );
-                if ( connectionRequest != null && connectionRequest.PersonAlias != null )
+                if ( CanViewConnectionRequest( connectionRequest ) && connectionRequest.PersonAlias != null )
                 {
                     var group = new GroupService( rockContext ).Get( connectionRequest.AssignedGroupId.Value );
                     if ( group != null )
@@ -3020,8 +3357,7 @@ namespace RockWeb.Blocks.Connection
             {
                 var connectionRequestService = new ConnectionRequestService( rockContext );
                 var connectionRequest = connectionRequestService.Get( hfConnectionRequestId.ValueAsInt() );
-                if ( connectionRequest != null &&
-                    connectionRequest.ConnectionOpportunity != null )
+                if ( CanViewConnectionRequest( connectionRequest ) )
                 {
                     // Parse the attribute filters
                     SearchAttributes = new List<AttributeCache>();
@@ -3098,8 +3434,7 @@ namespace RockWeb.Blocks.Connection
 
                 var connectionRequestService = new ConnectionRequestService( rockContext );
                 var connectionRequest = connectionRequestService.Get( hfConnectionRequestId.ValueAsInt() );
-                if ( connectionRequest != null &&
-                    connectionRequest.ConnectionOpportunity != null &&
+                if ( CanViewConnectionRequest( connectionRequest ) &&
                     connectionRequest.ConnectionOpportunity.ConnectionType != null )
                 {
                     foreach ( var activityType in connectionRequest.ConnectionOpportunity.ConnectionType.ConnectionActivityTypes.OrderBy( a => a.Name ) )
@@ -3161,7 +3496,7 @@ namespace RockWeb.Blocks.Connection
                 dlgConnectionRequestActivities.SaveButtonText = "Save";
             }
 
-            int connectionOpportunityId = int.Parse( hfConnectionOpportunityId.Value );
+            int connectionOpportunityId = GetConnectionOpportunityId( new RockContext() );
             avcActivityAttributes.AddEditControls( activity ?? new ConnectionRequestActivity() { ConnectionOpportunityId = connectionOpportunityId } );
 
             ShowDialog( "ConnectionRequestActivities", true );

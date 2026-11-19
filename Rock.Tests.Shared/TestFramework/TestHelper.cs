@@ -25,6 +25,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Moq;
 
 using Rock.Configuration;
+using Rock.Data;
+using Rock.Tests.Shared.TestFramework;
+using Rock.Utility.HtmlSanitization;
 using Rock.Web.Cache;
 
 namespace Rock.Tests.Shared
@@ -220,6 +223,19 @@ namespace Rock.Tests.Shared
         }
 
         /// <summary>
+        /// Creates a new scoped RockApp instance with a mock database configuration.
+        /// The database can be accessed via the IRockContextFactory service.
+        /// </summary>
+        /// <returns>An instance of <see cref="RockAppScope"/>.</returns>
+        public static RockAppScope CreateScopedRockAppWithMockDatabase()
+        {
+            var rockContextMock = MockDatabaseHelper.CreateRockContextMock();
+            var rockContextFactory = MockDatabaseHelper.CreateRockContextFactory( rockContextMock );
+
+            return CreateScopedRockApp( "Server=localhost\\MockInstance;Database=Rock", sc => sc.AddSingleton( rockContextFactory ) );
+        }
+
+        /// <summary>
         /// Creates a new RockApp object with the provided connection string.
         /// </summary>
         /// <param name="connectionString">The connection string to be used for the RockApp object.</param>
@@ -241,6 +257,9 @@ namespace Rock.Tests.Shared
             sc.AddSingleton<IInitializationSettings, TestInitializationSettings>();
             sc.AddSingleton<IDatabaseConfiguration, DatabaseConfiguration>();
             sc.AddSingleton( hostingMock.Object );
+            sc.AddSingleton<IHtmlAllowListSanitizer, HtmlAllowListSanitizer>();
+
+            sc.AddSingleton<IRockContextFactory, RockContextFactory>();
 
             configureApp?.Invoke( sc );
 

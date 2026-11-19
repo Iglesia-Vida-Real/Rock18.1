@@ -44,6 +44,7 @@ namespace Rock.Blocks.Finance
     [Description( "Displays the details of the given business." )]
     [IconCssClass( "ti ti-question-mark" )]
     [Rock.Web.UI.ContextAware]
+    [SupportedSiteTypes( Model.SiteType.Web )]
 
     #region Block Attributes
 
@@ -106,7 +107,6 @@ namespace Rock.Blocks.Finance
         Key = AttributeKey.AdditionalCustomActions,
         Description = BlockAttributeDescription.AdditionalCustomActions,
         EditorMode = CodeEditorMode.Html,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 200,
         IsRequired = false,
         Order = 7 )]
@@ -114,7 +114,8 @@ namespace Rock.Blocks.Finance
     #endregion BlockAttributes
 
     [SystemGuid.EntityTypeGuid( "d54d7307-40f2-4beb-819d-8112dfbfbb12" )]
-    [SystemGuid.BlockTypeGuid( "729e1953-4cff-46f0-8715-9d7892badb4e" )]
+    [Rock.SystemGuid.BlockTypeGuid( "3CB1F9F0-11B2-4A46-B9D1-464811E5015C" )]
+    // was [SystemGuid.BlockTypeGuid( "729e1953-4cff-46f0-8715-9d7892badb4e" )]
     public class BusinessDetail : RockEntityDetailBlockType<Person, BusinessDetailBag>
     {
         #region Keys
@@ -335,7 +336,15 @@ Because the contents of this setting will be rendered inside a menu element, it 
 
                 if ( location != null )
                 {
-                    bag.AddressAsHtml = location.GetFullStreetAddress().ConvertCrLfToHtmlBr();
+                    /*
+                        10/19/2026 - MSE
+
+                        AddressAsHtml is rendered as HTML by the view panel, so the address text is
+                        encoded before the line breaks become <br>.
+
+                        Reason: Stored address text must not render as HTML.
+                    */
+                    bag.AddressAsHtml = location.GetFullStreetAddress().EncodeHtml().ConvertCrLfToHtmlBr();
                 }
             }
 
@@ -422,7 +431,15 @@ Because the contents of this setting will be rendered inside a menu element, it 
 
                 foreach ( var previousLocation in previousLocations )
                 {
-                    bag.PreviousAddress = previousLocation.GetFullStreetAddress().ConvertCrLfToHtmlBr();
+                    /*
+                        10/19/2026 - MSE
+
+                        PreviousAddress is HTML like AddressAsHtml (rendered with addHtmlValue in later
+                        versions), so the address text is encoded before the line breaks become <br>.
+
+                        Reason: Stored address text must not render as HTML.
+                    */
+                    bag.PreviousAddress = previousLocation.GetFullStreetAddress().EncodeHtml().ConvertCrLfToHtmlBr();
                 }
             }
 
@@ -497,6 +514,13 @@ Because the contents of this setting will be rendered inside a menu element, it 
                 // If editing an existing entity then load it and make sure it
                 // was found and can still be edited.
                 entity = entityService.Get( idKey, !PageCache.Layout.Site.DisablePredictableIds );
+
+                // This block only works with businesses, never allow it to
+                // modify or delete a regular person record.
+                if ( entity != null && !entity.IsBusiness() )
+                {
+                    entity = null;
+                }
             }
             else
             {

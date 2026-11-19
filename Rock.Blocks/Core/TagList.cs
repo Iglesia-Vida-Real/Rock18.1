@@ -188,7 +188,7 @@ namespace Rock.Blocks.Core
         /// <inheritdoc/>
         protected override IQueryable<Tag> GetListQueryable( RockContext rockContext )
         {
-            var queryable = new TagService( new RockContext() ).Queryable()
+            IQueryable<Tag> queryable = new TagService( new RockContext() ).Queryable()
                 .Include( a => a.EntityType )
                 .Include( a => a.TaggedItems )
                 .Include( a => a.OwnerPersonAlias );
@@ -300,6 +300,12 @@ namespace Rock.Blocks.Core
         [BlockAction]
         public BlockActionResult ReorderItem( string key, string beforeKey )
         {
+            // The reorder column is only shown to people that can configure the block.
+            if ( !GetCanConfigure() )
+            {
+                return ActionBadRequest( $"Not authorized to reorder {Tag.FriendlyTypeName}." );
+            }
+
             using ( var rockContext = new RockContext() )
             {
                 // Get the queryable and make sure it is ordered correctly.

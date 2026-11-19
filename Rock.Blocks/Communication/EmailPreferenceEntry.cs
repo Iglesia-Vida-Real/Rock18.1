@@ -501,11 +501,8 @@ namespace Rock.Blocks.Communication
 
         private static class PageParameterKey
         {
-            // "Communication" allows Communication Id, Guid, or IdKey values,
-            // while the older "CommunicationId" only supports Id.
-            public const string Communication = "Communication";
+            // Allows Communication Id, Guid, or IdKey values.
             public const string CommunicationId = "CommunicationId";
-
             public const string Person = "Person";
         }
 
@@ -553,7 +550,6 @@ namespace Rock.Blocks.Communication
         /// </summary>
         private string _communicationKeyFromPageParameter;
 
-
         /// <summary>
         /// The backing field for the <see cref="CommunicationFromPageParameter"/> property.
         /// </summary>
@@ -594,7 +590,7 @@ namespace Rock.Blocks.Communication
         #region Properties
 
         /// <summary>
-        /// Gets the <see cref="Model.Communication"/> entity key passed to the "Communication" or "CommunicationId" page parameter.
+        /// Gets the <see cref="Model.Communication"/> entity key passed to the "CommunicationId" page parameter.
         /// </summary>
         private string CommunicationKeyFromPageParameter
         {
@@ -602,17 +598,7 @@ namespace Rock.Blocks.Communication
             {
                 if ( _communicationKeyFromPageParameter.IsNullOrWhiteSpace() )
                 {
-                    var communicationPageParameter = PageParameter( PageParameterKey.Communication );
-
-                    if ( communicationPageParameter.IsNotNullOrWhiteSpace() )
-                    {
-                        _communicationKeyFromPageParameter = communicationPageParameter;
-                    }
-                    else
-                    {
-                        // Only allow the CommunicationId to contain an ID, but return it as a string so it can be used as an entity key.
-                        _communicationKeyFromPageParameter = PageParameter( PageParameterKey.CommunicationId ).AsIntegerOrNull()?.ToString();
-                    }
+                    _communicationKeyFromPageParameter = PageParameter( PageParameterKey.CommunicationId );
                 }
 
                 return _communicationKeyFromPageParameter;
@@ -1116,6 +1102,41 @@ namespace Rock.Blocks.Communication
                 return ActionOk();
             }
 
+            // Ensure this group is a Communication List.
+            var group = GroupCache.Get( channelId.Value );
+            var communicationListGroupTypeId = GroupTypeCache.GetId( Rock.SystemGuid.GroupType.GROUPTYPE_COMMUNICATIONLIST.AsGuid() );
+
+            if ( group == null || group.GroupTypeId != communicationListGroupTypeId )
+            {
+                return ActionBadRequest( $"{errorMessagePrefix}, as the channel cannot be found." );
+            }
+
+            // Only allow the same lists that are offered to the person.
+            var shouldFilterByCampus = GetAttributeValue( AttributeKey.FilterCommunicationListsByCampusContext ).AsBoolean()
+                && ContextCampus != null;
+
+            if ( !group.IsActive || !group.IsPublic || ( shouldFilterByCampus && group.CampusId.HasValue && group.CampusId != ContextCampus.Id ) )
+            {
+                return ActionBadRequest( $"{errorMessagePrefix}, as the channel cannot be found." );
+            }
+
+            // Ensure the person is authorized to subscribe to this list.
+            var isAuthorized = false;
+            if ( AllowedCommunicationListCategoryGuids.Any() )
+            {
+                var categoryGuid = group.GetAttributeValue( AttributeKey.Category ).AsGuidOrNull();
+                isAuthorized = categoryGuid.HasValue && AllowedCommunicationListCategoryGuids.Contains( categoryGuid.Value );
+            }
+            else
+            {
+                isAuthorized = group.IsAuthorized( Authorization.VIEW, person );
+            }
+
+            if ( !isAuthorized )
+            {
+                return ActionUnauthorized( $"{errorMessagePrefix}." );
+            }
+
             // Get any existing list group members for this person.
             var groupMemberService = new GroupMemberService( RockContext );
             var listGroupMembers = groupMemberService
@@ -1142,13 +1163,7 @@ namespace Rock.Blocks.Communication
             else
             {
                 // Otherwise, add a new member record.
-                var groupTypeId = GroupCache.Get( channelId.Value )?.GroupTypeId;
-                if ( !groupTypeId.HasValue )
-                {
-                    return ActionBadRequest( $"{errorMessagePrefix}." );
-                }
-
-                var defaultGroupRoleId = GroupTypeCache.Get( groupTypeId.Value ).DefaultGroupRoleId;
+                var defaultGroupRoleId = group.GroupType?.DefaultGroupRoleId;
                 if ( !defaultGroupRoleId.HasValue )
                 {
                     return ActionBadRequest( $"{errorMessagePrefix}." );

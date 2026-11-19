@@ -67,3 +67,6 @@ Dev Tools/Deploy/**/*.js
 
 # Configuración local de Claude Code (rutas personales)
 **/.claude/settings.local.json
+
+# Dev Tools
+Dev Tools/Scripts/obsidian-backend-watch/logs/

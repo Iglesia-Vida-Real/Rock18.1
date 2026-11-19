@@ -113,22 +113,66 @@ namespace Rock.Field.Types
                     return "";
                 }
 
-                if ( !formatAsHtml )
-                {
-                    return binaryFileInfo.FileName;
-                }
-                else
-                {
-                    var filePath = FileUrlHelper.GetFileUrl( binaryFileInfo.Guid );
-                    return string.Format( "<a href='{0}' title='{1}' class='btn btn-xs btn-default'>View</a>", filePath, System.Web.HttpUtility.HtmlEncode( binaryFileInfo.FileName ) );
-                }
+                return GetFormattedValue( binaryFileInfo.Guid, binaryFileInfo.FileName, formatAsHtml );
             }
         }
 
+        /// <summary>
+        /// Get the formatted value as either a plain text string or an HTML formatted string.
+        /// </summary>
+        /// <param name="guid">The unique identifier of the file to be formatted.</param>
+        /// <param name="fileName">The name of the file to be formatted.</param>
+        /// <param name="formatAsHtml"><c>true</c> if the output should be formatted as HTML; otherwise <c>false</c>.</param>
+        /// <returns>A string that represents the value.</returns>
+        private string GetFormattedValue( Guid guid, string fileName, bool formatAsHtml )
+        {
+            if ( !formatAsHtml )
+            {
+                return fileName;
+            }
+            else
+            {
+                var filePath = FileUrlHelper.GetFileUrl( guid );
+                return string.Format( "<a href='{0}' title='{1}' class='btn btn-xs btn-default'>View</a>", filePath, System.Web.HttpUtility.HtmlEncode( fileName ) );
+            }
+        }
+
+        /// <remarks>
+        ///     <inheritdoc/>
+        ///     <para>
+        ///     Returns the value as a JSON <see cref="ListItemBag"/> (the binary file's Guid and
+        ///     file name) instead of just the file name. Obsidian renders attribute values on the
+        ///     client, so the client component formats this value itself and needs the Guid to
+        ///     build the file's "View" link. (WebForms does not need this because it renders the
+        ///     HTML server side through FormatValue.) This matches the public value already
+        ///     returned by the Image, Audio, and Video file field types.
+        ///     </para>
+        /// </remarks>
         /// <inheritdoc/>
         public override string GetPublicValue( string privateValue, Dictionary<string, string> privateConfigurationValues )
         {
-            return GetTextValue( privateValue, privateConfigurationValues );
+            var guid = privateValue.AsGuidOrNull();
+
+            if ( !guid.HasValue || guid.Value.IsEmpty() )
+            {
+                return string.Empty;
+            }
+
+            using ( var rockContext = new RockContext() )
+            {
+                var fileName = new BinaryFileService( rockContext ).GetSelect( guid.Value, f => f.FileName );
+
+                if ( fileName == null )
+                {
+                    return string.Empty;
+                }
+
+                return new ListItemBag
+                {
+                    Text = fileName,
+                    Value = guid.Value.ToString()
+                }.ToCamelCaseJson( false, true );
+            }
         }
 
         /// <inheritdoc/>
@@ -325,6 +369,51 @@ namespace Rock.Field.Types
             {
                 new ReferencedProperty( EntityTypeCache.GetId<BinaryFile>().Value, nameof( BinaryFile.FileName ) )
             };
+        }
+
+        #endregion
+
+        #region Persistence
+
+        /// <inheritdoc/>
+        public override PersistedValues GetPersistedValues( string privateValue, Dictionary<string, string> privateConfigurationValues, IDictionary<string, object> cache )
+        {
+            var guid = privateValue.AsGuidOrNull();
+
+            if ( !guid.HasValue || guid.Value.IsEmpty() )
+            {
+                return PersistedValues.Empty();
+            }
+
+            using ( var rockContext = new RockContext() )
+            {
+                var binaryFileInfo = new BinaryFileService( rockContext )
+                    .Queryable()
+                    .AsNoTracking()
+                    .Where( f => f.Guid == guid.Value )
+                    .Select( f => new
+                    {
+                        f.FileName,
+                        f.Guid
+                    } )
+                    .FirstOrDefault();
+
+                if ( binaryFileInfo == null )
+                {
+                    return PersistedValues.Empty();
+                }
+
+                var textValue = GetFormattedValue( binaryFileInfo.Guid, binaryFileInfo.FileName, false );
+                var htmlValue = GetFormattedValue( binaryFileInfo.Guid, binaryFileInfo.FileName, true );
+
+                return new PersistedValues
+                {
+                    TextValue = textValue,
+                    HtmlValue = htmlValue,
+                    CondensedTextValue = textValue.Truncate( CondensedTruncateLength ),
+                    CondensedHtmlValue = htmlValue,
+                };
+            }
         }
 
         #endregion

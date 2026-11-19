@@ -108,10 +108,32 @@ namespace RockWeb.Blocks.Administration
                 if ( entityId.IsNotNullOrWhiteSpace() && entityId != "0" )
                 {
                     iSecured = Rock.Reflection.GetIEntityForEntityType( type, entityId ) as ISecured;
-                }
 
-                if ( iSecured == null )
+                    /*
+                        08/13/2026 - NA
+
+                        A specific entity was requested but could not be resolved. Do NOT fall
+                        back to securing the entity type itself. Rules saved against the entity
+                        type are written with EntityId = 0, and Model<T>.ParentAuthority returns
+                        a new T() (Id 0) for every saved instance, so _that_ fallback would silently
+                        rewrite the default security for EVERY entity of the type. An unresolvable
+                        key is an error, not a request for the default.
+
+                        [The most common way to hit this is opening the security modal on a
+                        newly-added row in a detail block (for example a Group Type Attribute)
+                        before the parent form has been saved: the row has a client-generated
+                        guid that does not yet exist in the database.]
+
+                        Reason: An unresolvable EntityId was clobbering entity-type default security.
+                    */
+                    if ( iSecured == null )
+                    {
+                        nbMessage.Text = "Item not found. Please ensure the item is saved before setting the security.";
+                    }
+                }
+                else
                 {
+                    // No specific entity was requested; secure the entity type itself (its defaults).
                     iSecured = ( ISecured ) Activator.CreateInstance( type );
                 }
 
@@ -188,9 +210,18 @@ namespace RockWeb.Blocks.Administration
 
                         BindRoles();
 
+                        /*
+                            10/19/2026 - MSE
+
+                            The entity name (for example a group name) is stored data. JavaScriptStringEncode
+                            only keeps it inside the script string; jQuery .html() would still parse it as
+                            HTML in the parent window, so .text() is used to show it as plain text.
+
+                            Reason: Prevent stored XSS through an entity name in the Security dialog header.
+                        */
                         string scriptFormat = @"
                     Sys.Application.add_load(function () {{
-                        $('#modal-popup div.modal-header h3 small', window.parent.document).html('{0}');
+                        $('#modal-popup div.modal-header h3 small', window.parent.document).text('{0}');
                     }});
                 ";
                         string script = string.Format( scriptFormat, HttpUtility.JavaScriptStringEncode( iSecured.ToString() ) );
@@ -204,7 +235,13 @@ namespace RockWeb.Blocks.Administration
                 }
                 else
                 {
-                    nbMessage.Text = "The item you are trying to secure does not exist or does not implement ISecured.";
+                    // Preserve the more-specific message set earlier by the "specific entity
+                    // requested but not resolved" branch. Only set the generic message here
+                    // when nothing more helpful has already been surfaced.
+                    if ( string.IsNullOrWhiteSpace( nbMessage.Text ) )
+                    {
+                        nbMessage.Text = "The item you are trying to secure does not exist or does not implement ISecured.";
+                    }
                 }
             }
             else
@@ -542,10 +579,15 @@ namespace RockWeb.Blocks.Administration
                 rGrid.DataBind();
 
                 var parentRules = new List<MyAuthRule>();
-                AddParentRules( authService, itemRules, parentRules, iSecured.ParentAuthorityPre, CurrentAction, false );
-                AddParentRules( authService, itemRules, parentRules, iSecured.ParentAuthority, CurrentAction, true );
+                var hasCircularReference = AddParentRules( authService, itemRules, parentRules, iSecured.ParentAuthorityPre, CurrentAction, false );
+                hasCircularReference = AddParentRules( authService, itemRules, parentRules, iSecured.ParentAuthority, CurrentAction, true ) || hasCircularReference;
                 rGridParentRules.DataSource = parentRules;
                 rGridParentRules.DataBind();
+
+                // Let the administrator know the inherited permissions cannot be fully trusted
+                // until the circular reference in the data is corrected.
+                nbCircularReferenceMessage.Text = "A circular reference was detected in this item's inherited security (an item is its own parent authority). The inherited permissions shown may be incomplete and security may not evaluate correctly until the circular reference is corrected.";
+                nbCircularReferenceMessage.Visible = hasCircularReference;
 
                 var hasAllUsersEntry = itemRules.Any( r => r.SpecialRole == SpecialRole.AllUsers )
                     || parentRules.Any( r => r.AuthRule.SpecialRole == SpecialRole.AllUsers );
@@ -575,10 +617,30 @@ namespace RockWeb.Blocks.Administration
         /// <param name="parent">The parent.</param>
         /// <param name="action">The action.</param>
         /// <param name="recurse">if set to <c>true</c> [recurse].</param>
-        private void AddParentRules( AuthService authService, List<AuthRule> itemRules, List<MyAuthRule> parentRules, ISecured parent, string action, bool recurse )
+        /// <returns><c>true</c> if a circular reference was detected in the parent authority chain; otherwise <c>false</c>.</returns>
+        private bool AddParentRules( AuthService authService, List<AuthRule> itemRules, List<MyAuthRule> parentRules, ISecured parent, string action, bool recurse )
         {
-            if ( parent != null )
+            /*
+                7/31/2026 - MSE
+
+                The parent authority chain is walked iteratively with a visited list instead of
+                recursively so that a circular chain (e.g. a category whose parent category is
+                itself) cannot recurse until the stack overflows. A stack overflow cannot be
+                caught and terminates the entire worker process. When a circular chain is
+                detected the walk stops and reports it so the administrator can be warned.
+
+                Reason: https://github.com/SparkDevNetwork/Rock/issues/6949
+            */
+            var visitedAuthorities = new HashSet<string>();
+
+            while ( parent != null )
             {
+                if ( !visitedAuthorities.Add( $"{parent.TypeId}|{parent.Id}" ) )
+                {
+                    // This authority was already visited, so the chain is circular.
+                    return true;
+                }
+
                 var entityType = EntityTypeCache.Get( parent.TypeId );
                 foreach ( var auth in authService.GetAuths( parent.TypeId, parent.Id, action ) )
                 {
@@ -594,16 +656,23 @@ namespace RockWeb.Blocks.Administration
                             r.AuthRule.GroupId == rule.GroupId ) )
                     {
                         var myRule = new MyAuthRule( rule );
-                        myRule.EntityTitle = string.Format( "{0} <small>({1})</small>", parent.ToString(), entityType.FriendlyName ?? entityType.Name ).TrimStart();
+                        /*
+                            10/19/2026 - MSE
+
+                            The From column shows EntityTitle as HTML. Only the small wrapper is markup;
+                            the parent entity name (for example a group name) is stored data, so it is encoded.
+
+                            Reason: Prevent stored XSS through an entity name in the Security dialog.
+                        */
+                        myRule.EntityTitle = string.Format( "{0} <small>({1})</small>", parent.ToString().EncodeHtml(), ( entityType.FriendlyName ?? entityType.Name ).EncodeHtml() ).TrimStart();
                         parentRules.Add( myRule );
                     }
                 }
 
-                if ( recurse )
-                {
-                    AddParentRules( authService, itemRules, parentRules, parent.ParentAuthority, action, true );
-                }
+                parent = recurse ? parent.ParentAuthority : null;
             }
+
+            return false;
         }
 
         private void BindActions()

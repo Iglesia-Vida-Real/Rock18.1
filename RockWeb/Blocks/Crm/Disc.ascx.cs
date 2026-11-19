@@ -46,7 +46,6 @@ namespace Rockweb.Blocks.Crm
         Key = AttributeKey.Instructions,
         Description = "The text (HTML) to display at the top of the instructions section.  <span class='tip tip-lava'></span> <span class='tip tip-html'></span>",
         EditorMode = CodeEditorMode.Html,
-        EditorTheme = CodeEditorTheme.Rock,
         EditorHeight = 400,
         IsRequired = true,
         DefaultValue = InstructionsDefaultValue,
@@ -356,14 +355,22 @@ namespace Rockweb.Blocks.Crm
                     var assessmentService = new AssessmentService( rockContext );
                     Assessment assessment = null;
 
+                    var assessmentType = new AssessmentTypeService( rockContext ).Get( Rock.SystemGuid.AssessmentType.DISC.AsGuid() );
+
                     if ( hfAssessmentId.ValueAsInt() != 0 )
                     {
                         assessment = assessmentService.Get( int.Parse( hfAssessmentId.Value ) );
+
+                        // The assessment identifier comes from a hidden field, so make sure it
+                        // belongs to the target person and is the correct assessment type.
+                        if ( assessment != null && ( assessment.AssessmentTypeId != assessmentType.Id || assessment.PersonAlias == null || assessment.PersonAlias.PersonId != _targetPerson.Id ) )
+                        {
+                            assessment = null;
+                        }
                     }
 
                     if ( assessment == null )
                     {
-                        var assessmentType = new AssessmentTypeService( rockContext ).Get( Rock.SystemGuid.AssessmentType.DISC.AsGuid() );
                         assessment = new Assessment()
                         {
                             AssessmentTypeId = assessmentType.Id,

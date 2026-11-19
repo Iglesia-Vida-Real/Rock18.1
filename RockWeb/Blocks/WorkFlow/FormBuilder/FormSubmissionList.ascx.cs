@@ -137,6 +137,8 @@ namespace RockWeb.Blocks.WorkFlow.FormBuilder
         /// </value>
         public List<AttributeCache> AvailableAttributes { get; set; }
 
+        private bool _canEditWorkflowType;
+
         #endregion
 
         #region Properties
@@ -164,7 +166,25 @@ namespace RockWeb.Blocks.WorkFlow.FormBuilder
             gWorkflows.GridRebind += gWorkflows_GridRebind;
             gWorkflows.RowDataBound += gWorkflows_RowDataBound;
 
-            gWorkflows.Actions.ShowAdd = WorkflowTypeCache.Get( PageParameter( PageParameterKeys.WorkflowTypeId ).AsInteger() ).Category.IsAuthorized( Authorization.EDIT, CurrentPerson );
+            var workflowTypeId = PageParameter( PageParameterKeys.WorkflowTypeId ).AsInteger();
+            var workflowTypeCache = WorkflowTypeCache.Get( workflowTypeId );
+            _canEditWorkflowType = false;
+
+            if ( workflowTypeCache != null )
+            {
+                // If WorkflowType has an explicit rule for EDIT, use it. Otherwise, fall back to Category security.
+                var explicitAuth = Authorization.AuthorizedForEntity( workflowTypeCache, Authorization.EDIT, CurrentPerson, false );
+                if ( explicitAuth.HasValue )
+                {
+                    _canEditWorkflowType = explicitAuth.Value;
+                }
+                else
+                {
+                    var category = workflowTypeCache.CategoryId.HasValue ? CategoryCache.Get( workflowTypeCache.CategoryId.Value ) : null;
+                    _canEditWorkflowType = category != null && category.IsAuthorized( Authorization.EDIT, CurrentPerson );
+                }
+            }
+            gWorkflows.Actions.ShowAdd = _canEditWorkflowType;
             gWorkflows.Actions.AddClick += gWorkflows_Add;
 
             gWorkflows.Actions.ShowCommunicate = false;
@@ -192,7 +212,7 @@ namespace RockWeb.Blocks.WorkFlow.FormBuilder
         {
             if ( !Page.IsPostBack )
             {
-                var workflowType = new WorkflowTypeService( new RockContext() ).Get( PageParameter( PageParameterKeys.WorkflowTypeId ).AsInteger() );
+                var workflowType = GetAuthorizedWorkflowType();
                 if ( workflowType != null )
                 {
                     lTitle.Text = $"{workflowType.Name} Form";
@@ -311,6 +331,12 @@ namespace RockWeb.Blocks.WorkFlow.FormBuilder
                         personLinkButton.Visible = false;
                     }
                 }
+
+                var deleteButton = e.Row.ControlsOfTypeRecursive<LinkButton>().FirstOrDefault( lb => lb.CommandName == "Delete" );
+                if ( deleteButton != null )
+                {
+                    deleteButton.Visible = _canEditWorkflowType;
+                }
             }
         }
 
@@ -323,6 +349,12 @@ namespace RockWeb.Blocks.WorkFlow.FormBuilder
         private void gWorkflows_Delete( object sender, RowEventArgs e )
         {
             var id = ( int ) e.RowKeyValue;
+
+            if ( !_canEditWorkflowType )
+            {
+                ShowAlert( "You are not authorized to delete this submission.", ModalAlertType.Information );
+                return;
+            }
 
             if ( CanDelete( id ) )
             {
@@ -366,13 +398,46 @@ namespace RockWeb.Blocks.WorkFlow.FormBuilder
         #region Methods
 
         /// <summary>
+        /// Gets the Form Builder workflow type from the page parameter if the
+        /// current person is allowed to view (or edit) it.
+        /// </summary>
+        /// <returns>The authorized <see cref="WorkflowTypeCache"/> or <c>null</c>.</returns>
+        private WorkflowTypeCache GetAuthorizedWorkflowType()
+        {
+            /*
+                10/16/2026 - MSE
+
+                The workflow type comes from the page parameter, so a person could
+                swap in the Id of a form they are not allowed to see and get every
+                submission for it. Only Form Builder forms the person can VIEW (or
+                EDIT, which the Add button already uses) are listed. VIEW on the
+                workflow type falls back to its category. Every read path (OnLoad,
+                BindAttributes and BindGrid) uses this method.
+
+                Reason: Form Submission List skipped VIEW on the form.
+            */
+            var workflowType = WorkflowTypeCache.Get( PageParameter( PageParameterKeys.WorkflowTypeId ).AsInteger() );
+            if ( workflowType == null || !workflowType.IsFormBuilder )
+            {
+                return null;
+            }
+
+            if ( !workflowType.IsAuthorized( Authorization.VIEW, CurrentPerson ) && !workflowType.IsAuthorized( Authorization.EDIT, CurrentPerson ) )
+            {
+                return null;
+            }
+
+            return workflowType;
+        }
+
+        /// <summary>
         /// Saves available attributes as <see cref="AvailableAttributes"/> so dynamic rendering of attribute columns on the <see cref="gWorkflows"/> grid
         /// </summary>
         private void BindAttributes()
         {
             var rockContext = new RockContext();
             AvailableAttributes = new List<AttributeCache>();
-            var workflowType = new WorkflowTypeService( rockContext ).Get( PageParameter( PageParameterKeys.WorkflowTypeId ).AsInteger() );
+            var workflowType = GetAuthorizedWorkflowType();
 
             if ( workflowType != null )
             {
@@ -441,7 +506,16 @@ namespace RockWeb.Blocks.WorkFlow.FormBuilder
         /// </summary>
         private void BindGrid()
         {
-            var workflowTypeId = PageParameter( PageParameterKeys.WorkflowTypeId ).AsInteger();
+            // BindGrid also runs on postback (GridRebind, BlockUpdated, filter)
+            // without the OnLoad check, so the form is checked here too.
+            var workflowType = GetAuthorizedWorkflowType();
+            if ( workflowType == null )
+            {
+                pnlView.Visible = false;
+                return;
+            }
+
+            var workflowTypeId = workflowType.Id;
 
             RockContext rockContext = new RockContext();
             var workflowService = new WorkflowService( rockContext );

@@ -53,6 +53,11 @@
             required: false,
             default: false
         },
+        hideActions: {
+            type: Boolean as PropType<boolean>,
+            required: false,
+            default: false
+        },
         isUsernameAvailable: {
             type: Object as PropType<boolean | null>,
             required: false,

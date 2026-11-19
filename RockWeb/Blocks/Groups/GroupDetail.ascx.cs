@@ -198,6 +198,8 @@ namespace RockWeb.Blocks.Groups
             public const string ExpandedIds = "ExpandedIds";
             public const string EventItemOccurrenceId = "EventItemOccurrenceId";
             public const string ParentGroupId = "ParentGroupId";
+            public const string AutoEdit = "autoEdit";
+            public const string ReturnUrl = "returnUrl";
         }
 
         private static class AttributeKey
@@ -517,8 +519,19 @@ namespace RockWeb.Blocks.Groups
                 ShowDialog();
             }
 
-            // Rebuild the attribute controls on postback based on group type
-            if ( pnlDetails.Visible )
+            /*
+                5/19/2026 - MSE
+
+                With autoEdit=true, ShowDetail populates the attribute controls on the initial GET via
+                ShowEditDetails. This rebuild block then re-ran with an empty Group and setValues: false,
+                wiping those values and causing Save to persist empty attributes.
+
+                Fix: gate the rebuild on Page.IsPostBack so it only runs in the postback case it was written for.
+
+                Reason: on initial GET, ShowDetail has already populated the controls; the rebuild is only
+                needed during postbacks so dynamic attribute controls exist for LoadPostData binding.
+            */
+            if ( Page.IsPostBack && pnlDetails.Visible )
             {
                 if ( CurrentGroupTypeId > 0 )
                 {
@@ -623,7 +636,16 @@ namespace RockWeb.Blocks.Groups
         /// <param name="e">The <see cref="EventArgs" /> instance containing the event data.</param>
         protected void btnEdit_Click( object sender, EventArgs e )
         {
-            ShowEditDetails( GetGroup( hfGroupId.Value.AsInteger() ) );
+            var group = GetGroup( hfGroupId.Value.AsInteger() );
+
+            // The group id comes from a hidden field, so re-check EDIT on the group before showing the edit form.
+            if ( !IsAuthorizedToEditExistingGroup( group ) )
+            {
+                nbEditModeMessage.Text = EditModeMessage.ReadOnlyEditActionNotAllowed( Group.FriendlyTypeName );
+                return;
+            }
+
+            ShowEditDetails( group );
         }
 
         /// <summary>
@@ -732,6 +754,13 @@ namespace RockWeb.Blocks.Groups
         /// <param name="parentGroupId">The parent group identifier.</param>
         private void NavigateAfterDeleteOrArchive( int? parentGroupId )
         {
+            var returnUrl = PageParameter( PageParameterKey.ReturnUrl );
+            if ( returnUrl.IsNotNullOrWhiteSpace() )
+            {
+                Response.Redirect( returnUrl );
+                return;
+            }
+
             // reload page, selecting the deleted group's parent
             var qryParams = new Dictionary<string, string>();
             if ( parentGroupId != null )
@@ -797,6 +826,15 @@ namespace RockWeb.Blocks.Groups
             else
             {
                 group = groupService.Queryable( "Schedule,GroupLocations.Schedules" ).Where( g => g.Id == groupId ).FirstOrDefault();
+
+                // The group id comes from a hidden field, so check EDIT on the group as it is now,
+                // before any values from the UI (such as the parent group) are applied.
+                if ( !IsAuthorizedToEditExistingGroup( group ) )
+                {
+                    nbNotAllowedToEdit.Visible = true;
+                    return;
+                }
+
                 wasSecurityRole = group.IsActive && ( group.IsSecurityRole || group.GroupTypeId == roleGroupTypeId );
 
                 // Remove any locations that removed in the UI
@@ -1268,7 +1306,29 @@ namespace RockWeb.Blocks.Groups
                 if ( !allowedGroupTypeIds.Contains( group.GroupTypeId ) )
                 {
                     var groupType = CurrentGroupTypeCache;
-                    nbInvalidParentGroup.Text = string.Format( "The '{0}' group does not allow child groups with a '{1}' group type.", group.ParentGroup.Name, groupType != null ? groupType.Name : string.Empty );
+                    var groupTypeName = groupType != null ? groupType.Name : string.Empty;
+
+                    /*
+                        06/01/2026 - MSE
+
+                        GetAllowedGroupTypes() applies two independent restrictions: this block's "Group Types
+                        Include"/"Group Types Exclude" settings and the parent group's allowed child group types.
+                        Previously the failure message always blamed the parent group, which was misleading when
+                        the block settings were the actual cause. Re-evaluate the block settings on their own
+                        (passing a null parent group type) so we can report the correct reason.
+
+                        Reason: https://github.com/SparkDevNetwork/Rock/issues/6851
+                    */
+                    var blockAllowedGroupTypeIds = GetAllowedGroupTypes( null, rockContext ).Select( t => t.Id ).ToList();
+                    if ( !blockAllowedGroupTypeIds.Contains( group.GroupTypeId ) )
+                    {
+                        nbInvalidParentGroup.Text = string.Format( "Groups with a '{0}' group type cannot be saved here because of this block's group type settings (e.g. 'Group Types Include' / 'Group Types Exclude').", groupTypeName );
+                    }
+                    else
+                    {
+                        nbInvalidParentGroup.Text = string.Format( "The '{0}' group does not allow child groups with a '{1}' group type.", group.ParentGroup.Name, groupTypeName );
+                    }
+
                     nbInvalidParentGroup.Visible = true;
                     return;
                 }
@@ -1426,11 +1486,19 @@ namespace RockWeb.Blocks.Groups
                 Rock.CheckIn.KioskDevice.Clear();
             }
 
-            var qryParams = new Dictionary<string, string>();
-            qryParams[PageParameterKey.GroupId] = group.Id.ToString();
-            qryParams[PageParameterKey.ExpandedIds] = PageParameter( PageParameterKey.ExpandedIds );
+            var returnUrl = PageParameter( PageParameterKey.ReturnUrl );
+            if ( returnUrl.IsNotNullOrWhiteSpace() )
+            {
+                Response.Redirect( returnUrl );
+            }
+            else
+            {
+                var qryParams = new Dictionary<string, string>();
+                qryParams[PageParameterKey.GroupId] = group.Id.ToString();
+                qryParams[PageParameterKey.ExpandedIds] = PageParameter( PageParameterKey.ExpandedIds );
 
-            NavigateToPage( RockPage.Guid, qryParams );
+                NavigateToPage( RockPage.Guid, qryParams );
+            }
         }
 
         /// <summary>
@@ -1440,6 +1508,13 @@ namespace RockWeb.Blocks.Groups
         /// <param name="e">The <see cref="EventArgs" /> instance containing the event data.</param>
         protected void btnCancel_Click( object sender, EventArgs e )
         {
+            var returnUrl = PageParameter( PageParameterKey.ReturnUrl );
+            if ( returnUrl.IsNotNullOrWhiteSpace() )
+            {
+                Response.Redirect( returnUrl );
+                return;
+            }
+
             if ( hfGroupId.Value.Equals( "0" ) )
             {
                 int? parentGroupId = PageParameter( PageParameterKey.ParentGroupId ).AsIntegerOrNull();
@@ -1568,6 +1643,7 @@ namespace RockWeb.Blocks.Groups
             var groupTypeQry = GetAllowedGroupTypes( GroupTypeCache.Get( parentGroupGroupTypeId ?? 0 ), rockContext );
 
             List<GroupType> groupTypes = groupTypeQry.OrderBy( a => a.Name ).ToList();
+            var hasAllowedGroupTypes = groupTypes.Any();
             if ( groupTypes.Count() > 1 )
             {
                 // Add a empty option so they are forced to choose
@@ -1577,6 +1653,8 @@ namespace RockWeb.Blocks.Groups
             // If the currently selected GroupType isn't an option anymore, set selected GroupType to null
             if ( ddlGroupType.Visible )
             {
+                ShowNoAllowedGroupTypesWarningIfNeeded( hasAllowedGroupTypes, parentGroupId, parentGroupGroupTypeId, rockContext );
+
                 int? selectedGroupTypeId = ddlGroupType.SelectedValueAsInt();
                 if ( ddlGroupType.SelectedValue != null )
                 {
@@ -1839,7 +1917,14 @@ namespace RockWeb.Blocks.Groups
                 btnEdit.Visible = true;
                 if ( group.Id > 0 )
                 {
-                    ShowReadonlyDetails( group );
+                    if ( PageParameter( PageParameterKey.AutoEdit ).AsBoolean() )
+                    {
+                        ShowEditDetails( group );
+                    }
+                    else
+                    {
+                        ShowReadonlyDetails( group );
+                    }
                 }
                 else
                 {
@@ -2875,6 +2960,17 @@ namespace RockWeb.Blocks.Groups
         }
 
         /// <summary>
+        /// Determines whether the current person can edit the existing group, as it is
+        /// currently saved. Used to re-check a group id posted back from a hidden field.
+        /// </summary>
+        /// <param name="group">The group.</param>
+        /// <returns><c>true</c> if the group exists and the current person has EDIT on it; otherwise, <c>false</c>.</returns>
+        private bool IsAuthorizedToEditExistingGroup( Group group )
+        {
+            return group != null && group.IsAuthorized( Authorization.EDIT, CurrentPerson );
+        }
+
+        /// <summary>
         /// Gets the group.
         /// </summary>
         /// <param name="groupId">The group identifier.</param>
@@ -2942,6 +3038,58 @@ namespace RockWeb.Blocks.Groups
             }
 
             return groupTypeQry;
+        }
+
+        /// <summary>
+        /// Shows a warning that explains why the Group Type drop-down has no options to choose from,
+        /// or hides the warning when at least one group type is available.
+        /// </summary>
+        /// <param name="hasAllowedGroupTypes">Whether the Group Type drop-down has at least one group type available for selection.</param>
+        /// <param name="parentGroupId">The identifier of the currently selected parent group.</param>
+        /// <param name="parentGroupGroupTypeId">The group type identifier of the currently selected parent group.</param>
+        /// <param name="rockContext">The rock context.</param>
+        private void ShowNoAllowedGroupTypesWarningIfNeeded( bool hasAllowedGroupTypes, int? parentGroupId, int? parentGroupGroupTypeId, RockContext rockContext )
+        {
+            if ( hasAllowedGroupTypes )
+            {
+                nbNoAllowedGroupTypes.Visible = false;
+                return;
+            }
+
+            /*
+                06/04/2026 - MSE
+
+                When adding a new group, the block's group type settings and the parent group's allowed
+                child group types can leave no group types to choose from, which rendered the required
+                Group Type drop-down empty with no explanation (e.g. 'Group Types Include' limited to
+                'Small Group' while adding a child group under a 'Serving Team' parent). Surface a
+                warning that identifies which restriction caused it so the administrator knows what to
+                reconfigure.
+
+                Reason: https://github.com/SparkDevNetwork/Rock/issues/6851
+            */
+            var isAnyGroupTypeAllowedByBlock = GetAllowedGroupTypes( null, rockContext ).Any();
+            if ( !isAnyGroupTypeAllowedByBlock )
+            {
+                nbNoAllowedGroupTypes.Text = "There are no group types available to select because of this block's group type settings (e.g. 'Group Types Include' / 'Group Types Exclude').";
+                nbNoAllowedGroupTypes.Visible = true;
+                return;
+            }
+
+            var parentGroupName = parentGroupId.HasValue ? new GroupService( rockContext ).GetSelect( parentGroupId.Value, s => s.Name ) : string.Empty;
+            var parentGroupGroupType = GroupTypeCache.Get( parentGroupGroupTypeId ?? 0 );
+            var doesParentGroupAllowAnyChildGroupTypes = parentGroupGroupType == null
+                || parentGroupGroupType.AllowAnyChildGroupType
+                || parentGroupGroupType.ChildGroupTypes.Any();
+            if ( !doesParentGroupAllowAnyChildGroupTypes )
+            {
+                nbNoAllowedGroupTypes.Text = string.Format( "The '{0}' group does not allow any child group types.", parentGroupName );
+                nbNoAllowedGroupTypes.Visible = true;
+                return;
+            }
+
+            nbNoAllowedGroupTypes.Text = string.Format( "The child group types allowed by the '{0}' group are excluded by this block's group type settings (e.g. 'Group Types Include' / 'Group Types Exclude').", parentGroupName );
+            nbNoAllowedGroupTypes.Visible = true;
         }
 
         /// <summary>
@@ -3494,7 +3642,9 @@ namespace RockWeb.Blocks.Groups
             if ( displayMemberTab )
             {
                 int groupId = hfGroupId.ValueAsInt();
-                if ( groupId != 0 )
+
+                // The group id comes from a hidden field, so only list member addresses for a group the person can edit.
+                if ( groupId != 0 && IsAuthorizedToEditExistingGroup( GetGroup( groupId, rockContext ) ) )
                 {
                     var personService = new PersonService( rockContext );
                     Guid previousLocationType = Rock.SystemGuid.DefinedValue.GROUP_LOCATION_TYPE_PREVIOUS.AsGuid();

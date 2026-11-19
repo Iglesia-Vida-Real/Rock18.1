@@ -171,7 +171,7 @@ namespace Rock.Blocks.Workflow
         {
             var workflowType = GetWorkflowType();
             return workflowType != null && ( GetIsAddDeleteEnabled()
-                || ( workflowType.IsAuthorized( Authorization.VIEW, GetCurrentPerson() ) && workflowType.IsAuthorized( "ViewList", GetCurrentPerson() ) ) );
+                || ( workflowType.IsAuthorized( Authorization.VIEW, GetCurrentPerson() ) && workflowType.IsAuthorized( Rock.Security.Authorization.VIEW_LIST, GetCurrentPerson() ) ) );
         }
 
         /// <summary>
@@ -198,9 +198,9 @@ namespace Rock.Blocks.Workflow
                 var workflowService = new WorkflowService( rockContext );
 
                 workflows = workflowService
-	                .Queryable( "Activities.ActivityType,Activities.AssignedGroup.Members,Activities.AssignedPersonAlias.Person,Activities.Actions.ActionType,InitiatorPersonAlias.Person,WorkflowType" )
-	                .AsNoTracking()
-	                .Where( w => w.WorkflowTypeId.Equals( workflowType.Id ) );
+                    .Queryable( "Activities,InitiatorPersonAlias.Person" )
+                    .AsNoTracking()
+                    .Where( w => w.WorkflowTypeId.Equals( workflowType.Id ) );
 
                 // Activated Date Range Filter
                 if ( FilterActivatedDateRangeLowerValue.HasValue )
@@ -237,19 +237,23 @@ namespace Rock.Blocks.Workflow
         /// <inheritdoc/>
         protected override GridBuilder<Rock.Model.Workflow> GetGridBuilder()
         {
+            // All workflows in this list belong to the same WorkflowType, so we
+            // can resolve the IdKey once from cache rather than including the
+            // WorkflowType navigation property on every row.
+            var workflowTypeIdKey = GetWorkflowType()?.IdKey;
+
             return new GridBuilder<Rock.Model.Workflow>()
                 .WithBlock( this )
                 .AddTextField( "idKey", a => a.IdKey )
                 .AddTextField( "workflowId", a => a.WorkflowId )
                 .AddTextField( "name", a => a.Name )
                 .AddPersonField( "initiator", a => a.InitiatorPersonAlias?.Person )
-                .AddField( "activities", a => a.Activities.Where( wa => wa.ActivatedDateTime.HasValue && !wa.CompletedDateTime.HasValue ).OrderBy( wa => wa.ActivityType.Order ).Select( wa => wa.ActivityType.Name ) )
+                .AddField( "activities", a => a.Activities.Where( wa => wa.ActivatedDateTime.HasValue && !wa.CompletedDateTime.HasValue ).OrderBy( wa => wa.ActivityTypeCache.Order ).Select( wa => wa.ActivityTypeCache.Name ) )
                 .AddDateTimeField( "createdDateTime", a => a.CreatedDateTime )
                 .AddTextField( "status", a => a.Status )
                 .AddField( "isCompleted", a => a.CompletedDateTime.HasValue )
                 .AddField( "guid", a => a.Guid )
-                .AddField( "workflowTypeIdKey", a => a.WorkflowType.IdKey )
-                .AddField( "hasActiveEntryForm", a => a.HasActiveEntryForm( GetCurrentPerson() ) )
+                .AddField( "workflowTypeIdKey", _ => workflowTypeIdKey )
                 .AddAttributeFields( GetGridAttributes() );
         }
 
@@ -259,14 +263,27 @@ namespace Rock.Blocks.Workflow
         /// <returns></returns>
         public WorkflowTypeCache GetWorkflowType()
         {
-            var workflowTypeGuid = GetAttributeValue( AttributeKey.DefaultWorkflowType ).AsGuidOrNull();
+            // Prefer the WorkflowTypeId page parameter when it is supplied and
+            // resolves to a valid workflow type. This ensures that links like
+            // "Manage Workflows" navigate to the workflow type the user actually
+            // clicked rather than the configured default.
+            var workflowTypeFromParameter = WorkflowTypeCache.Get( PageParameter( PageParameterKey.WorkflowTypeId ), !PageCache.Layout.Site.DisablePredictableIds );
 
-            if ( workflowTypeGuid.HasValue )
+            if ( workflowTypeFromParameter != null )
             {
-                return WorkflowTypeCache.Get( workflowTypeGuid.Value );
+                return workflowTypeFromParameter;
             }
 
-            return WorkflowTypeCache.Get( PageParameter( PageParameterKey.WorkflowTypeId ), !PageCache.Layout.Site.DisablePredictableIds );
+            // Fall back to the configured Default Workflow Type when no page
+            // parameter was supplied (or it did not resolve to a workflow type).
+            var defaultWorkflowTypeGuid = GetAttributeValue( AttributeKey.DefaultWorkflowType ).AsGuidOrNull();
+
+            if ( defaultWorkflowTypeGuid.HasValue )
+            {
+                return WorkflowTypeCache.Get( defaultWorkflowTypeGuid.Value );
+            }
+
+            return null;
         }
 
         /// <inheritdoc/>
@@ -318,17 +335,24 @@ namespace Rock.Blocks.Workflow
         {
             WorkflowTypeCache workflowType = null;
 
-            var defaultGuid = GetAttributeValue( AttributeKey.DefaultWorkflowType ).AsGuidOrNull();
-            if ( defaultGuid.HasValue )
+            // Prefer the WorkflowTypeId page parameter when it is supplied and
+            // resolves to a valid workflow type, so the breadcrumb reflects the
+            // workflow type the user actually navigated to rather than the
+            // configured default.
+            var workflowTypeId = pageReference.GetPageParameter( PageParameterKey.WorkflowTypeId );
+            if ( !string.IsNullOrWhiteSpace( workflowTypeId ) )
             {
-                workflowType = WorkflowTypeCache.Get( defaultGuid.Value );
+                workflowType = WorkflowTypeCache.Get( workflowTypeId, !PageCache.Layout.Site.DisablePredictableIds );
             }
-            else
+
+            // Fall back to the configured Default Workflow Type when no page
+            // parameter was supplied (or it did not resolve to a workflow type).
+            if ( workflowType == null )
             {
-                var workflowTypeId = pageReference.GetPageParameter( PageParameterKey.WorkflowTypeId );
-                if ( !string.IsNullOrWhiteSpace( workflowTypeId ) )
+                var defaultGuid = GetAttributeValue( AttributeKey.DefaultWorkflowType ).AsGuidOrNull();
+                if ( defaultGuid.HasValue )
                 {
-                    workflowType = WorkflowTypeCache.Get( workflowTypeId, !PageCache.Layout.Site.DisablePredictableIds );
+                    workflowType = WorkflowTypeCache.Get( defaultGuid.Value );
                 }
             }
 
@@ -337,7 +361,6 @@ namespace Rock.Blocks.Workflow
             if ( workflowType != null )
             {
                 var pageParameters = new Dictionary<string, string>();
-                var workflowTypeId = pageReference.GetPageParameter( PageParameterKey.WorkflowTypeId );
 
                 if ( !string.IsNullOrWhiteSpace( workflowTypeId ) )
                 {
@@ -369,7 +392,8 @@ namespace Rock.Blocks.Workflow
             var entityService = new WorkflowService( RockContext );
             var entity = entityService.Get( key, !PageCache.Layout.Site.DisablePredictableIds );
 
-            if ( entity == null )
+            // Make sure the workflow belongs to the workflow type shown by this block.
+            if ( entity == null || entity.WorkflowTypeId != GetWorkflowType()?.Id )
             {
                 return ActionBadRequest( $"{Rock.Model.Workflow.FriendlyTypeName} not found." );
             }
@@ -391,6 +415,25 @@ namespace Rock.Blocks.Workflow
         }
 
         /// <summary>
+        /// Determines whether the specified workflow has an active entry form for the current person.
+        /// </summary>
+        /// <param name="key">The identifier of the workflow to check.</param>
+        /// <returns>A result containing <c>true</c> if the workflow has an active entry form; otherwise <c>false</c>.</returns>
+        [BlockAction]
+        public BlockActionResult HasActiveEntryForm( string key )
+        {
+            var workflowService = new WorkflowService( RockContext );
+            var workflow = workflowService.Get( key, !PageCache.Layout.Site.DisablePredictableIds );
+
+            if ( workflow == null )
+            {
+                return ActionNotFound();
+            }
+
+            return ActionOk( workflow.HasActiveEntryForm( GetCurrentPerson() ) );
+        }
+
+        /// <summary>
         /// Deletes the specified workflows.
         /// </summary>
         /// <param name="workflowGuids">The key.</param>
@@ -398,8 +441,21 @@ namespace Rock.Blocks.Workflow
         [BlockAction]
         public BlockActionResult DeleteWorkflows( List<Guid> workflowGuids )
         {
+            var workflowType = GetWorkflowType();
+
+            if ( workflowType == null || !GetIsAddDeleteEnabled() )
+            {
+                return ActionBadRequest( $"Not authorized to delete {Rock.Model.Workflow.FriendlyTypeName}." );
+            }
+
             var entityService = new WorkflowService( RockContext );
-            var workflowIds = entityService.GetByGuids( workflowGuids ).Select( wf => wf.Id ).ToList();
+            var workflowTypeId = workflowType.Id;
+
+            // Only delete workflows of the workflow type shown by this block.
+            var workflowIds = entityService.GetByGuids( workflowGuids ?? new List<Guid>() )
+                .Where( wf => wf.WorkflowTypeId == workflowTypeId )
+                .Select( wf => wf.Id )
+                .ToList();
 
             var deleteWorkflowsMsg = new DeleteWorkflows.Message
             {

@@ -21,6 +21,7 @@ using System.Linq;
 using System.Runtime.Serialization;
 using System.Threading;
 
+using Rock.Configuration;
 using Rock.Data;
 using Rock.Model;
 using Rock.Web.Cache;
@@ -75,9 +76,19 @@ namespace Rock.Web
                 }
             }
         }
+
+        /// <summary>
+        /// The number of times the cache has been flushed. This can be used to
+        /// determine if a cached object (e.g. JSON deserialized object) is still
+        /// valid or if it should be reloaded from the System Settings.
+        /// </summary>
+        internal static volatile int CacheFlushCount = 1;
+
         #endregion
 
         #region Static Methods
+
+        private const string InstallationDateCacheKey = "Rock:SystemSettings:InstallationDate";
 
         private static string CacheKey
         {
@@ -99,6 +110,28 @@ namespace Rock.Web
         public static Guid GetRockInstanceId()
         {
             return GetValue( Rock.SystemKey.SystemSetting.ROCK_INSTANCE_ID ).AsGuidOrNull() ?? new Guid();
+        }
+
+        /// <summary>
+        /// Gets the date and time that Rock was installed. Newer Rock installs
+        /// explicitely set this during install. Older Rock installs will
+        /// attempt to estimate this based on the database creation date, which
+        /// may not be accurate because of backup and restore operations.
+        /// </summary>
+        /// <returns>A <see cref="DateTime"/> object representing when Rock was originally installed.</returns>
+        public static DateTime GetRockInstallationDateTime()
+        {
+            return ( DateTime ) RockCache.GetOrAddExisting( InstallationDateCacheKey, () =>
+            {
+                using ( var rockContext = RockApp.Current.CreateRockContext() )
+                {
+                    var installDateTime = new AttributeService( rockContext )
+                        .GetSystemSetting( SystemKey.SystemSetting.ROCK_INSTANCE_ID )
+                        ?.CreatedDateTime;
+
+                    return installDateTime ?? RockDateTime.Now;
+                }
+            } );
         }
 
         /// <summary>
@@ -205,7 +238,9 @@ namespace Rock.Web
         /// <param name="guid">The guid to use if there are no system settings associated with the provided <paramref name="key"/>.</param>
         public static void SetValue( string key, string value, Guid guid )
         {
-            var rockContext = new Rock.Data.RockContext();
+            // Route through the RockApp (as LoadSettings does) so a mocked
+            // IRockContextFactory can substitute an in-memory context in tests.
+            var rockContext = RockApp.Current.CreateRockContext();
             var attributeService = new AttributeService( rockContext );
             var attribute = attributeService.GetSystemSetting( key );
 
@@ -227,6 +262,9 @@ namespace Rock.Web
             {
                 attribute.DefaultValue = value;
             }
+
+            // Keep the persisted copies in sync so they never hold an older value than DefaultValue.
+            Rock.Attribute.Helper.UpdateAttributeDefaultPersistedValues( attribute );
 
             // NOTE: Service Layer will automatically update this Cache (see Attribute.cs UpdateCache)
             rockContext.SaveChanges();
@@ -321,7 +359,7 @@ namespace Rock.Web
                 SystemSettingsValues = new ConcurrentDictionary<string, string>()
             };
 
-            using ( var rockContext = new RockContext() )
+            using ( var rockContext = RockApp.Current.CreateRockContext() )
             {
                 var systemSettingAttributes = new AttributeService( rockContext ).GetSystemSettings().ToAttributeCacheList();
 
@@ -353,6 +391,7 @@ namespace Rock.Web
         public static void Remove()
         {
             RockCache.Remove( CacheKey );
+            Interlocked.Increment( ref CacheFlushCount );
 
             // use startDayOfWeekCache to optimize how long it takes to get the StartDayOfWeek, since will be used for all .GetSundayDate() calls (1 millions calls was taking 15seconds, but this reduces that down to 25 ms)
             startDayOfWeekCache = null;

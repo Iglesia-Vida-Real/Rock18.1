@@ -27,6 +27,7 @@ using Rock.Enums.Workflow;
 using Rock.Field;
 using Rock.Model;
 using Rock.Net;
+using Rock.Security;
 using Rock.Utility;
 using Rock.ViewModels.Controls;
 using Rock.ViewModels.Reporting;
@@ -343,7 +344,7 @@ namespace Rock.Workflow.Action
                 : form.Footer.ToStringSafe();
 
             var fields = GetFormFields( form, action, mergeFields, rockContext );
-            var fieldValues = GetFormFieldValues( form, action, rockContext );
+            var fieldValues = GetFormFieldValues( form, action, rockContext, requestContext );
             var personEntryValues = GetPersonEntryValues( action, requestContext.CurrentPerson, rockContext );
             var personEntryConfiguration = GetPersonEntryConfiguration( action, requestContext.CurrentPerson, personEntryValues?.MaritalStatusGuid, mergeFields, rockContext );
 
@@ -517,19 +518,13 @@ namespace Rock.Workflow.Action
                 }
             }
 
-            // Get current marital status or default to Married if this will
-            // be a new person.
-            var maritalStatusGuid = personEntryPerson != null
-                ? personEntryPerson.MaritalStatusValue?.Guid
-                : Rock.SystemGuid.DefinedValue.PERSON_MARITAL_STATUS_MARRIED.AsGuid();
-
             return new PersonEntryValuesBag
             {
                 Address = address,
                 CampusGuid = personEntryPerson?.PrimaryCampusId != null
                     ? CampusCache.Get( personEntryPerson.PrimaryCampusId.Value, rockContext )?.Guid
                     : null,
-                MaritalStatusGuid = maritalStatusGuid,
+                MaritalStatusGuid = personEntryPerson?.MaritalStatusValue?.Guid,
                 Person = GetPersonBag( formSettings, personEntryPerson, rockContext ),
                 Spouse = GetPersonBag( formSettings, personEntrySpouse, rockContext )
             };
@@ -727,6 +722,22 @@ namespace Rock.Workflow.Action
                     formField.Attribute.FieldTypeGuid = Guid.Empty;
                     formField.Attribute.ConfigurationValues = null;
                 }
+                else
+                {
+                    var fieldType = FieldTypeCache.Get( attribute.FieldTypeId, rockContext );
+
+                    // If this field type implements ISecurityGrantFieldType
+                    // then we need to construct a security grant for the field
+                    // and include that in the field details we send to the
+                    // client. The UI will then use this security grant when
+                    // rendering the just this one field.
+                    if ( fieldType.Field is ISecurityGrantFieldType grantFieldType )
+                    {
+                        var securityGrant = new Rock.Security.SecurityGrant();
+                        grantFieldType.AddRulesToSecurityGrant( securityGrant, attribute.ConfigurationValues );
+                        formField.SecurityGrantToken = securityGrant.ToToken( true );
+                    }
+                }
 
                 fields.Add( formField );
             }
@@ -741,8 +752,9 @@ namespace Rock.Workflow.Action
         /// <param name="form">The data that describes the form to be displayed.</param>
         /// <param name="action">The action currently being processed.</param>
         /// <param name="rockContext">The context to use if access to the database is required.</param>
+        /// <param name="requestContext">The context that describes the current request.</param>
         /// <returns>A dictionary of field values with the keys being the attribute unique identifiers.</returns>
-        private static Dictionary<Guid, string> GetFormFieldValues( WorkflowActionFormCache form, WorkflowAction action, RockContext rockContext )
+        private static Dictionary<Guid, string> GetFormFieldValues( WorkflowActionFormCache form, WorkflowAction action, RockContext rockContext, RockRequestContext requestContext )
         {
             var fieldValues = new Dictionary<Guid, string>();
             var activity = action.Activity;
@@ -782,6 +794,17 @@ namespace Rock.Workflow.Action
                 if ( formAttribute.IsReadOnly )
                 {
                     var htmlValue = field.GetCondensedHtmlValue( value, attribute.ConfigurationValues );
+
+                    // If the field is a linkable field then we need to wrap the
+                    // HTML value in the link to the URL. This is only done if
+                    // the label is not hidden to maintain compatability with the
+                    // original block.
+                    if ( !formAttribute.HideLabel && field is ILinkableFieldType linkableField )
+                    {
+                        string url = linkableField.UrlLink( value, attribute.QualifierValues );
+                        url = requestContext.ResolveRockUrl( "~" ).EnsureTrailingForwardslash() + url;
+                        htmlValue = $"<a href='{url}' target='_blank' rel='noopener noreferrer'>{htmlValue}</a>";
+                    }
 
                     fieldValues.Add( attribute.Guid, htmlValue );
                 }
@@ -830,6 +853,36 @@ namespace Rock.Workflow.Action
                     }
 
                     item?.SetPublicAttributeValue( attribute.Key, formFieldValue, null, false );
+
+                    var value = item?.GetAttributeValue( attribute.Key );
+
+                    if ( value.IsNotNullOrWhiteSpace() )
+                    {
+                        var field = attribute.FieldType.Field;
+                        var rules = field.GetValidationRules( attribute.ConfigurationValues );
+
+                        try
+                        {
+                            StringValueValidator.Validate( value, rules, typeof( AttributeValue ), nameof( AttributeValue.Value ) );
+                        }
+                        catch ( PropertyValidationException ex )
+                        {
+                            if ( DbContext.EnableStringValidation )
+                            {
+                                throw new AttributeValueValidationException( attribute, item.Id, ex.Reason, null );
+                            }
+                            else
+                            {
+                                // Captures the full current call stack, all callers
+                                // included so that we get more information about
+                                // where this happened in the log.
+                                var stack = new System.Diagnostics.StackTrace( true ).ToString();
+                                var ex2 = new AttributeValueValidationException( attribute, item.Id, ex.Reason, stack );
+
+                                ExceptionLogService.LogException( ex2, System.Web.HttpContext.Current );
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1255,9 +1308,14 @@ namespace Rock.Workflow.Action
             }
             else
             {
-                // If this isn't a Person, assume it is an email address.
-                string recipientEmailAddress = recipientWorkflowAttributeValue;
-                recipients.Add( RockEmailMessageRecipient.CreateAnonymous( recipientEmailAddress, mergeFields ) );
+                // If this isn't a Person, assume it is an email address. The value may have
+                // been submitted on the form and the email transport renders the address as
+                // Lava, so only send to a valid address that contains no Lava.
+                string recipientEmailAddress = recipientWorkflowAttributeValue?.Trim();
+                if ( recipientEmailAddress.IsNotNullOrWhiteSpace() && !recipientEmailAddress.IsLavaTemplate() && EmailAddressFieldValidator.IsValid( recipientEmailAddress ) )
+                {
+                    recipients.Add( RockEmailMessageRecipient.CreateAnonymous( recipientEmailAddress, mergeFields ) );
+                }
             }
 
             SendFormBuilderCommunication( confirmationEmailSettings.Source, recipients, mergeFields );
@@ -1377,11 +1435,13 @@ namespace Rock.Workflow.Action
                     customBody = formEmailSourceSettings.Body;
                 }
 
+                // The body is rendered once by the email transport using each recipient's
+                // merge fields. Rendering it here too would run submitted values as Lava.
                 var emailMessage = new RockEmailMessage
                 {
                     ReplyToEmail = formEmailSourceSettings.ReplyTo,
                     Subject = formEmailSourceSettings.Subject,
-                    Message = customBody?.ResolveMergeFields( mergeFields )
+                    Message = customBody
                 };
 
                 emailMessage.SetRecipients( recipients );

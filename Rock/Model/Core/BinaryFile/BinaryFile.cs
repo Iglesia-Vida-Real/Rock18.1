@@ -20,7 +20,9 @@ using System.ComponentModel.DataAnnotations.Schema;
 using System.Data.Entity.ModelConfiguration;
 using System.Runtime.Serialization;
 using Rock.Data;
+using Rock.Enums.Security;
 using Rock.Lava;
+using Rock.Security;
 using Rock.Storage;
 using Rock.Web.Cache;
 
@@ -77,6 +79,7 @@ namespace Rock.Model
         [Required]
         [MaxLength( 255 )]
         [DataMember( IsRequired = true )]
+        [StringValidation( StringValidationProfile.PlainText )]
         public string FileName { get; set; }
 
         /// <summary>
@@ -97,6 +100,7 @@ namespace Rock.Model
         [Required]
         [MaxLength( 255 )]
         [DataMember( IsRequired = true )]
+        [StringValidation( StringValidationProfile.PlainText )]
         public string MimeType { get; set; }
 
         /// <summary>
@@ -106,6 +110,7 @@ namespace Rock.Model
         /// A <see cref="System.String"/> representing the user defined description of the file.
         /// </value>
         [DataMember]
+        [StringValidation( StringValidationProfile.LavaAndBasicHtml )]
         public string Description { get; set; }
 
         /// <summary>
@@ -114,7 +119,11 @@ namespace Rock.Model
         /// <value>
         /// A <see cref="System.Int32"/> representing the ID of the Storage Service <see cref="Rock.Model.EntityType"/> that is being used to store this file.
         /// </value>
+        /// <remarks>
+        /// Set only by the storage provider and the save hook, never by REST clients.
+        /// </remarks>
         [DataMember]
+        [NotClientWritable]
         public int? StorageEntityTypeId
         {
             get
@@ -151,8 +160,11 @@ namespace Rock.Model
         /// Because a Storage provider's settings are stored with the binary file type, and that binary file 
         /// type may change the settings or storage provider, the setting values at the time this file was 
         /// saved need to be stored with the binary file so that the storage provider is still able to 
-        /// retrieve the file using these settings
+        /// retrieve the file using these settings.
+        /// Set only by the storage provider and the save hook, never by REST clients.
         /// </remarks>
+        [NotClientWritable]
+        [StringValidation( StringValidationProfile.Unrestricted )]
         public string StorageEntitySettings { get; set; }
 
         /// <summary>
@@ -162,10 +174,13 @@ namespace Rock.Model
         /// The URL.
         /// </value>
         /// <remarks>
-        /// It us up to the storage provider to save the path value when creating the file
+        /// It is up to the storage provider to save the path value when creating the file.
+        /// Set only by the storage provider and the save hook, never by REST clients.
         /// </remarks>
         [MaxLength( 2083 )]
         [DataMember]
+        [StringValidation( StringValidationProfile.PlainText )]
+        [NotClientWritable]
         public string Path { get; set; }
 
         /// <summary>
@@ -206,6 +221,7 @@ namespace Rock.Model
         /// </summary>
         /// <value>The additional information.</value>
         [DataMember]
+        [StringValidation( StringValidationProfile.PlainText )]
         public string AdditionalInformation { get; set; }
 
         /// <summary>

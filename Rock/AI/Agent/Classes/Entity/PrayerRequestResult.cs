@@ -38,7 +38,7 @@ namespace Rock.AI.Agent.Classes.Entity
         /// <summary>
         /// Gets or sets the date time the note was entered.
         /// </summary>
-        public DateTime EnteredDateTime { get; set; }
+        public DateTime? EnteredDateTime { get; set; }
 
         /// <summary>
         /// Gets or sets a value indicating whether this prayer request is urgent.
@@ -64,10 +64,5 @@ namespace Rock.AI.Agent.Classes.Entity
         /// Gets or sets the number of times this prayer request has been prayed for.
         /// </summary>
         public int? PrayerCount { get; set; }
-
-        /// <summary>
-        /// Gets or sets the author of the note.
-        /// </summary>
-        public PersonResult RequestedByPerson { get; set; }
     }
 }

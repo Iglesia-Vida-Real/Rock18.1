@@ -130,7 +130,7 @@ namespace RockWeb.Blocks.Core
             var entitySetService = new EntitySetService( rockContext );
             var entitySetItemsService = new EntitySetItemService( rockContext );
             var entitySet = entitySetService.Get( entitySetId );
-            if ( entitySet == null )
+            if ( entitySet == null || !IsEntitySetOwnedByCurrentPerson( entitySet, rockContext ) )
             {
                 nbWarningMessage.Text = "Merge Records not found";
                 nbWarningMessage.Title = "Warning";
@@ -171,10 +171,17 @@ namespace RockWeb.Blocks.Core
                 rockContext.Database.CommandTimeout = databaseTimeoutSeconds.Value;
             }
 
-            var dataSourceResult = GetMergeDataSource();
+            var entitySetId = GetEntitySetId();
+            if ( !entitySetId.HasValue )
+            {
+                ShowEntitySetNotFound();
+                return;
+            }
+
+            var dataSourceResult = GetMergeDataSource( entitySetId.Value );
 
             MergeTemplate mergeTemplate = new MergeTemplateService( rockContext ).Get( mtPicker.SelectedValue.AsInteger() );
-            if ( mergeTemplate == null )
+            if ( mergeTemplate == null || !IsMergeTemplateAllowed( mergeTemplate ) )
             {
                 nbWarningMessage.Text = "Unable to get merge template";
                 nbWarningMessage.NotificationBoxType = NotificationBoxType.Danger;
@@ -195,7 +202,17 @@ namespace RockWeb.Blocks.Core
 
             try
             {
-                var outputBinaryFileDoc = mergeTemplateType.CreateDocument( mergeTemplate,
+                /*
+                    10/21/2026 - MSE
+
+                    The merged document is written straight to this postback response instead
+                    of being saved as a temporary BinaryFile and linked through GetFile.ashx,
+                    because that file used the unsecured default file type and anyone could
+                    download it by Id until Rock Cleanup removed it.
+
+                    Reason: Merged documents must not be downloadable by Id.
+                */
+                var document = mergeTemplateType.CreateDocumentForDownload( mergeTemplate,
                     dataSourceResult.DetailMergeObjects.Values.ToList(),
                     globalMergeFields );
 
@@ -215,8 +232,22 @@ namespace RockWeb.Blocks.Core
                     }
                 }
 
-                string getFileUrl = FileUrlHelper.GetFileUrl( outputBinaryFileDoc.Guid ) + "&attachment=true";
-                Response.Redirect( getFileUrl, false );
+                if ( document == null )
+                {
+                    nbMergeError.Text = "Unable to get merge template";
+                    nbMergeError.Visible = true;
+                    return;
+                }
+
+                var bytes = document.ContentStream.ReadBytesToEnd();
+
+                Response.Clear();
+                Response.ContentType = document.MimeType;
+                Response.AddHeader( "content-disposition", "attachment; filename=" + document.FileName.MakeValidFileName() );
+                Response.BufferOutput = true;
+                Response.BinaryWrite( bytes );
+                Response.Flush();
+                Response.SuppressContent = true;
                 Context.ApplicationInstance.CompleteRequest();
             }
             catch ( Exception ex )
@@ -245,7 +276,7 @@ namespace RockWeb.Blocks.Core
         private MergeTemplateType GetMergeTemplateType( RockContext rockContext, MergeTemplate mergeTemplate )
         {
             mergeTemplate = new MergeTemplateService( rockContext ).Get( mtPicker.SelectedValue.AsInteger() );
-            if ( mergeTemplate == null )
+            if ( mergeTemplate == null || !IsMergeTemplateAllowed( mergeTemplate ) )
             {
                 return null;
             }
@@ -254,15 +285,102 @@ namespace RockWeb.Blocks.Core
         }
 
         /// <summary>
+        /// Gets the entity set identifier being merged. The posted hidden field
+        /// must match the Set page parameter the block was displayed with, and
+        /// the entity set must have been created by the current person.
+        /// </summary>
+        /// <returns>The entity set identifier, or <c>null</c> if it does not match the page parameter or is not owned by the current person.</returns>
+        private int? GetEntitySetId()
+        {
+            int? entitySetId = hfEntitySetId.Value.AsIntegerOrNull();
+            int? pageEntitySetId = this.PageParameter( "Set" ).AsIntegerOrNull();
+
+            if ( !entitySetId.HasValue || entitySetId != pageEntitySetId )
+            {
+                return null;
+            }
+
+            var rockContext = new RockContext();
+            var entitySet = new EntitySetService( rockContext ).Get( entitySetId.Value );
+
+            if ( entitySet == null || !IsEntitySetOwnedByCurrentPerson( entitySet, rockContext ) )
+            {
+                return null;
+            }
+
+            return entitySetId;
+        }
+
+        /// <summary>
+        /// Determines whether the entity set was created by the current person.
+        /// </summary>
+        /// <param name="entitySet">The entity set.</param>
+        /// <param name="rockContext">The rock context.</param>
+        /// <returns><c>true</c> if the entity set was created by the current person; otherwise <c>false</c>.</returns>
+        private bool IsEntitySetOwnedByCurrentPerson( EntitySet entitySet, RockContext rockContext )
+        {
+            /*
+                10/12/2026 - MSE
+
+                Entity set identifiers are sequential, so the Set page parameter
+                could be changed to open a set another person created, such as
+                the rows of a report or giving list they can not view. Grids
+                create the set while the person is signed in, so the creator is
+                the person who should be able to merge it. The person Id is
+                compared instead of the alias Id so a merged person still matches.
+                Sets with no creator are rejected.
+
+                Reason: Prevent merging entity sets created by other people.
+            */
+            if ( !CurrentPersonId.HasValue || !entitySet.CreatedByPersonAliasId.HasValue )
+            {
+                return false;
+            }
+
+            var ownerPersonId = new PersonAliasService( rockContext ).GetPersonId( entitySet.CreatedByPersonAliasId.Value );
+
+            return ownerPersonId.HasValue && ownerPersonId.Value == CurrentPersonId.Value;
+        }
+
+        /// <summary>
+        /// Shows the warning that the merge records could not be found.
+        /// </summary>
+        private void ShowEntitySetNotFound()
+        {
+            nbWarningMessage.Text = "Merge Records not found";
+            nbWarningMessage.Title = "Warning";
+            nbWarningMessage.NotificationBoxType = NotificationBoxType.Warning;
+            nbWarningMessage.Visible = true;
+        }
+
+        /// <summary>
+        /// Determines whether the merge template can be used by the current person. This
+        /// matches the picker's <see cref="MergeTemplateOwnership.PersonalAndGlobal"/> ownership:
+        /// global templates, or personal templates owned by the current person.
+        /// </summary>
+        /// <param name="mergeTemplate">The merge template.</param>
+        /// <returns><c>true</c> if the merge template can be used; otherwise <c>false</c>.</returns>
+        private bool IsMergeTemplateAllowed( MergeTemplate mergeTemplate )
+        {
+            if ( !mergeTemplate.PersonAliasId.HasValue )
+            {
+                return true;
+            }
+
+            return CurrentPersonId.HasValue
+                && mergeTemplate.PersonAlias != null
+                && mergeTemplate.PersonAlias.PersonId == CurrentPersonId.Value;
+        }
+
+        /// <summary>
         /// Gets the merge data for the current EntitySet.
         /// </summary>
-        /// <param name="rockContext">The rock context.</param>
+        /// <param name="entitySetId">The entity set identifier.</param>
         /// <param name="fetchCount">The fetch count.</param>
         /// <returns></returns>
-        private MergeTemplateDataSourceBuilder.GetMergeObjectsResult GetMergeDataSource( int? fetchCount = null )
+        private MergeTemplateDataSourceBuilder.GetMergeObjectsResult GetMergeDataSource( int entitySetId, int? fetchCount = null )
         {
             bool combineFamilyMembers = cbCombineFamilyMembers.Visible && cbCombineFamilyMembers.Checked;
-            int entitySetId = hfEntitySetId.Value.AsInteger();
             int? databaseTimeout = GetAttributeValue( AttributeKey.DatabaseTimeout ).AsIntegerOrNull();
 
             var builder = new MergeTemplateDataSourceBuilder();
@@ -302,9 +420,16 @@ namespace RockWeb.Blocks.Core
 
             var rockContext = new RockContext();
 
-            int entitySetId = hfEntitySetId.Value.AsInteger();
+            var validEntitySetId = GetEntitySetId();
             var entitySetService = new EntitySetService( rockContext );
-            var entitySet = entitySetService.Get( entitySetId );
+            var entitySet = validEntitySetId.HasValue ? entitySetService.Get( validEntitySetId.Value ) : null;
+            if ( entitySet == null )
+            {
+                ShowEntitySetNotFound();
+                return;
+            }
+
+            int entitySetId = entitySet.Id;
             if ( entitySet.EntityTypeId.HasValue )
             {
                 var qry = entitySetService.GetEntityQuery( entitySetId ).Take( 15 );
@@ -361,13 +486,20 @@ namespace RockWeb.Blocks.Core
         {
             var rockContext = new RockContext();
 
-            var dataSourceResult = GetMergeDataSource( 1 );
+            var entitySetId = GetEntitySetId();
+            if ( !entitySetId.HasValue )
+            {
+                ShowEntitySetNotFound();
+                return;
+            }
+
+            var dataSourceResult = GetMergeDataSource( entitySetId.Value, 1 );
             var detailMergeFields = dataSourceResult.DetailMergeObjects.Values.ToList();
             var globalMergeFields = GetLavaGlobalMergeFields( dataSourceResult.GlobalMergeObjects );
 
             MergeTemplate mergeTemplate = new MergeTemplateService( rockContext ).Get( mtPicker.SelectedValue.AsInteger() );
             MergeTemplateType mergeTemplateType = null;
-            if ( mergeTemplate != null )
+            if ( mergeTemplate != null && IsMergeTemplateAllowed( mergeTemplate ) )
             {
                 mergeTemplateType = this.GetMergeTemplateType( rockContext, mergeTemplate );
             }
