@@ -286,3 +286,7 @@ contra el `RockWeb` del servidor (solo lectura).
 7. `core-files-modified.txt` no lista `CLAUDE.md` ni los dos `Rock.Frontend.Styles/.../RockNextGen/Layouts`
    (todavía los nombra con la ruta 18.x).
 8. «Store Key too long» al arrancar (la clave del Rock Shop de prod copiada a dev): esperado en dev.
+9. **Objeto de BD propio que no está en el repo:** trigger `dbo.tr_PhoneNumber_FixGT02` (AFTER INSERT, UPDATE en
+   `PhoneNumber`): si `CountryCode = '502'` y `Number` empieza con `02`, le quita los 2 primeros dígitos y recalcula
+   `NumberFormatted`/`FullNumber`. Sobrevive al upgrade (las migraciones de la 19 no lo tocan), pero no hay fuente
+   versionada: conviene guardarlo en `Dev Tools/Sql/`.

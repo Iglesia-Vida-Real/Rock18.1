@@ -308,6 +308,9 @@ vacía `RockWeb`: tiene carpetas y archivos que solo existen en el servidor (§5
 2. Correr en el servidor `Dev Tools\Upgrade\Get-RockWebInventario.ps1` (solo lectura) y comparar contra el repo
    (§13). Todo lo que salga como «cambiado en prod / solo en prod» se resuelve **antes**: o se trae al repo, o se
    agrega a «Qué se conserva».
+   Además, traer de prod `Themes\VidAventuracheckin\Styles\_css-overrides.less` (si existe) y `checkin-theme.css`
+   y compararlos con el repo antes de decidir qué hacer con el tema del kiosco (§12, riesgo 1). **No** subir un
+   `_css-overrides.less` vacío.
 3. Plugins del Rock Shop: revisar en **Admin > Rock Shop > Installed Plugins** de prod si hay versión para la 19
    (`INVENTARIO_DESARROLLOS_VR.md` §3). En local cargan las versiones actuales.
 4. Pedir a TI el **valor** de `RunJobsInIISContext` en el `web.config` de prod (solo el valor; no copiar el archivo).
@@ -481,10 +484,26 @@ Ninguno se recomienda «no correr»: los que tocan bloques arreglan páginas que
 Causa: upstream hizo que el bloque Obsidian reuse el GUID del `.ascx`, pero en nuestra BD esos `.ascx` se
 registraron con otros GUIDs; la 19 creó BlockTypes nuevos y las páginas quedaron apuntando a un `.ascx`
 inexistente. Las llaves de atributos coinciden (`SystemPhoneNumberDetailPage`; `DetailPage`,
-`OccurrenceChooserPage`). **Propuesta, no aplicada:** `Dev Tools\Upgrade\19.8.1_job_reemplazo_bloques_huerfanos.sql`
-crea un job más del mismo tipo de upstream (Chop) con esos dos pares; se corre con «Run Now». Vale igual para prod
-(mismos GUIDs). Alternativa manual: borrar el bloque de cada página y agregar el Obsidian, reconfigurando la
-página de detalle.
+`OccurrenceChooserPage`). `Dev Tools\Upgrade\19.8.1_job_reemplazo_bloques_huerfanos.sql` crea un job más del
+mismo tipo de upstream (Chop) con esos dos pares; se corre con «Run Now». Vale igual para prod (mismos GUIDs).
+Alternativa manual: borrar el bloque de cada página y agregar el Obsidian, reconfigurando la página de detalle.
+
+**Qué hace exactamente el job (verificado en `PostUpdateDataMigrationsReplaceWebFormsBlocksWithObsidianBlocks.cs`
+y en la BD, 2026-11-19):**
+- Alcance: todos los bloques de los 2 BlockTypes viejos. En toda la BD hay **exactamente 2**: bloque 1325 (página
+  327, zona Main, orden 2) y bloque 1209 (página 740, Main, orden 0); ninguno en layouts ni a nivel de sitio; 0
+  permisos y 0 preferencias propias.
+- Por cada uno crea una copia con el BlockType Obsidian en la misma página, zona y orden, y copia los 3 valores de
+  atributo (`SystemPhoneNumberDetailPage`; `DetailPage`, `OccurrenceChooserPage`); valida antes que las llaves del
+  viejo existan en el nuevo (si no, no hace nada y deja el error en el job).
+- Chop: borra los BlockTypes 788 y 768 (la FK `Block → BlockType` es `CASCADE`, así que se van los 2 bloques
+  viejos) e intenta borrar sus `.ascx` del disco (ya no existen). Todo en una transacción; al terminar bien, el job
+  se borra solo.
+- **Correr el SQL dos veces no hace daño:** la segunda vez solo reescribe los mismos 2 valores del job (verificado:
+  1 job, 2 valores). Si el job ya corrió, los BlockTypes viejos ya no existen y el script se detiene sin hacer nada.
+
+**Estado en Rock19Test:** SQL aplicado el 2026-11-19 → **job 234** creado (activo; con `RunJobsInIISContext=False`
+solo corre con «Run Now»). Falta el «Run Now» del responsable y verificar las páginas 327 y 740.
 
 ### 11.5 Si en prod `RunJobsInIISContext` es True
 
@@ -524,11 +543,28 @@ Check-in» tiene tema `CheckinPark`; `VidAventuracheckin` no está asignado a ni
 
 **Riesgos para el día:**
 1. **El tema VidAventuracheckin no recompila (verificado).** `checkin-theme.less:140` importa `_css-overrides.less`,
-   que nunca existió en la carpeta (el defecto viene de `hotfix-18.1`). Al cambiar `RockWeb/Styles` en la 19,
-   Rock intenta recompilar y falla (`ExceptionLog` 1630300). Se sigue sirviendo el `checkin-theme.css` compilado
-   antes, así que el kiosco se ve igual pero no recibe cambios. **Arreglo propuesto (no aplicado):** crear
-   `RockWeb/Themes/VidAventuracheckin/Styles/_css-overrides.less` vacío (y, si se quieren los íconos `ti`, el
-   `@import` de tabler que upstream agregó a sus temas de check-in). Antes, revisar si prod tiene ese archivo (§13).
+   que no está en el repo (el defecto viene de `hotfix-18.1`). Al cambiar `RockWeb/Styles` en la 19, Rock intenta
+   recompilar y falla (`ExceptionLog` 1630300). Se sigue sirviendo el `checkin-theme.css` compilado antes, así que
+   el kiosco se ve igual pero no recibe cambios.
+   - `_css-overrides.less` es el archivo donde **el Theme Styler de Rock guarda los ajustes hechos desde la
+     interfaz** (`RockWeb/Blocks/Cms/ThemeStyler.ascx.cs:130-134`): **prod podría tenerlo con contenido**. Por eso
+     **no se versiona uno vacío** (pisaría el de prod). Decisión del responsable, 2026-11-19.
+   - Cuándo recompila Rock: al arrancar (`RockTheme.CompileAll(onlyCompileIfNeeded)` desde `Global.asax.cs`), un
+     tema se recompila si cualquier archivo de `RockWeb/Styles` o del tema es más nuevo que su `.css`
+     (`Rock/Web/UI/RockTheme.cs:122-200`). El día del upgrade pasa seguro (los `Styles` de la 19 son nuevos): si
+     prod tiene `_css-overrides.less`, su `checkin-theme.css` se **regenera con los estilos de la 19**; si no, falla
+     y queda el `.css` viejo.
+   - **Antes de decidir (§7.1):** traer de prod `Themes\VidAventuracheckin\Styles\_css-overrides.less` (si existe) y
+     `checkin-theme.css` y comparar ese `.css` con el del repo (`git hash-object`). El inventario del servidor
+     (§13) ya dice si el archivo existe y su hash.
+   - **En local** se creó `_css-overrides.less` **vacío y sin versionar** (excluido con `.git/info/exclude`) solo
+     para la prueba comparativa (§14). El `.css` previo quedó respaldado en la carpeta temporal de la sesión. Al
+     reiniciar la 19, Rock regenera `checkin-theme.css` (archivo versionado): **no commitear ese cambio**; después
+     de la prueba se restaura con `git checkout -- RockWeb/Themes/VidAventuracheckin/Styles/checkin-theme.css`.
+   - **Los demás temas de check-in no tienen el problema:** `CheckinPark` (tema del sitio «Rock Check-in»),
+     `CheckinAdventureKids`, `CheckinAero`, `CheckinBlueCrystal`, `CheckinElectric` y los otros 6 temas que importan
+     `_css-overrides.less` lo traen versionado desde upstream. En el `ExceptionLog` de prod (copia del 18-nov) no hay
+     ningún error de `.less` anterior al upgrade.
 2. Check-in Manager pasa a `RockManagerNextGen`: el kit debe traer ese tema compilado (§7.1).
 3. Roster en inglés (§6).
 4. Los `.ascx` compilan al primer request: un error de compilación solo aparece al abrir la página.
@@ -543,13 +579,21 @@ planear la migración a next-gen antes de la 20.x.
 Objetivo: detectar archivos cambiados o agregados en prod que no están en el repo, antes de copiar el kit.
 
 1. **En el servidor** (solo lectura; no lee `web.config` ni connection strings; Content/App_Data/Cache solo se
-   cuentan):
-   ```powershell
-   powershell -NoProfile -ExecutionPolicy Bypass -File .\Get-RockWebInventario.ps1 -RockWeb "<ruta>\RockWeb" -CarpetaSalida "<carpeta fuera de RockWeb>"
-   ```
-   Genera `RockWeb_inventario_<equipo>_<fecha>.csv` (Ruta, Bytes, Modificado, SHA256), `…_excluidas_….csv` y un
-   `.txt` de resumen. Probado en la máquina de dev: 5 768 archivos, 197 s, 0 errores. Se puede correr con el
-   sitio arriba.
+   cuentan). Lo corre el responsable:
+   1. Copiar `Dev Tools\Upgrade\Get-RockWebInventario.ps1` al Escritorio del servidor.
+   2. Ubicar la ruta física de `RockWeb`: *Administrador de IIS > Sitios > (sitio de personas.vidareal.tv) >
+      Configuración básica > Ruta de acceso física* (no está documentada en el repo).
+   3. En una consola de PowerShell (no hace falta como administrador si la cuenta puede leer `RockWeb`):
+      ```powershell
+      powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\Desktop\Get-RockWebInventario.ps1" -RockWeb "<ruta física de RockWeb>"
+      ```
+      La salida va al Escritorio por omisión. Tarda unos minutos; se puede correr con el sitio arriba.
+   4. Traer de vuelta (3 archivos, todos en el Escritorio):
+      `RockWeb_inventario_<equipo>_<fecha>.csv`, `RockWeb_excluidas_<equipo>_<fecha>.csv`,
+      `RockWeb_inventario_<equipo>_<fecha>.txt`. Además, para el tema del kiosco (§12):
+      `<RockWeb>\Themes\VidAventuracheckin\Styles\_css-overrides.less` (si existe) y `checkin-theme.css`.
+   El CSV solo contiene rutas, tamaños, fechas y hashes (ningún contenido de archivo).
+   Probado en la máquina de dev: 5 768 archivos, 197 s, 0 errores.
 2. **En la máquina de desarrollo**, inventario de la referencia (lo que debería estar en prod):
    ```powershell
    git worktree add ..\Rock-ref-prod hotfix-18.1
@@ -564,3 +608,142 @@ Objetivo: detectar archivos cambiados o agregados en prod que no están en el re
 
 Además, `Dev Tools\Upgrade\Test-TiposRock.ps1` puede correrse contra el `RockWeb` de prod después del upgrade
 (`INVENTARIO_DESARROLLOS_VR.md` §5).
+
+---
+
+## 14. Prueba comparativa de check-in 18.1 vs 19 (2026-11-19, local)
+
+Prioridad: que el check-in de VidAventura funcione y se vea **igual** que hoy en prod. Se montaron las dos
+versiones lado a lado con la misma BD de origen.
+
+### 14.1 Entorno
+
+| | 18.1 (referencia) | 19.8.1 |
+|---|---|---|
+| URL | `http://localhost:6230` | `http://localhost:6229` |
+| Código | `git worktree add --detach ..\Rock18Base-wt hotfix-18.1` (commit `81ed172522`); la rama de prueba no se tocó | `Test_Update_18.1_a_18.8` |
+| BD | `Rock18Base`: import del mismo `Rock18_Prod_20261119.bacpac` (8 min 40 s), sin migrar | `Rock19Test` |
+| Aislamiento | `dev-isolation\aislar_dev_Rock18Base.sql` (copia con guarda `Rock18Base`, URLs y frame domain en `localhost:6230`). Corrida 1: mismos conteos que Rock19Test (URLs 3, SMTP 1, kiosco 1, transportes 13, pasarelas 7+1, Odoo 8, Wallet 2, Azure 2, jobs 95, frame domains 1); corrida 2: todo 0. 0 jobs activos; SendGrid/Twilio/WhatsApp/OneSignal `Active=False` | ya aislada (Fase 1) |
+
+Build del worktree 18.1 desde clon limpio — **trampas encontradas** (útiles para cualquier clon nuevo):
+1. `SignNowSDK` no compila sin `nuget restore Rock.sln` (usa `packages.config`; `msbuild -restore` no lo cubre).
+2. Faltan en `Bin` las DLLs que llegan por `.refresh` (p. ej. Ical.Net): copiarlas desde `packages\` (las rutas de
+   los `.refresh` son relativas a `RockWeb\`).
+3. El paso `RockWeb.metaproj` de `Rock.sln` compila `RockWeb/Plugins/com_vidareal/Translator/*.ascx.cs`, que
+   necesitan `com.vidareal.Translator.dll`, pero los plugins se compilan **después** del core. En un clon limpio hay
+   que correr `build-all.ps1 -SkipCore` primero (contra el `Rock.dll` ya compilado) y luego el build completo.
+4. Las DLLs del Rock Shop se copian de `Handoff_VidaReal_2026-10-15\dll-terceros\RockWeb-Bin\`.
+
+### 14.2 Precompilación completa de la 19 (aspnet_compiler)
+
+`aspnet_compiler -v / -p RockWeb -c -errorstack <salida>`: **0 errores**, 45 advertencias (CS0618, APIs
+obsoletas: `EditLabel`, `RestActionDetail`, `StarkDetail/List`, `SendLegacyProviderDocument` en
+`RegistrationDetail`/`GroupMemberDetail`/`GroupDetail`, `HasMergeFields` en DataToolkit, `Get/SetUserPreference`
+en LavaTester). 521 páginas/controles compilados en 2,0 min: **todos los `.ascx` de check-in, QREVENT,
+Asistencia, SundayService, Translator y de los plugins del Rock Shop compilan con la 19.** (El primer intento
+falló solo al copiar estáticos por una ruta de `App_Data\ChromeEngine` de más de 260 caracteres; con una carpeta de
+salida corta pasa.)
+
+### 14.3 CSS del tema del kiosco en la 19 (hallazgo)
+
+Con `_css-overrides.less` presente (en local, vacío y sin versionar), la 19 recompiló
+`VidAventuracheckin/Styles/checkin-theme.css`: de 368 614 a 262 515 bytes, **~1 400 clases menos**. Causa: upstream
+movió las utilidades (`d-*`, `flex-*`, `m*-*`, `p*-*`, `gap-*`, grid, ratios) de `Styles/_helpers.less` a
+`Styles/_helpers-rock.less` (commit `aea467741b`), que solo importa `_rock-core.less` (temas principales). Los temas
+de check-in legacy importan `_helpers.less`, así que **todos** (también `CheckinPark` de upstream) pierden esas
+clases al recompilarse.
+
+Impacto en el flujo del kiosco (cruce de las clases perdidas contra `RockWeb/Blocks/CheckIn/*`, el layout del tema
+y las plantillas Lava del tipo 49/área 50): **solo `ml-3`**, en el texto «Count: N» de `MultiPersonSelect.ascx.cs:120`
+(margen izquierdo). Las demás clases perdidas que usamos están en bloques que no van en el kiosco
+(`RapidAttendanceEntry`, `AttendanceSelfEntry`, `AttendanceAnalytics`, `MobileLauncher`). Se confirma
+visualmente en la prueba (PLAN_PRUEBAS §15, C5). Si prod tiene `_css-overrides.less`, esto pasará en prod.
+
+### 14.4 Preparación de la prueba (idéntica en las dos BDs)
+
+`dev-isolation\preparar_prueba_checkin_vidaventura.sql` (guardas de máquina y BD; idempotente: segunda corrida 0
+cambios en las dos):
+- Familia **ficticia** «Familia PruebaUpgrade»: 1 adulta + 3 niños con edades para cada grupo de VidAventura
+  Ilumina (tipo 49, área 50: Descubridores 0–3.99, Exploradores 4–6.99, Defensores 7–12.6).
+- Horario 35 «Check In - Prueba» activado (L–V, check-in 09:00–21:00; ya asignado a los 3 grupos).
+- Kiosco nuevo «Kiosko Prueba Upgrade» (Id 26 en ambas) = copia del «Kiosko Mostrador» (12) con las salas 133–135
+  e impresión **desde el servidor**.
+- Impresora 14 → `127.0.0.1:9100` (18.1) / `:9101` (19). **Antes apuntaba a `192.168.20.88`**, una impresora de la
+  red de la iglesia: si esta máquina está en esa red, cualquier impresión desde el servidor habría salido en papel.
+  La IP original quedó anotada en la descripción del dispositivo.
+- `dev-isolation\impresora_falsa_zpl.ps1`: listener solo en `127.0.0.1` que guarda cada etiqueta en
+  `dev-isolation\etiquetas_capturadas\<puerto>_<hora>.zpl`. `ZebraPrint` (envío por socket, acepta `ip:puerto`) es
+  idéntico en 18.1 y 19.
+- Etiquetas del área: `papa_final.prn` (BinaryFile 1079) y `nino_final.prn` (1081).
+
+Checklist del recorrido: `PLAN_PRUEBAS_19.8.1.md` §15.
+
+### 14.5 Auditoría de código del check-in: 18.1.0 → 19.8.1
+
+Diff de todo lo que usan los 47 bloques de check-in (`Rock/CheckIn`, `CheckInState`, `KioskDevice`, etiquetas,
+acciones `Rock.Workflow.Action.CheckIn.*`, `Schedule`, `Attendance*`, caches, Lava). **[V]** = verificado en el
+código; **[I]** = inferido, se confirma en la prueba.
+
+**Sin cambios [V]:** `ZebraPrint.cs`, `KioskLabel.cs`, `CheckInLabel.cs`, `KioskDevice.cs`, `CheckInState.cs`,
+`CheckInBlock*.cs`, `CheckInEditFamilyBlock.cs`, `CheckInSearchBlock.cs`, `CheckinManagerHelper.cs`,
+`LocalDeviceConfiguration.cs`, `CreateLabels.cs`, `ParseZebraLabel.cs`, `ScheduleCache.cs`, `LocationCache.cs`,
+`AttendanceCodeService.cs`, `GroupLocation.cs`, `Scripts/CheckinClient/ZebraPrint.js` y `checkin-core.js`; la
+lógica de horarios activos (`IsCheckInActive`/`GetCheckInTimes`) y de edad/grado. 33 de las 35 acciones de check-in
+idénticas. Ninguna migración de la 19 toca el sitio de check-in, su WorkflowType, los Devices ni las etiquetas.
+
+| Cambio | Commit | Impacto en VidAventura | Se prueba en |
+|---|---|---|---|
+| `FindFamilies.cs`: `WithRecompile` en búsquedas por nombre < 7 caracteres | 780ab66a77 | Rendimiento; mismos resultados [V] | C3 (buscar «PruebaUpgrade» y por teléfono) |
+| Validación de strings en **cada** `SaveChanges` (`StringValueValidator`): `Attendance.SearchValue`, `AttendanceCode.Code`, `Device.IPAddress`, nombres de persona (rechaza HTML, `{{ }}`, `{% %}`, caracteres de control) | 9c42887787, b637c95592 | Alta/edición de familias desde el kiosco con caracteres raros podría fallar donde antes pasaba [V] | Alta de un niño desde el kiosco con tildes |
+| Motor Lava Fluid 2.5 → 2.25 (merge fields de etiquetas) | fcb660f62f, 22a111205a | Formato de los campos de la etiqueta podría variar [I] | C8: ZPL 18.1 vs 19 byte a byte |
+| `Welcome.ascx.cs`: límite de 10 PIN fallidos por IP cada 10 min (`PinAttemptLimiter`); reimpresión solo de asistencias de la persona desde ayer | d845679932, 17a3c96917 | Si los kioscos salen a internet por una misma IP (proxy/NAT), un PIN mal tecleado 10 veces bloquea el admin de **todos** 10 min [I] | PIN incorrecto; reimprimir |
+| Nombres codificados como HTML en Person/MultiPerson/Group/Location/TimeSelect/Success/EditFamily | b297e18a06 | Nombres con `&` o tildes deben verse igual [V] | C5 |
+| `EditFamily`: persona nueva toma el ConnectionStatus de la configuración | 17a3c96917 | Equivalente en la práctica [V] | Alta desde kiosco |
+| `Manager/Person*.ascx.cs`: reimpresión solo de la persona | 17a3c96917 | — | C11 |
+| `Schedule`: texto «Once on …» para horarios de una fecha; tabla `ScheduleDate` | ee7fa962e3, 202603232352001 | Solo si una etiqueta usa el texto del horario | C8 |
+| Utilidades CSS fuera de `_helpers.less` | aea467741b | §14.3: margen del «Count: N» | C5 |
+| `UpdateCheckinManagerToNextGen` | migración | Check-in Manager con `RockManagerNextGen`: nuestro `RockManager/Layouts/Blank.aspx` responsivo deja de aplicarse a ese sitio | C10 en el móvil |
+
+**Etiquetas [V]:** el contenido (merge por regex `(?<=\^FD)KEY(?=\^FS)` sobre `KioskLabel.FileContent`) y el
+transporte (`Rock.Utility.ZebraPrint.OpenSocket`, UTF-8, una conexión por impresora, acepta `ip:puerto` con IP
+literal) son idénticos. Lo único que puede cambiar el ZPL es el motor Lava de los merge fields. Con `PrintFrom=Client`
+(como el kiosco 12 real) el ZPL no pasa por el servidor: la app del kiosco lo baja de `GetFile.ashx`, que en la 19
+agrega un header CSP `sandbox` (no debería afectar a una descarga nativa [I]; se confirma en prod).
+
+**Nuestro código sobre la 19 [V]:** sin llamadas a APIs eliminadas (la precompilación §14.2 lo confirma).
+**Defectos que ya están en prod (no los trae el upgrade; no se tocan sin decisión):**
+1. `MultiPersonSelect.ascx.cs:504-506`: `SelectedForSchedule[scheduleId] = 1` sobre una `List<int>` (upstream:
+   `.Add( scheduleId, true )`) lanzaría `ArgumentOutOfRangeException`. Solo en modo de auto check-in completo; en la
+   copia de prod **no hay ninguna** excepción de ese tipo en páginas de check-in desde agosto.
+2. `CheckInOutView.ascx.cs:27` lee `Session["CheckInKioskState"]`; la clave real de Rock es `"CheckInState"`.
+3. Valores fijos: `ActionSelect.ascx.cs:105` (`deviceId == 25`), `Admin.ascx.cs:215` (tema `vidaventuracheckin`).
+4. El tema propio no importa los íconos Tabler (upstream sí lo hizo en sus temas, `1291dc2dd2`): los íconos `ti`
+   salen vacíos (ya pasaba en 18.1).
+
+### 14.6 Roster del Check-in Manager en español: propuesta (no aplicada)
+
+En la 19 el Roster es Obsidian (`Rock.Blocks/CheckIn/Manager/Roster.cs` + `src/CheckIn/Manager/`), conserva el
+BlockTypeGuid (`EA5C2CF9…`) y sus valores; pierde el atributo `EnableGroupColumn`; **no tiene atributos de texto**.
+Hay ~60 textos visibles en inglés en 14 archivos (+~9 mensajes del servidor). En 18.1 traducíamos solo 3 modales
+(«Confirmar», «Registrar Entrada», «Registrar Salida»).
+
+| Opción | Pros | Contras |
+|---|---|---|
+| **(i) Traducir el `.obs` como hicimos con RegistrationEntry** | Control total, sin red; mismo patrón del fork | Archivo upstream modificado (re-aplicar en cada upgrade); `roster.obs.js` + `Rock.Blocks.dll` van juntos (trampas 8 y 9). Mínimo: 6 textos de 3 modales; completo: ~70 líneas |
+| (ii) Traductor (`Plugin.VidaRealTranslator`) | Sin tocar código | Excluye `.grid-row/.grid-cell` (botones y estados del roster seguirían en inglés); congela textos de Vue (trampa 4); y **mandaría a Azure OpenAI frases con nombres de niños** («…mark {nombre} as checked-out?»): **choca con la política de menores** |
+| (iii) Volver a montar el `Roster.ascx` viejo como bloque propio | Idéntico a hoy | Pierde el tiempo real de la 19; deuda permanente |
+
+**Recomendación: (i)**, empezando por la paridad (los 3 modales) y luego el resto de textos visibles. Requiere
+aprobación (es código).
+
+### 14.7 Hallazgo de política (no es del upgrade; afecta a prod HOY)
+
+En la copia de prod, el Traductor está **activo** (en→es, `gpt-4.1-mini` en Azure) y se inyecta en **todos** los
+sitios salvo «Vida Real» y «QR»: incluidos **«Rock Check-in»** (kiosco de VidAventura), **«Rock Check-in Manager»**
+y **«Next-gen Check-in»**; `ExcludedSites` está vacío. El filtro `translatable()` de `translator.js` no excluye
+nombres de personas, y los textos que no están en caché se envían a Azure OpenAI (`TranslatorController.Resolve` →
+`TranslateBatch`). Por lo tanto, los nombres que se muestran en el kiosco y en el Check-in Manager (niños incluidos)
+**pueden estar enviándose hoy a un servicio de IA**, contra la política de uso de IA (menores). No se revisó el caché
+de traducciones para confirmarlo (contendría esos datos). **Mitigación propuesta (configuración de prod, decisión del
+responsable):** poner los sitios 2, 5 y 10 en *Excluded Sites* del Traductor. En las BDs de prueba la clave de Azure
+está vacía (aislamiento): en local no sale nada.

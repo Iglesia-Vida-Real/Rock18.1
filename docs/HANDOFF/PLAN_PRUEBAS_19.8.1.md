@@ -100,6 +100,8 @@ marcadas ⏸ y se prueban después de correrlos.
 | 8.8 | Check-in Manager > persona | Botón de aviso por WhatsApp | El botón aparece; **no enviar** en local | | |
 | 8.9 | Sitio 10 «Next-gen Check-in» | Abrir | Carga (no se usa en producción hoy) | | |
 
+> En local, el check-in de VidAventura se prueba **lado a lado** contra la 18.1: ver §15.
+
 ## 9. QREVENT (reservas dominicales y escáneres)
 
 | # | URL | Qué hacer | Debe pasar | L | P |
@@ -170,3 +172,54 @@ Ruido conocido que no cuenta como regresión: `AIAgentSessionAnchor` (trampa 2);
 `FamilyHub.ascx`, `FamilyPreRegistration2`, `SnippetTypeList`, `PersistedDataViewList`, `RegistrationEntry.ascx`;
 OpenID Connect sin https (local); «Store Key too long» (local); `_css-overrides.less` (UPGRADE §12, hasta arreglarlo).
 En prod la línea base se toma justo antes de quitar `app_offline.htm`.
+
+---
+
+## 15. Prueba comparativa de check-in VidAventura: 18.1 vs 19 (solo local)
+
+Objetivo: que el check-in de VidAventura se vea y funcione **igual** que hoy en prod. Se recorre el mismo
+flujo en dos sitios a la vez, con la misma BD de origen (bacpac de prod del 18-nov) y la misma preparación.
+
+| | 18.1 (referencia = prod hoy) | 19.8.1 (upgrade) |
+|---|---|---|
+| URL | `http://localhost:6230` | `http://localhost:6229` |
+| Código | worktree `Documents\GitHub\Rock18Base-wt` (commit de `hotfix-18.1`, desacoplado) | rama `Test_Update_18.1_a_18.8` |
+| BD | `Rock18Base` (bacpac, aislada, sin migrar) | `Rock19Test` (bacpac, aislada, migrada) |
+| «Impresora» | `127.0.0.1:9100` | `127.0.0.1:9101` |
+
+**Preparación ya aplicada en las dos BDs** (`dev-isolation\preparar_prueba_checkin_vidaventura.sql`, idempotente):
+- Familia **ficticia** «Familia PruebaUpgrade» (campus *Punto Ilumina Z.10*): Ana (adulta, móvil **99001919**),
+  Delta (~2 años → *Descubridores*), Eco (~5 años → *Exploradores*), Foxtrot (~9 años → *Defensores*).
+- Horario 35 «Check In - Prueba» activado: lunes a viernes, check-in abierto **09:00–21:00**. Probar en ese
+  horario (fuera de él el kiosco dice que no hay check-in disponible: es lo esperado).
+- Kiosco nuevo **«Kiosko Prueba Upgrade»** (Id 26), copia del «Kiosko Mostrador» con las 3 salas de Ilumina e
+  impresión **desde el servidor**. El kiosco 12 real no se tocó.
+- Impresora 14 apuntada a un listener local que guarda el ZPL en `dev-isolation\etiquetas_capturadas\`
+  (`9100_*.zpl` = 18.1, `9101_*.zpl` = 19). **No se imprime nada.** El listener lo arranca Claude.
+
+Para cada paso: hacerlo **primero en 6230 y luego en 6229**, y comparar. Anotar diferencias en la columna.
+
+| # | Pantalla / URL | Qué hacer | Qué comparar entre 6230 y 6229 | Diferencias |
+|---|---|---|---|---|
+| C1 | `/checkin` (Admin del kiosco) | Kiosco «Kiosko Prueba Upgrade», tipo «Ilumina(VidAventura)», área «VidAventura» → Iniciar | Tema VidAventura (fondo, globos, colores, fuentes), textos en español, lista de kioscos (filtrada por permiso), botón «Iniciar» | |
+| C2 | Welcome | Ver pantalla de inicio | Fondo, logo, botón de inicio, sonido de toque, botón de cerrar sesión del kiosco | |
+| C3 | Search | Buscar `99001919` (y luego `PruebaUpgrade`) | Teclado numérico, mensajes, tiempo de respuesta | |
+| C4 | Family Select | Elegir «Familia PruebaUpgrade» (si aparece la lista) | Botones de familia (`FamilyLavaTemplate`) | |
+| C5 | Person Select (familia) | Ver a Delta, Eco y Foxtrot con su sala y horario sugeridos | Sala asignada por edad (Descubridores / Exploradores / Defensores), fotos, el texto «Count: N» junto a la sala (**en la 19 puede perder el margen izquierdo**, ver UPGRADE §12), Ana no elegible | |
+| C6 | Time Select / Group / Location | Si pregunta: «Check In - Prueba» | Autoselección del horario (personalización nuestra), textos | |
+| C7 | Success | Confirmar | Mensaje de éxito (`SuccessLavaTemplate`), código de seguridad de 3 caracteres, globos/sonido | |
+| C8 | Etiquetas | (las captura el listener) | Avisar a Claude: compara `9100_*.zpl` vs `9101_*.zpl` (contenido, campos, códigos; se ignoran código de seguridad y hora) | |
+| C9 | Repetir C3–C7 con Delta | Intentar check-in de nuevo | **Bloqueo de doble check-in** (personalización nuestra): mismo mensaje en las dos | |
+| C10 | Check-in Manager `/checkinmanager` | Elegir campus/área de Ilumina; ver las 3 salas | Roster: los 3 niños en su sala. **18.1 en español; 19 Obsidian en inglés** (personalización perdida, ver propuesta en UPGRADE §14.6) | |
+| C11 | Check-in Manager > persona | Abrir a Delta | Perfil (PersonLeft), botón WhatsApp visible (**no enviar**), historial | |
+| C12 | Check-in Manager > Live Metrics | Abrir | Conteos por sala | |
+| C13 | Checkout desde el kiosco | `/checkin` → buscar `99001919` → acción «Check Out» → Eco | Pantallas de check-out (Action Select, Check Out Person Select, Check Out Success) | |
+| C14 | Checkout desde el Manager | Roster → check-out de Foxtrot | Funciona; en la 19 los modales del Roster en inglés | |
+| C15 | Página 852 «Checkin Pendientes» (interno) | Abrir | Lista de presentes (CheckInOutView, bloque nuestro) igual en ambas | |
+
+Al terminar: avisar a Claude para comparar las etiquetas y revisar el `ExceptionLog` de **las dos** BDs
+(líneas base: Rock18Base `ExceptionLog.Id` = 1630266 antes del primer arranque; Rock19Test = 1630350 antes del
+reinicio de las 14:20).
+
+**Después de la prueba (lo hace Claude):** detener los dos IIS Express y el listener; restaurar
+`checkin-theme.css` con `git checkout`; dejar o borrar el worktree y `Rock18Base` según decida el responsable.
