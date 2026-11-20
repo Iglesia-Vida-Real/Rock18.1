@@ -60,8 +60,14 @@ Si algo choca (otro horario activo ese día a menos de 1 h 35 min), la pantalla 
 | Un horario con reservas **no se puede desactivar** | Protege a quien ya reservó |
 | Para quitar un servicio especial: **Desactivar** en la lista (si no tiene reservas) | El horario queda guardado en Rock, inactivo para reservas |
 
-Los servicios especiales quedan en Rock en la categoría de horarios **«Servicios especiales (Reservas)»**.
-No moverlos a otra categoría: la puerta los reconoce por esa categoría.
+Los servicios especiales quedan en Rock en la categoría de horarios **«Servicios especiales (Reservas)»**
+(Administración → General → Horarios). Es solo el registro de la hora; todo se maneja desde la 862:
+
+- **No moverlos a otra categoría:** la puerta los reconoce por esa categoría.
+- **No usar «Eliminar» ahí:** el cupo y las reservas quedarían apuntando a un horario que ya no existe.
+  Para quitar un especial, **Desactivar** en la 862.
+- **No llenar «Enable Check-in / Close Check-in» ni ligarlos a grupos:** así el check-in de Rock
+  (VidAventura y demás) nunca los ve. El escaneo de reservas no usa esos campos.
 
 ### Si cambia la hora de un servicio especial ya creado
 
