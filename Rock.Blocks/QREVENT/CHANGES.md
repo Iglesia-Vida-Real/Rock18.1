@@ -1,6 +1,6 @@
 # QREVENT — Modulo de Check-in con QR (Backend)
 
-Última actualización: 2026-10-15
+Última actualización: 2026-11-20 (servicios especiales, ver la última sección)
 
 ## Que es QREVENT
 
@@ -26,9 +26,10 @@ PersonAlias, RealTime, metricas, ventana de 10 min) y `ab11c9d250` (2026-09-24: 
 | Fix de deadlock del check-in (`sp_SundayServiceCheckIn`) + guardado de QR en iOS/WebView | **En producción** (confirmado por Rodolfo, 2026-10-15). |
 | «Bienvenido» RealTime | **PENDIENTE (2026-10-15):** sigue sin verse funcionar con un escaneo real (revisar `/rock-rt` desde el WebView). |
 | Correos duplicados por doble clic y cancelacion de reserva ya escaneada | **PENDIENTE de decision de negocio** (ver «Hallazgos abiertos»). |
+| **Servicios especiales de una sola fecha** desde Configuración Domingos (2026-11-20) | **Rama `reservas-servicios-especiales`** (sale de `hotfix-18.1`). Probado en local (6231, BD `Rock18Reservas`); **no desplegado** y **pendiente de llevar a la rama de la 19**. Ver la última sección. |
 
 **Ojo al redesplegar:** el `Rock.Blocks.dll` de hoy se compila del mismo arbol que Eventos §9.40 y
-el modulo QR (incluido su filtro de Uso, en prod pero pendiente de commit). El kit de
+el modulo QR (incluido su filtro de Uso, commiteado en `36fa46789a`, ya en `hotfix-18.1`). El kit de
 `Dev Tools/Deploy/SundayService_PersonAlias/` quedo **OBSOLETO** como artefacto: su `Rock.Blocks.dll` y su
 `SundayServiceRegistration.obs.js` son del 2026-09-07 (ventana de 10 min); no usarlos.
 
@@ -122,7 +123,9 @@ cierre los slots del domingo anterior; no esta escrito.
 
 **Block Attributes configurables:**
 - `CampusId`: ID del campus para filtrar slots activos.
-- `AllowedScheduleIds`: Lista CSV de ScheduleIds permitidos (ej: `7,9,11,13,18`).
+- `AllowedScheduleIds`: Lista CSV de ScheduleIds permitidos (ej: `7,9,11,13,18`). **Desde 2026-11-20**
+  el escaner acepta ademas los slots cuyo Schedule esta en la categoria de servicios especiales
+  (`SundayServiceCapacityAdmin.SpecialServiceCategoryGuid`), sin agregarlos a esta lista.
 
 **Block Actions:**
 - `GetActiveSlot()`: Devuelve el slot activo o informacion del proximo horario. El "Proximo: ..." se ordena por la hora real resuelta del iCalendar, no por `ScheduleId`.
@@ -358,7 +361,9 @@ Reemplaza al bloque WebForms legacy (`RockWeb/Blocks/SundayService/SundayService
 - `GetSlots(campusId, startDate, endDate)`: slots agrupados por fecha + ultima capacidad por horario. Desde el 2026-09-06 devuelve tambien `checkedInCount` (cuantos ingresaron) por slot, en un tipo derivado `SlotListRow` — **no agregar propiedades a `SlotRow`**, que tambien materializan `Generate` y `UpdateSlot` con otros `SELECT`.
 - `GetWeeklyMetrics(campusId, startDate, endDate)`: alimenta la pestaña Metricas. Agrupa por semana (lunes a domingo) y por horario: capacidad, reservados, ingresos, no-show y pendientes. Agregado el 2026-09-06.
 - `Generate(campusId, startDate, endDate, items[], overwriteCapacity, deactivateOthers)`: aplica la plantilla en una transaccion; retorna conteos (creados/actualizados/reactivados/desactivados/omitidos) y advertencias.
-- `UpdateSlot(slotId, capacity?, isActive?)`: ajuste individual con las mismas guardas.
+- `UpdateSlot(slotId, capacity?, isActive?)`: ajuste individual con las mismas guardas. Desde 2026-11-20 no
+  reactiva un slot que choque con un servicio especial del mismo dia.
+- `CreateSpecialService` y `GetUpcomingSpecialServices` (2026-11-20): servicios especiales, ver la ultima seccion.
 
 **Block Attributes:**
 - `Allowed Schedule Ids`: CSV de ScheduleIds permitidos.
@@ -815,3 +820,88 @@ quepa en una linea de movil; se quito el CTA «Reservar otro servicio».
 
 **Tabla de resultCodes de reserva al dia:** 1 ok · 0 / -1 / -2 / -3 (ver secciones previas) ·
 -4 horario ya cerro (2026-09-01) · **-5 ventana de bienvenida (2026-09-10)**.
+
+## Servicios especiales de una sola fecha (2026-11-20)
+
+**Pedido:** poder habilitar desde la pantalla Configuración Domingos (página 862) un servicio que no
+es de la plantilla semanal (Nochebuena el 24 de diciembre, un domingo con un solo servicio o con otro
+horario), con reservas y escaneo en la puerta, **sin tocar horarios de Rock ni atributos de bloques**
+el día del evento.
+
+**Por qué no alcanzaba lo que había:** la plantilla (`Generate`) solo entiende Schedules semanales con
+`BYDAY` (los de una sola fecha salen «sin día» y se omiten), y el escáner solo acepta los ScheduleIds
+de su atributo `AllowedScheduleIds`. Un horario especial exigía crear el Schedule semanal a mano,
+agregarlo a los atributos de los bloques 862 y 863 y generar el slot con un rango de un día.
+
+**Rama:** `reservas-servicios-especiales`, sale de `hotfix-18.1` (`81ed172522`). El código de QREVENT
+es idéntico en `hotfix-18.1` y en la rama de la 19 (`Test_Update_18.1_a_18.8`), así que el mismo
+cambio aplica en las dos (verificado: el parche se aplica limpio y compila contra 19.8.1, ver abajo).
+
+### Cómo funciona
+
+- **Categoría propia de Schedule:** «Servicios especiales (Reservas)», Guid
+  `8d391e10-1d7e-40cd-bf57-05f4d63fa89f` (`SundayServiceCapacityAdmin.SpecialServiceCategoryGuid`).
+  Se crea sola la primera vez que se usa (`GetOrCreateSpecialCategory`). **No mover** sus horarios a
+  otra categoría: el escáner los reconoce por ella.
+- **`CreateSpecialService(campusId, date, time, name, capacity)`** crea, en una transacción, un
+  Schedule de **una sola fecha** (iCal sin `RRULE`, `DTSTART` sin zona horaria, `DTEND` = +90 min) en
+  esa categoría y su slot activo. Nombre = `<nombre> H:mm h` (por omisión «Servicio especial»). La hora
+  va en el nombre porque la app de reservas ordena los horarios por la hora que encuentra en el
+  nombre (`parseTimeFromScheduleName` en `SundayServiceRegistration.obs`); por eso se rechaza un nombre
+  que ya traiga una hora.
+  Validaciones: sede válida, fecha y hora, capacidad 1–100 000, nombre ≤ 50 con la hora, no en el
+  pasado (inicio + 80 min > ahora), ≤ 400 días.
+- **Choques de horario:** dos slots **activos** del mismo día cuyas horas de inicio estén a menos de
+  **95 min** (15 de apertura + 80 de cierre de la puerta) solapan las ventanas del escáner y hacen que
+  rechace reservas válidas del otro (`other_schedule`). Se valida solo cuando participa un especial:
+  - `CreateSpecialService` rechaza (resultCode 0 con mensaje) si choca con cualquier slot activo.
+  - `UpdateSlot` no reactiva un slot que choque (especial contra cualquiera, normal contra especial).
+- **Plantilla (`Generate`):** en un día con un servicio especial **activo** no crea ni reactiva slots
+  normales (ni por «Sobrescribir capacidad», que también pone `IsActive = 1`); los cuenta en
+  `skippedSpecialDay` con una advertencia por fecha. Ajustar la capacidad de un slot normal ya activo
+  sí se hace. «Desactivar horarios fuera de la plantilla» nunca desactiva un especial.
+- **`GetSlots`:** cada slot trae `isSpecial` y `timeText` (HH:mm del `DTSTART`). `SlotListRow` ganó
+  `IsSpecial` e `ICalendarContent`; `SlotRow` no se tocó (ver la advertencia de la sección del
+  2026-09-06).
+- **`GetUpcomingSpecialServices(campusId)`:** los especiales de la sede desde hoy (activos e
+  inactivos, máx. 100) para la lista «Próximos servicios especiales».
+- **Escáner (`ReservationScanner`):** `BuildScheduleFilter` = `slot.ScheduleId IN (<atributo>) OR
+  sch.CategoryId = categoría especial`, en el slot activo y en el «Próximo». Sigue exigiendo que el
+  atributo tenga al menos un Id (si está vacío, el bloque sigue mostrando el error de configuración).
+- **Sin cambios:** `SundayServiceRegistration` (C# y `.obs`), los SPs y el esquema. La app muestra el
+  especial en su ventana normal (próximos 7 días) y el correo de confirmación usa el nombre del
+  Schedule. Para quitar un especial: Desactivar (solo sin reservas ni holds); el Schedule queda en Rock.
+
+### Verificación (2026-11-20)
+
+- Local 18.1: worktree `Rock18Reservas-wt`, sitio `localhost:6231`, BD `Rock18Reservas` (import del
+  bacpac de prod del 19-nov, aislada con `dev-isolation\aislar_dev_Rock18Reservas.sql`: segunda
+  corrida todo 0, 0 jobs).
+- Build: `Rock.Blocks` 0 errores, sin advertencias en QREVENT; `npm run build` con el tsconfig de
+  QREVENT sin errores; bundle `SundayServiceCapacityAdmin.obs.js` nuevo (102 141 B).
+- Prueba manual (Fredy): crear «Prueba 13:44 h» con capacidad 400 → aparece en «Lo que ya hay» y en la
+  lista con la etiqueta Especial → reserva en la 860 → el escáner 863 abre «Prueba 13:44 h · 13:44» →
+  escaneo → «¡Bienvenido!» en la app → Métricas lo cuenta. En BD: categoría 424 (EntityType 54 =
+  Schedule), Schedule 62 con `EffectiveStartDate/EndDate` = 2026-11-20, slot 557 (400, ReservedCount 1),
+  reserva `Status = 3`. `ExceptionLog`: solo el ruido de arranque conocido y el correo de confirmación
+  que no sale (SMTP aislado en `localhost:25`).
+- **Contra la 19 (sin tocar la carpeta de la 19):** worktree temporal de `Test_Update_18.1_a_18.8`
+  (`7fbc965239`) con los artefactos de compilación copiados; `git apply --check` limpio; `Rock.Blocks`
+  compila **0 errores** contra `Rock.dll` 19.8.1 sin advertencias en QREVENT; tipos del `.obs` sin
+  errores contra el framework de la 19; en `Rock19Test` existen todas las columnas usadas (`Category`,
+  `Schedule`) y `Rock.Model.Schedule` también es EntityType 54. El worktree temporal se borró.
+
+### Despliegue (cuando se apruebe)
+
+- **Artefactos:** `Rock.Blocks.dll` + `RockWeb/Obsidian/Blocks/QREVENT/SundayServiceCapacityAdmin.obs.js`
+  **juntos** (el bundle nuevo llama a acciones que el DLL viejo no tiene). Sin SQL, sin migraciones:
+  la categoría se crea sola al primer uso. `ReservationScanner.obs.js` y `SundayServiceRegistration.obs.js`
+  no cambian.
+- `Rock.Blocks.dll` lleva **todos** los módulos de `Rock.Blocks` (Eventos, QR, Dar, …): compilarlo desde
+  `hotfix-18.1` + esta rama, nunca desde otro árbol. Comparar antes con `Get-FileHash` el `Rock.dll` de
+  prod con el del build (trampa 8 de `CLAUDE.md`).
+- Copiar la DLL reinicia el sitio (primera carga 2+ min): hacerlo fuera de horario de reservas.
+- Smoke test en prod: crear un especial de prueba para hoy, ver que aparece en la app, desactivarlo
+  (sin reservas) y confirmar que desaparece.
+- **Llevar a la 19:** cherry-pick del commit de esta rama sobre `Test_Update_18.1_a_18.8` (se aplica
+  limpio), recompilar y probar en 6229. Pendiente de aprobación.

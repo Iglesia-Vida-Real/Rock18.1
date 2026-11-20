@@ -102,6 +102,7 @@
 | `C:\repos\Rock15.5\Dev Tools\Deploy\SundayService_PersonAlias\README.md` | Registro historico del despliegue de la migracion a `PersonAliasId` (aplicada en prod 2026-09-06): orden SQL→DLL, por que ese orden, el incidente de Step2, verificacion. Kit OBSOLETO como artefacto (no reusar sus binarios) | Para entender el orden SQL→DLL de QREVENT. |
 | `C:\repos\Rock15.5\Rock.Blocks\QREVENT\CHANGES.md` | **Documentacion descriptiva del backend por bloque** (no changelog): que hace cada uno, atributos de bloque, BlockActions, estados y codigos de resultado, SPs que usa, ventana de check-in del escaner | Antes de tocar CUALQUIER `.cs` de QREVENT. |
 | `C:\repos\Rock15.5\Rock.JavaScript.Obsidian.Blocks\src\QREVENT\CHANGES.md` | **Documentacion descriptiva del frontend por bloque**: estados reactivos, flujo de camara y permisos, patrones comunes (banner, cooldown de escaneo), design system Brujula VR y sus desviaciones | Antes de tocar CUALQUIER `.obs` de QREVENT. |
+| `C:\repos\Rock15.5\docs\qrevent\GUIA_RESERVAS_DOMINGOS.md` | **Guia para quien configura las reservas dominicales** (pagina 862): plantilla semanal, servicios especiales de una sola fecha (Nochebuena, domingo con otro horario), reglas de la puerta y de choques | Antes de configurar reservas o de explicarle a alguien como se hace. |
 
 **Bloques QREVENT (referencia rapida):**
 - `Rock.Blocks/QREVENT/QRScanner.cs` + `src/QREVENT/qrScanner.obs` — Lista de eventos y escaneo QR

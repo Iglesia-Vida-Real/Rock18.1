@@ -234,6 +234,120 @@
                                 </NotificationBox>
                             </div>
 
+                            <!-- ===== Zona 2b: Servicio especial (una sola fecha) ===== -->
+                            <div class="caCard caSpecialCard">
+                                <div class="caCardTitle">Servicio especial <span class="caBadge caBadgeSpecial">Una sola fecha</span></div>
+                                <div class="caCardSub">
+                                    Para Nochebuena, Año Nuevo o un domingo con horario distinto. Se puede reservar en la app y la puerta lo lee igual que un domingo normal.
+                                    No cambia la plantilla ni los horarios de siempre.
+                                </div>
+
+                                <div class="caSpecialGrid">
+                                    <div class="caField">
+                                        <label class="caLabel">Fecha</label>
+                                        <input type="date" v-model="specialDate" :min="todayIso" class="caInput" />
+                                    </div>
+                                    <div class="caField">
+                                        <label class="caLabel">Hora de inicio</label>
+                                        <input type="time" v-model="specialTime" step="300" class="caInput" />
+                                    </div>
+                                    <div class="caField">
+                                        <label class="caLabel">Nombre <span class="caMuted">(opcional)</span></label>
+                                        <input type="text" v-model="specialName" maxlength="40" placeholder="Ej.: Nochebuena" class="caInput" />
+                                    </div>
+                                    <div class="caField">
+                                        <label class="caLabel">Capacidad</label>
+                                        <input type="number" min="1" step="1" v-model.number="specialCapacity" class="caInput" />
+                                    </div>
+                                </div>
+
+                                <!-- Lo que ya hay ese día: para desactivar los horarios normales sin buscarlos en la lista -->
+                                <div v-if="specialDate && campusId" class="caSpecialDay">
+                                    <div class="caSpecialDayTitle">
+                                        <span class="notranslate">{{ specialDayTitle }}</span>
+                                    </div>
+                                    <div v-if="specialDayBusy" class="caMuted caSmall">Cargando…</div>
+                                    <div v-else-if="specialDaySlots.length === 0" class="caMuted caSmall">
+                                        Ese día no hay otros horarios creados.
+                                    </div>
+                                    <div v-else>
+                                        <div v-for="s in specialDaySlots" :key="s.slotId" class="caSpecialDayRow" :class="{ isInactive: !s.isActive, isConflict: isConflicting(s) }">
+                                            <div class="caSpecialDayName">
+                                                <span class="notranslate">{{ s.scheduleName }}</span>
+                                                <span v-if="s.isSpecial" class="caBadge caBadgeSpecial">Especial</span>
+                                                <span v-if="!s.isActive" class="caBadge caBadgeOff">Inactivo</span>
+                                                <span v-else-if="isConflicting(s)" class="caBadge caBadgeWarn">Choca</span>
+                                                <span class="caMuted caSmall notranslate">· {{ s.reservedCount }} reservados</span>
+                                            </div>
+                                            <button type="button"
+                                                    class="caMiniBtn"
+                                                    :disabled="rowBusy === s.slotId"
+                                                    @click="toggleFromSpecialDay(s)">
+                                                <span class="notranslate">{{ s.isActive ? "Desactivar" : "Reactivar" }}</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="caPreviewBar">
+                                    <div class="caPreviewText">
+                                        <span class="notranslate">{{ specialPreviewText }}</span>
+                                    </div>
+                                    <RockButton btnType="primary" @click="createSpecial" :disabled="specialBusy || !specialCanCreate">
+                                        <span class="notranslate">{{ specialBusy ? "Creando…" : "Crear servicio especial" }}</span>
+                                    </RockButton>
+                                </div>
+
+                                <NotificationBox v-if="specialResult" :alertType="specialResult.kind" class="caGenResult">
+                                    <span class="notranslate">{{ specialResult.message }}</span>
+                                    <div v-if="specialResult.kind === 'success' && !specialDateInRange" class="caEmptyAction">
+                                        <button type="button" class="caChip" @click="showSpecialDateInList">Ver ese día en la lista</button>
+                                    </div>
+                                </NotificationBox>
+
+                                <!-- Próximos servicios especiales (desde hoy), sin depender del rango de la lista -->
+                                <div class="caSpecialDay">
+                                    <div class="caSpecialDayTitle">Próximos servicios especiales</div>
+                                    <div v-if="upcomingBusy && upcomingSpecials.length === 0" class="caMuted caSmall">Cargando…</div>
+                                    <div v-else-if="upcomingSpecials.length === 0" class="caMuted caSmall">
+                                        No hay servicios especiales programados.
+                                    </div>
+                                    <div v-else>
+                                        <div v-for="s in upcomingSpecials" :key="s.slotId" class="caSpecialDayRow" :class="{ isInactive: !s.isActive }">
+                                            <div class="caSpecialDayName">
+                                                <span class="notranslate caUpcomingDate">{{ s.occurrenceDateText }}</span>
+                                                <span class="notranslate">{{ s.scheduleName }}</span>
+                                                <span v-if="!s.isActive" class="caBadge caBadgeOff">Inactivo</span>
+                                                <span class="caMuted caSmall notranslate">· {{ s.reservedCount }} de {{ s.capacity }} reservados<template v-if="s.checkedInCount"> · {{ s.checkedInCount }} ingresaron</template></span>
+                                            </div>
+                                            <div class="caUpcomingActions">
+                                                <button type="button" class="caMiniBtn" @click="specialDate = s.occurrenceDate">Ver día</button>
+                                                <button type="button"
+                                                        class="caMiniBtn"
+                                                        :disabled="rowBusy === s.slotId"
+                                                        @click="toggleFromUpcoming(s)">
+                                                    <span class="notranslate">{{ s.isActive ? "Desactivar" : "Reactivar" }}</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <details class="caHowTo">
+                                    <summary>¿Un domingo con un solo servicio o con otro horario?</summary>
+                                    <ol>
+                                        <li>Elige la fecha arriba: aparecen los horarios normales de ese día.</li>
+                                        <li>Desactiva los que no habrá. Solo se puede mientras no tengan reservas, así que hazlo antes de que abra la reserva (7 días antes).</li>
+                                        <li>Pon la hora y la capacidad del servicio especial y pulsa «Crear servicio especial».</li>
+                                    </ol>
+                                    <p>
+                                        Dos servicios del mismo día deben empezar con al menos 1 h 35 min de diferencia: la puerta abre 15 min antes y cierra 1 h 20 min después del inicio.
+                                        Mientras un día tenga un servicio especial, «Aplicar plantilla» no vuelve a activar sus horarios normales.
+                                        Para quitar un servicio especial, desactívalo en la lista (si aún no tiene reservas).
+                                    </p>
+                                </details>
+                            </div>
+
                             <!-- ===== Zona 3: Disponibilidad actual ===== -->
                             <div class="caCard">
                                 <div class="caCardTitle">Disponibilidad del rango</div>
@@ -253,6 +367,7 @@
                                         <div class="caSlotMain">
                                             <div class="caSlotName">
                                                 {{ s.scheduleName }}
+                                                <span v-if="s.isSpecial" class="caBadge caBadgeSpecial">Especial</span>
                                                 <span v-if="!s.isActive" class="caBadge caBadgeOff">Inactivo</span>
                                             </div>
                                             <div class="caOccBar">
@@ -284,7 +399,7 @@
                                                 type="button"
                                                 class="caMiniBtn"
                                                 :disabled="rowBusy === s.slotId"
-                                                @click="toggleActive(s)">
+                                                @click="toggleFromList(s)">
                                                 {{ s.isActive ? "Desactivar" : "Reactivar" }}
                                             </button>
                                         </div>
@@ -343,6 +458,10 @@ type SlotBag = {
     checkedInCount: number;
     available: number;
     isActive: boolean;
+    /** Servicio especial de una sola fecha (categoría propia, ver CreateSpecialService). */
+    isSpecial: boolean;
+    /** Hora de inicio HH:mm del Schedule; "" si no la trae. */
+    timeText: string;
     draftCapacity: number;
 };
 
@@ -908,7 +1027,7 @@ async function generate(): Promise<void> {
     genBusy.value = true;
 
     try {
-        const res = await invokeBlockAction<{ inserted: number; updated: number; reactivated: number; deactivated: number; skippedLowCapacity: number; warnings: string[] }>("Generate", {
+        const res = await invokeBlockAction<{ inserted: number; updated: number; reactivated: number; deactivated: number; skippedLowCapacity: number; skippedSpecialDay: number; warnings: string[] }>("Generate", {
             bag: {
                 campusId: campusId.value,
                 startDate: startDate.value,
@@ -931,6 +1050,7 @@ async function generate(): Promise<void> {
         if (d.reactivated) parts.push(`${d.reactivated} reactivados`);
         if (d.deactivated) parts.push(`${d.deactivated} desactivados`);
         if (d.skippedLowCapacity) parts.push(`${d.skippedLowCapacity} omitidos por lugares ya tomados`);
+        if (d.skippedSpecialDay) parts.push(`${d.skippedSpecialDay} omitidos por día con servicio especial`);
 
         const warnings = d.warnings || [];
         genResult.value = {
@@ -1012,6 +1132,272 @@ async function toggleActive(slot: SlotBag): Promise<void> {
     }
     finally {
         rowBusy.value = 0;
+    }
+}
+
+/** Desactivar/Reactivar desde la lista del rango: refresca también los paneles del servicio especial. */
+async function toggleFromList(slot: SlotBag): Promise<void> {
+    await toggleActive(slot);
+    void loadSpecialDay();
+    void loadUpcomingSpecials();
+}
+
+/** Desactivar/Reactivar desde «Lo que ya hay ese día»: refresca la lista del rango y los próximos especiales. */
+async function toggleFromSpecialDay(slot: SlotBag): Promise<void> {
+    await toggleActive(slot);
+    void loadSpecialDay();
+    void loadUpcomingSpecials();
+    void loadSlots(false);
+}
+
+/** Desactivar/Reactivar desde «Próximos servicios especiales». */
+async function toggleFromUpcoming(slot: SlotBag): Promise<void> {
+    await toggleActive(slot);
+    void loadSpecialDay();
+    void loadUpcomingSpecials();
+    void loadSlots(false);
+}
+
+// ---- Servicio especial (una sola fecha) ----
+// Mismas reglas que el servidor (SundayServiceCapacityAdmin.cs); aquí solo sirven para avisar
+// antes de pulsar. El servidor vuelve a validar todo.
+const OPENS_BEFORE_MIN = 15;          // = ReservationScanner.CheckInOpensMinutesBeforeStart
+const CLOSES_AFTER_MIN = 80;          // = CheckInClosesMinutesAfterStart y ReservationClosesMinutesAfterStart
+const MIN_GAP_MIN = OPENS_BEFORE_MIN + CLOSES_AFTER_MIN;
+const REGISTRATION_WINDOW_DAYS = 7;   // = DefaultWeekDaysWindow de SundayServiceRegistration
+
+const todayIso = toIso(new Date());
+const specialDate = ref<string>("");
+const specialTime = ref<string>("");
+const specialName = ref<string>("");
+const specialCapacity = ref<number>(0);
+const specialBusy = ref<boolean>(false);
+const specialResult = ref<{ kind: "success" | "warning"; message: string } | null>(null);
+const specialDaySlots = ref<SlotBag[]>([]);
+const specialDayBusy = ref<boolean>(false);
+let specialDayRequest = 0;
+
+function timeToMinutes(t: string): number | null {
+    const m = /^(\d{1,2}):(\d{2})/.exec(t || "");
+    return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+
+function minutesToText(min: number): string {
+    const n = ((min % 1440) + 1440) % 1440;
+    return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`;
+}
+
+function longDate(d: Date): string {
+    return d.toLocaleDateString("es-GT", { weekday: "long", day: "numeric", month: "long" });
+}
+
+const specialMinutes = computed<number | null>(() => timeToMinutes(specialTime.value));
+const specialNameHasTime = computed<boolean>(() => /\d{1,2}\s*:\s*\d{2}/.test(specialName.value || ""));
+
+function isConflicting(s: SlotBag): boolean {
+    if (!s.isActive || specialMinutes.value === null) {
+        return false;
+    }
+    const other = timeToMinutes(s.timeText);
+    return other !== null && Math.abs(other - specialMinutes.value) < MIN_GAP_MIN;
+}
+
+const specialConflicts = computed<SlotBag[]>(() => specialDaySlots.value.filter(isConflicting));
+
+const specialFinalName = computed<string>(() => {
+    const label = (specialName.value || "").trim() || "Servicio especial";
+    return specialMinutes.value === null ? label : `${label} ${minutesToText(specialMinutes.value)} h`;
+});
+
+const specialDayTitle = computed<string>(() => {
+    const d = parseIso(specialDate.value);
+    return d ? `Lo que ya hay el ${longDate(d)}:` : "";
+});
+
+const specialDateInRange = computed<boolean>(() =>
+    !!specialDate.value && specialDate.value >= startDate.value && specialDate.value <= endDate.value);
+
+const specialCanCreate = computed<boolean>(() =>
+    !!campusId.value
+    && !!parseIso(specialDate.value)
+    && specialDate.value >= todayIso
+    && specialMinutes.value !== null
+    && Number(specialCapacity.value) > 0
+    && !specialNameHasTime.value
+    && !specialDayBusy.value
+    && specialConflicts.value.length === 0);
+
+const specialPreviewText = computed<string>(() => {
+    const d = parseIso(specialDate.value);
+    if (!campusId.value) {
+        return "Selecciona una sede.";
+    }
+    if (!d) {
+        return "Elige la fecha del servicio.";
+    }
+    if (specialDate.value < todayIso) {
+        return "Esa fecha ya pasó.";
+    }
+    if (specialMinutes.value === null) {
+        return "Indica la hora de inicio.";
+    }
+    if (specialNameHasTime.value) {
+        return "Quita la hora del nombre: se agrega sola.";
+    }
+    if (specialConflicts.value.length > 0) {
+        return `Choca con ${specialConflicts.value.map(s => s.scheduleName).join(", ")}. Desactívalo arriba o elige otra hora (mínimo 1 h 35 min de diferencia).`;
+    }
+    if (!(Number(specialCapacity.value) > 0)) {
+        return "Indica la capacidad.";
+    }
+
+    const opens = new Date(d.getTime());
+    opens.setDate(opens.getDate() - (REGISTRATION_WINDOW_DAYS - 1));
+    const opensText = toIso(opens) <= todayIso ? "en cuanto lo crees" : `desde el ${longDate(opens)}`;
+    const doorFrom = minutesToText(specialMinutes.value - OPENS_BEFORE_MIN);
+    const doorTo = minutesToText(specialMinutes.value + CLOSES_AFTER_MIN);
+
+    return `Se publicará como «${specialFinalName.value}» con ${specialCapacity.value} lugares. Se podrá reservar ${opensText} y la puerta leerá los QR de ${doorFrom} a ${doorTo}.`;
+});
+
+/** Carga los horarios que ya existen en la fecha elegida (activos e inactivos). */
+async function loadSpecialDay(): Promise<void> {
+    const request = ++specialDayRequest;
+
+    if (!campusId.value || !parseIso(specialDate.value)) {
+        specialDaySlots.value = [];
+        specialDayBusy.value = false;
+        return;
+    }
+
+    specialDayBusy.value = true;
+
+    try {
+        const res = await invokeBlockAction<{ days: DaySlotsBag[] }>("GetSlots", {
+            bag: { campusId: campusId.value, startDate: specialDate.value, endDate: specialDate.value }
+        });
+
+        if (request !== specialDayRequest) {
+            return;
+        }
+
+        const slots: SlotBag[] = [];
+        for (const d of (res.isSuccess && res.data ? res.data.days || [] : [])) {
+            for (const s of d.slots || []) {
+                slots.push({ ...s, draftCapacity: s.capacity });
+            }
+        }
+        slots.sort((a, b) => (timeToMinutes(a.timeText) ?? 9999) - (timeToMinutes(b.timeText) ?? 9999));
+        specialDaySlots.value = slots;
+    }
+    catch {
+        if (request === specialDayRequest) {
+            specialDaySlots.value = [];
+        }
+    }
+    finally {
+        if (request === specialDayRequest) {
+            specialDayBusy.value = false;
+        }
+    }
+}
+
+watch([campusId, specialDate], () => {
+    specialResult.value = null;
+    void loadSpecialDay();
+});
+
+type UpcomingSpecialBag = SlotBag & { occurrenceDate: string; occurrenceDateText: string };
+
+const upcomingSpecials = ref<UpcomingSpecialBag[]>([]);
+const upcomingBusy = ref<boolean>(false);
+let upcomingRequest = 0;
+
+/** Servicios especiales del campus desde hoy. */
+async function loadUpcomingSpecials(): Promise<void> {
+    const request = ++upcomingRequest;
+
+    if (!campusId.value) {
+        upcomingSpecials.value = [];
+        upcomingBusy.value = false;
+        return;
+    }
+
+    upcomingBusy.value = true;
+
+    try {
+        const res = await invokeBlockAction<UpcomingSpecialBag[]>("GetUpcomingSpecialServices", {
+            bag: { campusId: campusId.value, startDate: todayIso, endDate: todayIso }
+        });
+
+        if (request === upcomingRequest) {
+            upcomingSpecials.value = res.isSuccess && res.data ? res.data.map(s => ({ ...s, draftCapacity: s.capacity })) : [];
+        }
+    }
+    catch {
+        if (request === upcomingRequest) {
+            upcomingSpecials.value = [];
+        }
+    }
+    finally {
+        if (request === upcomingRequest) {
+            upcomingBusy.value = false;
+        }
+    }
+}
+
+watch(campusId, () => {
+    void loadUpcomingSpecials();
+});
+
+if (campusId.value) {
+    void loadUpcomingSpecials();
+}
+
+function showSpecialDateInList(): void {
+    if (specialDate.value) {
+        startDate.value = specialDate.value;
+        endDate.value = specialDate.value;
+    }
+}
+
+async function createSpecial(): Promise<void> {
+    if (specialBusy.value || !specialCanCreate.value) {
+        return;
+    }
+
+    specialBusy.value = true;
+    specialResult.value = null;
+
+    try {
+        const res = await invokeBlockAction<{ resultCode: number; message: string; scheduleName: string; occurrenceDate: string }>("CreateSpecialService", {
+            bag: {
+                campusId: campusId.value,
+                date: specialDate.value,
+                time: specialTime.value,
+                name: (specialName.value || "").trim(),
+                capacity: Number(specialCapacity.value)
+            }
+        });
+
+        if (res.isSuccess && res.data?.resultCode === 1) {
+            specialResult.value = { kind: "success", message: res.data.message };
+            specialTime.value = "";
+            specialName.value = "";
+            showToast("success", "Servicio especial creado.");
+        }
+        else {
+            specialResult.value = { kind: "warning", message: res.data?.message || res.errorMessage || "No se pudo crear el servicio especial." };
+        }
+    }
+    catch {
+        specialResult.value = { kind: "warning", message: "Error creando el servicio especial." };
+    }
+    finally {
+        specialBusy.value = false;
+        void loadSpecialDay();
+        void loadUpcomingSpecials();
+        void loadSlots(false);
     }
 }
 
@@ -1235,6 +1621,45 @@ onBeforeUnmount(() => {
     letter-spacing: .4px;
 }
 .caBadgeOff { background: rgba(239,68,68,.10); color: #B91C1C; border: 1px solid rgba(239,68,68,.25); }
+.caBadgeSpecial { background: rgba(124,58,237,.10); color: #6D28D9; border: 1px solid rgba(124,58,237,.25); }
+.caBadgeWarn { background: rgba(245,158,11,.12); color: #B45309; border: 1px solid rgba(245,158,11,.35); }
+
+/* Servicio especial */
+.caSpecialCard .caCardTitle { display: flex; align-items: center; gap: 8px; }
+.caSpecialGrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 2fr 1fr;
+    gap: 12px;
+    align-items: end;
+}
+@media (max-width: 720px) {
+    .caSpecialGrid { grid-template-columns: 1fr 1fr; }
+}
+.caSpecialDay {
+    margin-top: 12px;
+    padding: 10px 12px;
+    border: 1px dashed var(--ca-border);
+    border-radius: 10px;
+}
+.caSpecialDayTitle { font-size: 12px; font-weight: 800; color: var(--ca-muted); margin-bottom: 6px; }
+.caSpecialDayRow {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+    border-top: 1px solid rgba(17,24,39,.05);
+}
+.caSpecialDayRow:first-child { border-top: none; }
+.caSpecialDayRow.isInactive { opacity: .6; }
+.caSpecialDayRow.isConflict .caSpecialDayName { color: #B45309; }
+.caSpecialDayName { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; font-weight: 700; min-width: 0; }
+.caUpcomingDate { font-weight: 800; text-transform: capitalize; min-width: 110px; }
+.caUpcomingActions { display: flex; gap: 6px; flex-shrink: 0; }
+.caHowTo { margin-top: 12px; font-size: 12px; color: var(--ca-muted); }
+.caHowTo summary { cursor: pointer; font-weight: 700; color: var(--ca-text); }
+.caHowTo ol { margin: 8px 0 6px; padding-left: 18px; }
+.caHowTo p { margin: 0; }
 
 .caOccBar {
     height: 6px;

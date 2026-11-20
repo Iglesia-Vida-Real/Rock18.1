@@ -1220,3 +1220,31 @@ Contraparte de servidor: `Rock.Blocks/QREVENT/CHANGES.md`, ultima seccion.
   cantidad pedida quedan deshabilitados con «Lleno» / «Solo N».
 - **Saludo:** primer nombre + primer apellido, mobile-first.
 - **Se elimino** el CTA «Reservar otro servicio».
+
+## SundayServiceCapacityAdmin: servicios especiales de una sola fecha (2026-11-20)
+
+Rama `reservas-servicios-especiales` (sale de `hotfix-18.1`). **No desplegado.** Contraparte de
+servidor y despliegue: `Rock.Blocks/QREVENT/CHANGES.md`, última sección. Guía para quien configura:
+`docs/qrevent/GUIA_RESERVAS_DOMINGOS.md`.
+
+Tarjeta nueva **«Servicio especial»** en la pestaña Configuración, entre la plantilla y la lista:
+
+- **Campos:** Fecha (`min` = hoy), Hora de inicio (`type="time"`, pasos de 5 min), Nombre opcional
+  (máx. 40, sin hora) y Capacidad.
+- **«Lo que ya hay el <fecha>»:** al elegir fecha llama `GetSlots` con ese día y lista sus horarios
+  (activos e inactivos) con Desactivar / Reactivar. Marca «Choca» en naranja los activos a menos de
+  95 min de la hora elegida. Peticiones con contador (`specialDayRequest`) para que una respuesta
+  vieja no pise a la nueva.
+- **Barra de resumen:** explica en palabras el nombre final, desde cuándo se puede reservar
+  (fecha − 6 días: la app muestra 7 días) y la ventana de la puerta (inicio − 15 a inicio + 80). El
+  botón «Crear servicio especial» se deshabilita mientras falte algo o haya choque; el servidor vuelve
+  a validar todo.
+- **«Próximos servicios especiales»:** `GetUpcomingSpecialServices` (desde hoy), con «Ver día» (pone la
+  fecha en el formulario) y Desactivar / Reactivar. No depende del rango Desde/Hasta.
+- **«¿Un domingo con un solo servicio…?»** (`<details>`): los tres pasos y las reglas.
+- **Lista del rango:** etiqueta morada «Especial» en los slots de la categoría especial.
+- **Plantilla:** el resumen agrega «N omitidos por día con servicio especial».
+- Desactivar / Reactivar desde cualquiera de las tres listas refresca las otras (`toggleFromList`,
+  `toggleFromSpecialDay`, `toggleFromUpcoming`, todos sobre `toggleActive`).
+- Textos dinámicos en `<span class="notranslate">` (trampa 4 de `CLAUDE.md`). Sin timers ni listeners
+  nuevos; los flags `specialBusy`, `specialDayBusy` y `upcomingBusy` se liberan en `finally`.

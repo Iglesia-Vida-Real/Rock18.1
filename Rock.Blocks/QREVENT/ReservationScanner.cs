@@ -386,14 +386,15 @@ INNER JOIN dbo.Schedule sch ON sch.Id = slot.ScheduleId
 WHERE slot.CampusId = @CampusId
   AND slot.OccurrenceDate = @Today
   AND slot.IsActive = 1
-  AND slot.ScheduleId IN (" + string.Join( ",", allowedScheduleIds ) + @")
+  AND " + BuildScheduleFilter( allowedScheduleIds ) + @"
 ORDER BY sch.Id
 ";
 
                 var slots = rockContext.Database.SqlQuery<SlotScheduleInfo>(
                     sql,
                     new SqlParameter( "@CampusId", campusId ),
-                    new SqlParameter( "@Today", today )
+                    new SqlParameter( "@Today", today ),
+                    new SqlParameter( "@SpecialGuid", new Guid( SundayServiceCapacityAdmin.SpecialServiceCategoryGuid ) )
                 ).ToList();
 
                 // Si dos ventanas llegaran a solaparse gana la del horario cuya hora
@@ -474,14 +475,15 @@ INNER JOIN dbo.Schedule sch ON sch.Id = slot.ScheduleId
 WHERE slot.CampusId = @CampusId
   AND slot.OccurrenceDate >= @Today
   AND slot.IsActive = 1
-  AND slot.ScheduleId IN (" + string.Join( ",", allowedScheduleIds ) + @")
+  AND " + BuildScheduleFilter( allowedScheduleIds ) + @"
 ORDER BY slot.OccurrenceDate, sch.Id
 ";
 
             var nextSlots = rockContext.Database.SqlQuery<SlotScheduleInfo>(
                 sql,
                 new SqlParameter( "@CampusId", campusId ),
-                new SqlParameter( "@Today", today )
+                new SqlParameter( "@Today", today ),
+                new SqlParameter( "@SpecialGuid", new Guid( SundayServiceCapacityAdmin.SpecialServiceCategoryGuid ) )
             ).ToList();
 
             // El ORDER BY de SQL es por (OccurrenceDate, sch.Id) y la hora real vive
@@ -523,6 +525,19 @@ ORDER BY slot.OccurrenceDate, sch.Id
                 Info = "No hay horarios programados proximamente.",
                 CheckInStartIso = null
             };
+        }
+
+        /// <summary>
+        /// Filtro de horarios del escáner: los del atributo «Allowed Schedule Ids» más los
+        /// servicios especiales creados desde Configuración Domingos (categoría
+        /// <see cref="SundayServiceCapacityAdmin.SpecialServiceCategoryGuid"/>, parámetro
+        /// <c>@SpecialGuid</c>). Así un servicio especial no obliga a editar este bloque.
+        /// Los Ids vienen de <see cref="ParseCsvInts"/> (solo enteros positivos).
+        /// </summary>
+        private static string BuildScheduleFilter( List<int> allowedScheduleIds )
+        {
+            return "( slot.ScheduleId IN (" + string.Join( ",", allowedScheduleIds ) + ")"
+                + " OR sch.CategoryId IN ( SELECT c.Id FROM dbo.Category c WHERE c.[Guid] = @SpecialGuid ) )";
         }
 
         private static TimeSpan? ExtractTimeFromICal( string iCal )
