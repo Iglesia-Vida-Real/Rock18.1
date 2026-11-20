@@ -42,27 +42,24 @@ namespace Rock.Blocks.QREVENT
 
     public class ReservationScanner : RockBlockType
     {
-        // Ventana de check-in. Decision de negocio, fija a proposito y no
-        // configurable: abre 15 minutos ANTES de la hora de inicio del servicio y
-        // cierra 1 h 20 min ( 80 minutos ) DESPUES de esa misma hora de inicio.
+        // Ventana de check-in de cada cupo: abre A minutos ANTES de la hora de inicio
+        // del servicio y cierra C minutos DESPUES de esa misma hora.
         // ( 2026-09-05: la apertura paso de 10 a 15 min a pedido del ministerio. )
+        // ( 2026-11-20: A y C son configurables POR CUPO desde Configuracion Domingos,
+        //   columnas SundayServiceSlot.CheckInOpensMinutesBefore / CheckInClosesMinutesAfter;
+        //   NULL = 15 / 80, los valores de siempre. Valores y deteccion de las columnas en
+        //   SundayServiceCapacityAdmin. )
         //
-        // Deliberadamente ya no se usa el DTEND del iCal para cerrar: el servicio
-        // dura ~2 h, asi que la ventana del servicio anterior seguia abierta cuando
-        // la del siguiente ya habia abierto y habia dos slots vigentes a la vez.
-        // Como sp_SundayServiceCheckIn exige que la reserva sea exactamente del slot
-        // activo, ese solapamiento rechazaba en la puerta a gente con reserva valida.
+        // Deliberadamente no se usa el DTEND del iCal para cerrar ( ver historia en
+        // Rock.Blocks/QREVENT/CHANGES.md ). El cierre de la puerta es el MISMO valor que usa
+        // SundayServiceRegistration para dejar de aceptar reservas de ese cupo: asi todo lo
+        // que la app deja reservar sigue siendo escaneable en la puerta.
         //
-        // El cierre debe seguir igual a ReservationClosesMinutesAfterStart de
-        // SundayServiceRegistration ( 80 ): asi todo lo que la app deja reservar sigue
-        // siendo escaneable en la puerta. Si se mueve uno, mover el otro.
-        // Con 80 de cierre y 15 de apertura las ventanas siguen sin cruzarse ( los
-        // servicios estan a 2 h: 7, 9, 11, 13, 18 ): quedan 25 min de separacion entre
-        // el cierre de una y la apertura de la siguiente. El limite para que no se
-        // solapen es apertura + cierre < 120; subir el cierre mas alla de 105 con esta
-        // apertura, o la apertura mas alla de 40 con este cierre, las haria solaparse.
-        private const int CheckInOpensMinutesBeforeStart = 15;
-        private const int CheckInClosesMinutesAfterStart = 80;
+        // Ventanas que se cruzan: hasta 2026-11-20 el escaner elegia UN cupo "activo" y
+        // sp_SundayServiceCheckIn rechazaba ( -2 ) las reservas de cualquier otro, asi que
+        // dos ventanas cruzadas rechazaban en la puerta a gente con reserva valida. Desde
+        // entonces cada QR se valida contra la ventana de SU propio cupo ( ver
+        // ResolveReservationSlot ) y el cupo "activo" solo sirve para el encabezado.
 
         private const int InvalidScanThrottleWindowSeconds = 10;
         private const int InvalidScanThrottleLimit = 60;
@@ -174,16 +171,67 @@ namespace Rock.Blocks.QREVENT
                 return ActionOk( BuildGenericDeniedResult() );
             }
 
-            var activeSlotResult = GetActiveSlotInternal();
-            if ( activeSlotResult.Slot == null )
+            var campusId = GetAttributeValue( AttributeKey.CampusId ).AsInteger();
+            var allowedScheduleIds = ParseCsvInts( GetAttributeValue( AttributeKey.AllowedScheduleIds ) );
+
+            if ( campusId == 0 || allowedScheduleIds.Count == 0 )
             {
-                return ActionOk( BuildResult( "error", "", "No hay horario activo para hacer check-in.", null, 0 ) );
+                return ActionOk( BuildResult( "error", "", "Configura el bloque correctamente (CampusId y AllowedScheduleIds).", null, 0 ) );
             }
 
             try
             {
                 using ( var rockContext = new RockContext() )
                 {
+                    // Cada QR se valida contra la ventana de SU propio cupo (2026-11-20). Antes se
+                    // comparaba contra un unico cupo "activo" y, si dos ventanas se cruzaban, la
+                    // puerta rechazaba reservas validas del otro servicio.
+                    var target = ResolveReservationSlot( rockContext, reservationCode, campusId, allowedScheduleIds );
+
+                    if ( target == null )
+                    {
+                        // Codigo inexistente: mismo mensaje generico de siempre.
+                        RegisterInvalidScanAttempt();
+                        return ActionOk( BuildGenericDeniedResult() );
+                    }
+
+                    var now = GuatemalaNow();
+
+                    if ( !target.InScope || !target.IsActive || target.OccurrenceDate.Date != now.Date )
+                    {
+                        // Otra sede, un horario que esta puerta no recibe, un cupo desactivado u
+                        // otro dia. No revela de que horario es ni de quien.
+                        RegisterInvalidScanAttempt();
+                        var msg = target.InScope && target.IsActive
+                            ? "Esta reserva no es para hoy."
+                            : "Esta reserva es de otro horario.";
+                        return ActionOk( BuildResult( "other_schedule", "", msg, null, 0 ) );
+                    }
+
+                    var serviceTime = ExtractTimeFromICal( target.iCalendarContent );
+                    if ( serviceTime.HasValue )
+                    {
+                        // Sin hora legible no hay ventana con que comparar: se deja pasar al SP
+                        // (mismo criterio fail-open que el corte de la reserva).
+                        var serviceDateTime = now.Date.Add( serviceTime.Value );
+                        var opensAt = serviceDateTime.AddMinutes( -target.DoorOpensMinutes );
+                        var closesAt = serviceDateTime.AddMinutes( target.DoorClosesMinutes );
+
+                        // Llegar temprano o tarde con una reserva real no es un intento invalido:
+                        // no cuenta para el throttle.
+                        if ( now < opensAt )
+                        {
+                            return ActionOk( BuildResult( "other_schedule", "",
+                                $"Esta reserva es del servicio de las {serviceDateTime:HH:mm}. La puerta abre a las {opensAt:HH:mm}.", null, 0 ) );
+                        }
+
+                        if ( now > closesAt )
+                        {
+                            return ActionOk( BuildResult( "other_schedule", "",
+                                $"El ingreso para el servicio de las {serviceDateTime:HH:mm} cerró a las {closesAt:HH:mm}.", null, 0 ) );
+                        }
+                    }
+
                     var currentPersonAliasId = ( int? ) new PersonAliasService( rockContext )
                         .GetPrimaryAliasId( RequestContext.CurrentPerson.Id );
 
@@ -200,7 +248,10 @@ EXEC dbo.sp_SundayServiceCheckIn
     @ScannerAliasId";
 
                     var pCode = new SqlParameter( "@ReservationCode", reservationCode );
-                    var pSlot = new SqlParameter( "@ActiveSlotId", activeSlotResult.Slot.slotId );
+                    // El SP sigue exigiendo que la reserva sea del cupo indicado: se le pasa el
+                    // cupo de la propia reserva, ya validado arriba. Si entre la lectura y el SP
+                    // la reserva cambiara de cupo, el SP devuelve -2 y se rechaza igual que antes.
+                    var pSlot = new SqlParameter( "@ActiveSlotId", target.SlotId );
                     var pScanner = new SqlParameter( "@ScannerAliasId", ( object ) currentPersonAliasId ?? DBNull.Value );
 
                     var row = rockContext.Database
@@ -252,10 +303,10 @@ EXEC dbo.sp_SundayServiceCheckIn
                     SundayServiceTopic.NotifyReservationCheckedIn(
                         reservationCode,
                         personName,
-                        activeSlotResult.Slot.scheduleName,
+                        target.ScheduleName,
                         row.Quantity ?? 0 );
 
-                    return ActionOk( BuildResult( "checked_in", personName, "Asistencia marcada correctamente.", activeSlotResult.Slot.scheduleName, row.Quantity ?? 0 ) );
+                    return ActionOk( BuildResult( "checked_in", personName, "Asistencia marcada correctamente.", target.ScheduleName, row.Quantity ?? 0 ) );
                 }
             }
             catch ( Exception ex )
@@ -380,7 +431,9 @@ SELECT TOP 10
     slot.ScheduleId,
     slot.OccurrenceDate,
     sch.Name AS ScheduleName,
-    sch.iCalendarContent
+    sch.iCalendarContent,
+    " + SundayServiceCapacityAdmin.DoorOpensSqlExpression( rockContext, "slot" ) + @" AS DoorOpensMinutes,
+    " + SundayServiceCapacityAdmin.DoorClosesSqlExpression( rockContext, "slot" ) + @" AS DoorClosesMinutes
 FROM dbo.SundayServiceSlot slot
 INNER JOIN dbo.Schedule sch ON sch.Id = slot.ScheduleId
 WHERE slot.CampusId = @CampusId
@@ -397,12 +450,11 @@ ORDER BY sch.Id
                     new SqlParameter( "@SpecialGuid", new Guid( SundayServiceCapacityAdmin.SpecialServiceCategoryGuid ) )
                 ).ToList();
 
-                // Si dos ventanas llegaran a solaparse gana la del horario cuya hora
-                // de inicio esta mas cerca de "ahora". Antes ganaba el primero que
-                // devolvia el ORDER BY sch.Id, que no tiene relacion con el orden
-                // cronologico de los horarios.
-                ActiveSlotBag bestSlot = null;
-                var bestDistanceTicks = long.MaxValue;
+                // Cupos con la puerta abierta ahora (cada uno con SU apertura). Puede haber
+                // mas de uno si sus ventanas se cruzan: el escaneo valida cada QR contra su
+                // propio cupo, asi que aqui solo se arma el encabezado. El cupo de referencia
+                // es el de hora de inicio mas cercana a "ahora".
+                var openSlots = new List<Tuple<SlotScheduleInfo, DateTime>>();
 
                 foreach ( var slot in slots )
                 {
@@ -413,35 +465,30 @@ ORDER BY sch.Id
                     }
 
                     var serviceDateTime = today.Add( serviceTime.Value );
-                    var checkInStart = serviceDateTime.AddMinutes( -CheckInOpensMinutesBeforeStart );
-                    var checkInEnd = serviceDateTime.AddMinutes( CheckInClosesMinutesAfterStart );
-
-                    if ( now < checkInStart || now > checkInEnd )
+                    if ( IsDoorOpen( serviceDateTime, slot.DoorOpensMinutes, slot.DoorClosesMinutes, now ) )
                     {
-                        continue;
+                        openSlots.Add( Tuple.Create( slot, serviceDateTime ) );
                     }
-
-                    var distanceTicks = Math.Abs( ( now - serviceDateTime ).Ticks );
-                    if ( distanceTicks >= bestDistanceTicks )
-                    {
-                        continue;
-                    }
-
-                    bestDistanceTicks = distanceTicks;
-                    bestSlot = new ActiveSlotBag
-                    {
-                        slotId = slot.SlotId,
-                        scheduleId = slot.ScheduleId,
-                        scheduleName = slot.ScheduleName,
-                        occurrenceTime = serviceDateTime.ToString( "HH:mm" )
-                    };
                 }
 
-                if ( bestSlot != null )
+                if ( openSlots.Count > 0 )
                 {
+                    var ordered = openSlots.OrderBy( x => x.Item2 ).ToList();
+                    var best = openSlots.OrderBy( x => Math.Abs( ( now - x.Item2 ).Ticks ) ).First();
+
                     return new ActiveSlotResult
                     {
-                        Slot = bestSlot,
+                        Slot = new ActiveSlotBag
+                        {
+                            slotId = best.Item1.SlotId,
+                            scheduleId = best.Item1.ScheduleId,
+                            // Con dos o mas abiertos, el encabezado los nombra a todos para que
+                            // el operador sepa que la puerta recibe a ambos.
+                            scheduleName = ordered.Count == 1
+                                ? best.Item1.ScheduleName
+                                : string.Join( " + ", ordered.Select( x => x.Item1.ScheduleName ) ),
+                            occurrenceTime = best.Item2.ToString( "HH:mm" )
+                        },
                         NextScheduleInfo = null
                     };
                 }
@@ -467,9 +514,13 @@ ORDER BY sch.Id
         {
             var sql = @"
 SELECT TOP 10
+    slot.Id AS SlotId,
+    slot.ScheduleId,
     sch.Name AS ScheduleName,
     slot.OccurrenceDate,
-    sch.iCalendarContent
+    sch.iCalendarContent,
+    " + SundayServiceCapacityAdmin.DoorOpensSqlExpression( rockContext, "slot" ) + @" AS DoorOpensMinutes,
+    " + SundayServiceCapacityAdmin.DoorClosesSqlExpression( rockContext, "slot" ) + @" AS DoorClosesMinutes
 FROM dbo.SundayServiceSlot slot
 INNER JOIN dbo.Schedule sch ON sch.Id = slot.ScheduleId
 WHERE slot.CampusId = @CampusId
@@ -495,22 +546,26 @@ ORDER BY slot.OccurrenceDate, sch.Id
                 {
                     slot.ScheduleName,
                     slot.OccurrenceDate,
+                    slot.DoorOpensMinutes,
                     ServiceTime = ExtractTimeFromICal( slot.iCalendarContent )
                 } )
                 .Where( x => x.ServiceTime.HasValue )
                 .Select( x => new
                 {
                     x.ScheduleName,
-                    ServiceDateTime = x.OccurrenceDate.Add( x.ServiceTime.Value )
+                    ServiceDateTime = x.OccurrenceDate.Add( x.ServiceTime.Value ),
+                    DoorOpensAt = x.OccurrenceDate.Add( x.ServiceTime.Value ).AddMinutes( -x.DoorOpensMinutes )
                 } )
-                .Where( x => x.ServiceDateTime.AddMinutes( -CheckInOpensMinutesBeforeStart ) > now )
-                .OrderBy( x => x.ServiceDateTime )
+                .Where( x => x.DoorOpensAt > now )
+                // El proximo es el que ABRE primero la puerta, no el que empieza primero: con
+                // aperturas distintas por cupo no siempre coinciden.
+                .OrderBy( x => x.DoorOpensAt )
                 .FirstOrDefault();
 
             if ( upcoming != null )
             {
                 var esGt = new CultureInfo( "es-GT" );
-                var checkInStart = upcoming.ServiceDateTime.AddMinutes( -CheckInOpensMinutesBeforeStart );
+                var checkInStart = upcoming.DoorOpensAt;
 
                 return new NextScheduleResult
                 {
@@ -534,6 +589,49 @@ ORDER BY slot.OccurrenceDate, sch.Id
         /// <c>@SpecialGuid</c>). Así un servicio especial no obliga a editar este bloque.
         /// Los Ids vienen de <see cref="ParseCsvInts"/> (solo enteros positivos).
         /// </summary>
+        /// <summary>
+        /// Cupo de la reserva con el código dado, con sus datos de ventana y si esta puerta lo
+        /// recibe (misma sede y horario permitido o especial). Lectura sin lock: el SP vuelve a
+        /// validar bajo lock. null si el código no existe.
+        /// </summary>
+        private static ReservationSlotInfo ResolveReservationSlot( RockContext rockContext, string reservationCode, int campusId, List<int> allowedScheduleIds )
+        {
+            var sql = @"
+SELECT TOP 1
+    slot.Id AS SlotId,
+    slot.OccurrenceDate,
+    slot.IsActive,
+    sch.Name AS ScheduleName,
+    sch.iCalendarContent,
+    " + SundayServiceCapacityAdmin.DoorOpensSqlExpression( rockContext, "slot" ) + @" AS DoorOpensMinutes,
+    " + SundayServiceCapacityAdmin.DoorClosesSqlExpression( rockContext, "slot" ) + @" AS DoorClosesMinutes,
+    CAST( CASE WHEN slot.CampusId = @CampusId AND " + BuildScheduleFilter( allowedScheduleIds ) + @" THEN 1 ELSE 0 END AS bit ) AS InScope
+FROM dbo.SundayServiceReservation r
+INNER JOIN dbo.SundayServiceSlot slot ON slot.Id = r.SlotId
+INNER JOIN dbo.Schedule sch ON sch.Id = slot.ScheduleId
+WHERE r.ReservationCode = @ReservationCode";
+
+            return rockContext.Database.SqlQuery<ReservationSlotInfo>(
+                sql,
+                new SqlParameter( "@ReservationCode", reservationCode ),
+                new SqlParameter( "@CampusId", campusId ),
+                new SqlParameter( "@SpecialGuid", new Guid( SundayServiceCapacityAdmin.SpecialServiceCategoryGuid ) )
+            ).FirstOrDefault();
+        }
+
+        /// <summary>¿La puerta acepta QR de un servicio que empieza en <paramref name="serviceDateTime"/>?</summary>
+        private static bool IsDoorOpen( DateTime serviceDateTime, int doorOpensMinutes, int doorClosesMinutes, DateTime now )
+        {
+            return now >= serviceDateTime.AddMinutes( -doorOpensMinutes )
+                && now <= serviceDateTime.AddMinutes( doorClosesMinutes );
+        }
+
+        private static DateTime GuatemalaNow()
+        {
+            var gtZone = TimeZoneInfo.FindSystemTimeZoneById( "Central America Standard Time" );
+            return TimeZoneInfo.ConvertTimeFromUtc( DateTime.UtcNow, gtZone );
+        }
+
         private static string BuildScheduleFilter( List<int> allowedScheduleIds )
         {
             return "( slot.ScheduleId IN (" + string.Join( ",", allowedScheduleIds ) + ")"
@@ -706,6 +804,20 @@ ORDER BY slot.OccurrenceDate, sch.Id
             public DateTime OccurrenceDate { get; set; }
             public string ScheduleName { get; set; }
             public string iCalendarContent { get; set; }
+            public int DoorOpensMinutes { get; set; }
+            public int DoorClosesMinutes { get; set; }
+        }
+
+        private class ReservationSlotInfo
+        {
+            public int SlotId { get; set; }
+            public DateTime OccurrenceDate { get; set; }
+            public bool IsActive { get; set; }
+            public string ScheduleName { get; set; }
+            public string iCalendarContent { get; set; }
+            public int DoorOpensMinutes { get; set; }
+            public int DoorClosesMinutes { get; set; }
+            public bool InScope { get; set; }
         }
 
         /// <summary>

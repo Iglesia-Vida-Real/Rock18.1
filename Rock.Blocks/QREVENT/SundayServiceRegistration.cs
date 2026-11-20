@@ -64,17 +64,12 @@ namespace Rock.Blocks.QREVENT
         /// </summary>
         private const int MaxHoldMinutes = 3;
 
-        /// <summary>
-        /// Minutos despues de la hora de inicio del servicio en que el horario deja de
-        /// poder reservarse: 1 h 20 min. Es decision de negocio y esta fijo en el codigo,
-        /// no es configurable.
-        ///
-        /// Debe seguir igual a CheckInClosesMinutesAfterStart de ReservationScanner
-        /// ( 80 ), que cierra la ventana de la puerta en el mismo instante: asi nunca se
-        /// emite una reserva cuyo QR el escaner vaya a rechazar. Si se mueve uno, mover
-        /// el otro.
-        /// </summary>
-        private const int ReservationClosesMinutesAfterStart = 80;
+        // Corte de la reserva: el horario deja de poder reservarse C minutos despues de su
+        // hora de inicio. Hasta 2026-11-20 era fijo ( 80 = 1 h 20 min ); desde entonces es
+        // POR CUPO ( columna SundayServiceSlot.CheckInClosesMinutesAfter, NULL = 80 ) y es el
+        // MISMO valor con el que el escaner cierra la puerta: asi nunca se emite una reserva
+        // cuyo QR la puerta vaya a rechazar. Valores y deteccion de la columna en
+        // SundayServiceCapacityAdmin ( DefaultDoorClosesMinutesAfter / DoorClosesSqlExpression ).
 
         /// <summary>
         /// Minutos que la tarjeta «¡Bienvenido!» permanece visible despues del check-in.
@@ -288,7 +283,7 @@ namespace Rock.Blocks.QREVENT
                 }
 
                 // El horario pudo cerrar mientras la pantalla estaba abierta.
-                if ( IsScheduleClosedForOccurrence( rockContext, bag.scheduleId, occ ) )
+                if ( IsScheduleClosedForOccurrence( rockContext, bag.campusId, bag.scheduleId, occ ) )
                 {
                     return ActionOk( new HoldUpsertResponseBag
                     {
@@ -700,6 +695,7 @@ SELECT
     s.ScheduleId,
     sch.[Name] AS ScheduleName,
     sch.iCalendarContent,
+    " + SundayServiceCapacityAdmin.DoorClosesSqlExpression( rockContext, "s" ) + @" AS DoorClosesMinutes,
     s.Capacity,
     s.ReservedCount,
     s.HoldCount
@@ -722,7 +718,7 @@ ORDER BY
 
             return rockContext.Database.SqlQuery<SlotRow>( sql, pCampus, pStart, pEnd )
                 .ToList()
-                .Where( r => !IsSlotClosedForReservation( r.OccurrenceDate, r.ICalendarContent, now ) )
+                .Where( r => !IsSlotClosedForReservation( r.OccurrenceDate, r.ICalendarContent, r.DoorClosesMinutes, now ) )
                 .ToList();
         }
 
@@ -748,7 +744,8 @@ SELECT
     sl.OccurrenceDate,
     sl.ScheduleId,
     sch.[Name] AS ScheduleName,
-    sch.iCalendarContent
+    sch.iCalendarContent,
+    " + SundayServiceCapacityAdmin.DoorClosesSqlExpression( rockContext, "sl" ) + @" AS DoorClosesMinutes
 FROM dbo.SundayServiceReservation r
 INNER JOIN dbo.SundayServiceSlot sl ON sl.Id = r.SlotId
 LEFT JOIN dbo.Campus c ON c.Id = sl.CampusId
@@ -767,7 +764,7 @@ ORDER BY
             var now = RockDateTime.Now;
             var row = rockContext.Database.SqlQuery<ActiveReservationRow>( sql, p )
                 .ToList()
-                .FirstOrDefault( r => !IsSlotClosedForReservation( r.OccurrenceDate, r.ICalendarContent, now ) );
+                .FirstOrDefault( r => !IsSlotClosedForReservation( r.OccurrenceDate, r.ICalendarContent, r.DoorClosesMinutes, now ) );
 
             if ( row == null )
             {
@@ -803,15 +800,16 @@ ORDER BY
         /// <summary>
         /// Determina si un slot ya cerró para reservar.
         /// El corte es la hora de inicio del servicio ( DTSTART del schedule ) mas
-        /// <see cref="ReservationClosesMinutesAfterStart"/> minutos.
+        /// <paramref name="closesMinutesAfterStart"/> minutos: el cierre del cupo, el mismo
+        /// con el que la puerta deja de aceptar QR ( 80 si el cupo no tiene valor propio ).
         ///
         /// Deliberadamente ya no se usa el DTEND del iCal: el DTEND lo define cada
         /// Schedule por separado ( el de las 11:00 dura 2 h y los demas 1.5 h ), asi que
         /// el cierre salia desparejo y el horario de las 11:00 seguia apareciendo
-        /// reservable hasta las 13:00. Con un offset fijo sobre el inicio, todos los
+        /// reservable hasta las 13:00. Con un offset sobre el inicio, todos los
         /// horarios cierran con la misma regla.
         /// </summary>
-        private static bool IsSlotClosedForReservation( DateTime occurrenceDate, string iCalendarContent, DateTime now )
+        private static bool IsSlotClosedForReservation( DateTime occurrenceDate, string iCalendarContent, int closesMinutesAfterStart, DateTime now )
         {
             var startTime = ExtractStartTimeFromICal( iCalendarContent );
             if ( !startTime.HasValue )
@@ -823,7 +821,7 @@ ORDER BY
 
             var closesAt = occurrenceDate.Date
                 .Add( startTime.Value )
-                .AddMinutes( ReservationClosesMinutesAfterStart );
+                .AddMinutes( closesMinutesAfterStart );
 
             return closesAt <= now;
         }
@@ -838,20 +836,39 @@ ORDER BY
         /// El listado se filtra al cargarlo, pero la pantalla puede quedar abierta y
         /// llegar aqui con un horario que ya cerró.
         /// </summary>
-        private static bool IsScheduleClosedForOccurrence( RockContext rockContext, int scheduleId, DateTime occurrenceDate )
+        private static bool IsScheduleClosedForOccurrence( RockContext rockContext, int campusId, int scheduleId, DateTime occurrenceDate )
         {
             if ( scheduleId <= 0 )
             {
                 return false;
             }
 
-            var pSchedule = new SqlParameter( "@ScheduleId", scheduleId );
+            // El cierre ahora es por cupo: se lee del slot ( sede + fecha + horario ). Si no
+            // existe el slot, de ese caso ya responde el SP; aqui se usa el cierre de omision.
+            var row = rockContext.Database.SqlQuery<SlotTimeRow>( @"
+SELECT TOP 1
+    sl.OccurrenceDate,
+    sch.iCalendarContent AS ICalendarContent,
+    " + SundayServiceCapacityAdmin.DoorClosesSqlExpression( rockContext, "sl" ) + @" AS DoorClosesMinutes
+FROM dbo.SundayServiceSlot sl
+INNER JOIN dbo.[Schedule] sch ON sch.Id = sl.ScheduleId
+WHERE sl.CampusId = @CampusId
+  AND sl.OccurrenceDate = @OccurrenceDate
+  AND sl.ScheduleId = @ScheduleId",
+                new SqlParameter( "@CampusId", campusId ),
+                new SqlParameter( "@OccurrenceDate", occurrenceDate.Date ),
+                new SqlParameter( "@ScheduleId", scheduleId ) ).FirstOrDefault();
+
+            if ( row != null )
+            {
+                return IsSlotClosedForReservation( occurrenceDate, row.ICalendarContent, row.DoorClosesMinutes, RockDateTime.Now );
+            }
 
             var iCal = rockContext.Database
-                .SqlQuery<string>( "SELECT sch.iCalendarContent FROM dbo.[Schedule] sch WHERE sch.Id = @ScheduleId", pSchedule )
+                .SqlQuery<string>( "SELECT sch.iCalendarContent FROM dbo.[Schedule] sch WHERE sch.Id = @ScheduleId", new SqlParameter( "@ScheduleId", scheduleId ) )
                 .FirstOrDefault();
 
-            return IsSlotClosedForReservation( occurrenceDate, iCal, RockDateTime.Now );
+            return IsSlotClosedForReservation( occurrenceDate, iCal, SundayServiceCapacityAdmin.DefaultDoorClosesMinutesAfter, RockDateTime.Now );
         }
 
         /// <summary>
@@ -863,7 +880,8 @@ ORDER BY
             var sql = @"
 SELECT
     sl.OccurrenceDate,
-    sch.iCalendarContent AS ICalendarContent
+    sch.iCalendarContent AS ICalendarContent,
+    " + SundayServiceCapacityAdmin.DoorClosesSqlExpression( rockContext, "sl" ) + @" AS DoorClosesMinutes
 FROM dbo.SundayServiceHold h
 INNER JOIN dbo.SundayServiceSlot sl ON sl.Id = h.SlotId
 LEFT JOIN dbo.[Schedule] sch ON sch.Id = sl.ScheduleId
@@ -877,7 +895,7 @@ WHERE h.HoldToken = @HoldToken";
                 return false;
             }
 
-            return IsSlotClosedForReservation( row.OccurrenceDate, row.ICalendarContent, RockDateTime.Now );
+            return IsSlotClosedForReservation( row.OccurrenceDate, row.ICalendarContent, row.DoorClosesMinutes, RockDateTime.Now );
         }
 
         private static TimeSpan? ExtractICalProperty( string iCal, string property )
@@ -1493,6 +1511,7 @@ ORDER BY
             public int Capacity { get; set; }
             public int ReservedCount { get; set; }
             public int HoldCount { get; set; }
+            public int DoorClosesMinutes { get; set; }
         }
 
         /// <summary>
@@ -1502,6 +1521,7 @@ ORDER BY
         {
             public DateTime OccurrenceDate { get; set; }
             public string ICalendarContent { get; set; }
+            public int DoorClosesMinutes { get; set; }
         }
 
         /// <summary>
@@ -1519,6 +1539,7 @@ ORDER BY
             public int? ScheduleId { get; set; }
             public string ScheduleName { get; set; }
             public string ICalendarContent { get; set; }
+            public int DoorClosesMinutes { get; set; }
         }
 
         /// <summary>
