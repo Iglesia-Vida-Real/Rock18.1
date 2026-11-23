@@ -311,6 +311,22 @@ correr los jobs. Nada más.
   revisó que no hubo transacciones de Dar en esas BDs desde la copia (0). Se pasó a modo prueba en las 4
   (`dev-isolation\aislar_dar_modo_prueba.sql`, fuera del repo) y se agregó como paso 5 de
   `Dev Tools/Sql/Aislar_BD_Dev.sql`; `/dar` en 6229 inicializa con `"mode":"test"`. **Prod no cambia.**
+  Matiz: los secretos de Dar (`*SharedSecretBase64`, `RecaptchaApiKey`) son «Encrypted Text» cifrados con la llave
+  de prod; con el `web.config` local no se descifran, así que en local el cobro real también se habría frenado en
+  la validación de configuración. El aislamiento queda igual (no depender de eso).
+- **§6.1 Dar, probado en 19 y 18.1 lado a lado (Claude, 2026-11-23, modo prueba, tarjeta Visa de prueba publicada
+  por Cybersource):** página, etiqueta «TEST», formulario, modal de confirmación, reserva de idempotencia (fila
+  Pending) y su limpieza: **iguales en las dos**. Las dos se detienen antes de llamar a Cybersource con «Faltan
+  configuraciones del bloque: Test Shared Secret (Base64)» (secreto cifrado con la llave de prod, ver arriba) y
+  registran las **mismas 2 excepciones** en la limpieza (`FinancialPaymentDetail.SaveHook.PostSave`:
+  `BatchId.Value` nulo de la fila Pending; `DeletePendingTransaction` línea 1002: «not found in the
+  ObjectStateManager»). 0 filas sobrantes en las dos. Es un defecto **previo** (también en prod cuando un cobro
+  falla), no del upgrade; corregir después del upgrade. El campo de monto llena desde la derecha («10» = Q0.10),
+  igual en las dos. reCAPTCHA: la llave no admite `localhost` (aviso del sello); en el servidor queda apagado en
+  local porque la API key cifrada no se descifra.
+  **No probado en local:** el cobro contra Cybersource y el registro «Approved» (lote, workflows). Requiere el
+  secreto de sandbox en el bloque de 6229 (lo ingresa el responsable) o se verifica en prod con la donación
+  mínima de §6.1. Lo mismo aplica probablemente a ePay en local (`TestMerchantPasswd` también va cifrado).
 - Nuevo `Dev Tools/Upgrade/19.8.1_preflight_bd_prod.sql`: revisión de solo lectura de la BD de prod (versión y nivel
   de compatibilidad de SQL, espacio, respaldos, migraciones y plugins contra la copia probada, script de reservas).
   Probado contra Rock18Base: todo OK.
