@@ -52,19 +52,27 @@
 | `4b42dd6521` | Código: modales del Roster Obsidian en español (+ docs de PIN, CSS, checklist con tildes) |
 | `51f2581c6f` | Docs: job 234 corrido; los jobs de reemplazo se autoeliminan |
 
+**2026-11-23 (Claude, `PLAN_PRUEBAS_19.8.1.md` §16):** C1–C15 hechos (sin diferencias de comportamiento; etiquetas
+idénticas); los 12 jobs de actualización ensayados en Rock19Test sin errores (respaldo previo
+`Rock19Test_antes_jobs_2026-11-23.bak`); barrido de ~70 páginas sin excepciones nuevas; 327, 740, 433 y 451 cargan.
+Desde ese día el responsable es el único aprobador y fijó el upgrade de prod para el 2026-11-24.
+
 **Qué falta**
-1. Recorrido de la checklist comparativa `PLAN_PRUEBAS_19.8.1.md` §15 (C1–C20), 6230 vs 6229. El horario de prueba
-   solo abre check-in **lunes a viernes de 09:00 a 21:00**.
-2. Después del recorrido (Claude): comparar las etiquetas `etiquetas_capturadas\9100_*.zpl` (18.1) vs `9101_*.zpl`
-   (19) y revisar el `ExceptionLog` de las dos BDs (líneas base: Rock18Base > 1630266; Rock19Test > 1630379).
-3. Abrir `http://localhost:6229/page/327` y `/page/740` con sesión de administrador (el render no se pudo verificar
-   sin sesión; en BD y `ExceptionLog` está todo bien, §11.4).
+1. C16–C20 de §15 (necesitan el PIN de supervisor: lo teclea el responsable). El horario de prueba solo abre
+   check-in **lunes a viernes de 09:00 a 21:00**.
+2. ~~Comparar etiquetas y `ExceptionLog`~~ — hecho el 2026-11-23 para C1–C15.
+3. ~~Abrir 327 y 740 con sesión~~ — hecho el 2026-11-23: cargan sin error.
 4. Según la comparación visual: aplicar la propuesta B de CSS del kiosco (§14.9a, probar con dotless) y decidir el
    tema del Check-in Manager (§14.9b).
 5. Script del servidor (§13): lo corre el responsable en prod y trae los 3 archivos + `_css-overrides.less` y
    `checkin-theme.css` del tema del kiosco.
 6. `RunJobsInIISContext` de prod: lo revisa el responsable (§11.5).
-7. Jobs post-actualización de upstream (§11.3): siguen sin correr en Rock19Test.
+7. ~~Jobs post-actualización de upstream (§11.3)~~ — ensayados en Rock19Test el 2026-11-23 (ver §11.3).
+8. Kit del día: build completo desde un solo commit (`build-all.ps1 -FullObsidian`), publicarlo en 6229 y repetir
+   una prueba rápida (check-in, reservas, 433/451) antes de llevarlo a prod. Hoy `Rock.Blocks.dll` de 6229 es de
+   otro build que `Rock.dll`/`Rock.ViewModels.dll`/`Rock.Rest.dll` (trampa 8).
+9. En prod, antes de la ventana: correr `Dev Tools/Upgrade/19.8.1_preflight_bd_prod.sql` (solo lectura) y que
+   todo salga «OK».
 
 **Comandos para volver a levantar** (cada uno en su propia consola de PowerShell; SQL Server local debe estar arriba):
 
@@ -396,6 +404,10 @@ vacía `RockWeb`: tiene carpetas y archivos que solo existen en el servidor (§5
 6. Reservas dominicales (QREVENT): preguntar a TI si ya se desplegó en prod el paquete de servicios especiales
    (`docs/qrevent/DESPLIEGUE_RESERVAS_SERVICIOS_ESPECIALES.md`) y si ya se corrió su script. Se comprueba con
    `SELECT COL_LENGTH('dbo.SundayServiceSlot', 'ShowInApp')`: `NULL` = falta correrlo (§7.3, paso 5b).
+6b. Correr en el SQL de prod `Dev Tools/Upgrade/19.8.1_preflight_bd_prod.sql` (solo lectura, con el sitio arriba) y
+   guardar la salida. Todo debe decir «OK»: SQL Server ≥ 2016, nivel de compatibilidad ≥ 130, espacio para el
+   `.bak`, migraciones del core y de plugins iguales a la copia probada. Cualquier «REVISAR» detiene el upgrade
+   hasta entenderlo. (El bloque 8 del script responde el paso 6.)
 7. Armar el kit (fuera del repo) **desde un commit**, con `build-all.ps1 -FullObsidian`:
    - `Bin\` completo del build (122 DLLs de terceros cambian de versión, §4) + DLLs de los 8 plugins.
    - `Obsidian\` completo, `Plugins\{com_vidareal,EpayVisanetGateway,CybersourceInlineRestGateway}\`.
@@ -567,6 +579,11 @@ pierden nuestras personalizaciones; revisar la lista de jobs de cada upgrade fut
 | 224, 229 | Jobs normales nuevos (Outreach Toolbox, Analytics PostalCode); horarios `:10` cada hora y 01:20 | No son de actualización: decidir si quedan activos como los demás jobs de prod |
 
 Ninguno se recomienda «no correr»: los que tocan bloques arreglan páginas que la 19 dejó rotas.
+
+**Ensayo en Rock19Test (2026-11-23):** en este orden y con «Run Now» (con `RunJobsInIISContext=False` funciona):
+231, 233, 232 → 220, 221, 225, 228, 230 → 222 → 227, 223, 226. Cada uno terminó en segundos y se autoeliminó; 433 y
+451 quedaron con sus bloques Obsidian; cero excepciones. Detalle en `PLAN_PRUEBAS_19.8.1.md` §16. En prod, para
+confirmar que un job terminó, mirar que desapareció de la lista (si falla, se queda con el error en el estado).
 
 ### 11.4 Bloques huérfanos que ningún job arregla
 

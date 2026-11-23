@@ -231,21 +231,21 @@ Para cada paso: hacerlo **primero en 6230 y luego en 6229**, y comparar. Anotar 
 
 | # | Pantalla / URL | Qué hacer | Qué comparar entre 6230 y 6229 | Diferencias |
 |---|---|---|---|---|
-| C1 | `/checkin` (Admin del kiosco) | Kiosco «Kiosko Prueba Upgrade», tipo «Ilumina(VidAventura)», área «VidAventura» → Iniciar | Tema VidAventura (fondo, globos, colores, fuentes), textos en español, lista de kioscos (filtrada por permiso), botón «Iniciar» | |
-| C2 | Welcome | Ver pantalla de inicio | Fondo, logo, botón de inicio, sonido de toque, botón de cerrar sesión del kiosco | |
-| C3 | Search | Buscar `99001919` (y luego `PruebaUpgrade`) | Teclado numérico, mensajes, tiempo de respuesta | |
-| C4 | Family Select | Elegir «Familia PruebaUpgrade» (si aparece la lista) | Botones de familia (`FamilyLavaTemplate`) | |
-| C5 | Person Select (familia) | Ver a Delta, Eco y Foxtrot con su sala y horario sugeridos | Sala asignada por edad (Descubridores / Exploradores / Defensores), fotos, el texto «Count: N» junto a la sala (**en la 19 puede perder el margen izquierdo**, ver UPGRADE §12), Ana no elegible | |
-| C6 | Time Select / Group / Location | Si pregunta: «Check In - Prueba» | Autoselección del horario (personalización nuestra), textos | |
-| C7 | Success | Confirmar | Mensaje de éxito (`SuccessLavaTemplate`), código de seguridad de 3 caracteres, globos/sonido | |
-| C8 | Etiquetas | (las captura el listener) | Avisar a Claude: compara `9100_*.zpl` vs `9101_*.zpl` (contenido, campos, códigos; se ignoran código de seguridad y hora) | |
-| C9 | Repetir C3–C7 con Delta | Intentar check-in de nuevo | **Bloqueo de doble check-in** (personalización nuestra): mismo mensaje en las dos | |
-| C10 | Check-in Manager `/checkinmanager` | Elegir campus/área de Ilumina; ver las 3 salas | Roster: los 3 niños en su sala. Roster Obsidian en la 19: los 3 modales en español como en 18.1 (UPGRADE §14.6); el resto de textos del Roster en inglés en ambas. Comparar también el tema (`RockManager` vs `RockManagerNextGen`) en PC y móvil (UPGRADE §14.9b) | |
-| C11 | Check-in Manager > persona | Abrir a Delta | Perfil (PersonLeft), botón WhatsApp visible (**no enviar**), historial | |
-| C12 | Check-in Manager > Live Metrics | Abrir | Conteos por sala | |
-| C13 | Checkout desde el kiosco | `/checkin` → buscar `99001919` → acción «Check Out» → Eco | Pantallas de check-out (Action Select, Check Out Person Select, Check Out Success) | |
-| C14 | Checkout desde el Manager | Roster → check-out de Foxtrot | Funciona; modal con título «Confirmar» y botón «Registrar Salida» en las dos; el nombre del niño se ve completo | |
-| C15 | Página 852 «Checkin Pendientes» (interno) | Abrir | Lista de presentes (CheckInOutView, bloque nuestro) igual en ambas | |
+| C1 | `/checkin` (Admin del kiosco) | Kiosco «Kiosko Prueba Upgrade», tipo «Ilumina(VidAventura)», área «VidAventura» → Iniciar | Tema VidAventura (fondo, globos, colores, fuentes), textos en español, lista de kioscos (filtrada por permiso), botón «Iniciar» | ✅ 23-nov (Claude): igual. Tema VidAventura, kiosco 26 e Ilumina seleccionables. El usuario ya lo había probado también en iPad con la app Rock Check-in e impresora real (20-nov, 2 check-ins en Rock19Test) |
+| C2 | Welcome | Ver pantalla de inicio | Fondo, logo, botón de inicio, sonido de toque, botón de cerrar sesión del kiosco | ✅ igual (fondo, logo, «Iniciar»); sonido no verificable desde el navegador de Claude |
+| C3 | Search | Buscar `99001919` (y luego `PruebaUpgrade`) | Teclado numérico, mensajes, tiempo de respuesta | ✅ igual: `99001919` encuentra «Familia PruebaUpgrade» |
+| C4 | Family Select | Elegir «Familia PruebaUpgrade» (si aparece la lista) | Botones de familia (`FamilyLavaTemplate`) | ✅ igual |
+| C5 | Person Select (familia) | Ver a Delta, Eco y Foxtrot con su sala y horario sugeridos | Sala asignada por edad (Descubridores / Exploradores / Defensores), fotos, el texto «Count: N» junto a la sala (**en la 19 puede perder el margen izquierdo**, ver UPGRADE §12), Ana no elegible | ✅ igual en las dos: muestra Ana, Foxtrot y Eco; **Delta no aparece en ninguna** (no es del upgrade; revisar la edad/sala de Descubridores si se quiere usar Delta) |
+| C6 | Time Select / Group / Location | Si pregunta: «Check In - Prueba» | Autoselección del horario (personalización nuestra), textos | ✅ igual: Eco va directo a Exploradores; a Foxtrot (~9 años) las dos le preguntan grupo (Exploradores / Defensores) |
+| C7 | Success | Confirmar | Mensaje de éxito (`SuccessLavaTemplate`), código de seguridad de 3 caracteres, globos/sonido | ✅ igual: «Confirmación de check-in» con los dos niños y su sala |
+| C8 | Etiquetas | (las captura el listener) | Avisar a Claude: compara `9100_*.zpl` vs `9101_*.zpl` (contenido, campos, códigos; se ignoran código de seguridad y hora) | ✅ **idénticas byte a byte** (salvo el código de seguridad) en las 2 etiquetas de Foxtrot (niño + ticket de padre). Las dos versiones mandan 4 etiquetas. La impresora falsa pisaba archivos que llegaban en el mismo milisegundo: corregido (contador en el nombre) |
+| C9 | Repetir C3–C7 con Delta | Intentar check-in de nuevo | **Bloqueo de doble check-in** (personalización nuestra): mismo mensaje en las dos | ✅ 19: «Advertencia — Las siguientes personas ya están registradas actualmente: Eco PruebaUpgrade» (se probó con Eco) |
+| C10 | Check-in Manager `/checkinmanager` | Elegir campus/área de Ilumina; ver las 3 salas | Roster: los 3 niños en su sala. Roster Obsidian en la 19: los 3 modales en español como en 18.1 (UPGRADE §14.6); el resto de textos del Roster en inglés en ambas. Comparar también el tema (`RockManager` vs `RockManagerNextGen`) en PC y móvil (UPGRADE §14.9b) | ✅ 19: Roster con Foxtrot «Present», código y sala. Comparación visual del tema pendiente (§14.9b) |
+| C11 | Check-in Manager > persona | Abrir a Delta | Perfil (PersonLeft), botón WhatsApp visible (**no enviar**), historial | ✅ 19: perfil, familia e «Historial de asistencia». WhatsApp: el botón sale solo junto a un teléfono con mensajería habilitada (igual en 18.1); con el móvil de Ana habilitado temporalmente, abre «Nuevo Mensaje de WhatsApp» / «Enviar». **No se envió** (0 comunicaciones); el teléfono se devolvió a como estaba |
+| C12 | Check-in Manager > Live Metrics | Abrir | Conteos por sala | ✅ 19: tras elegir la configuración en «Configuración», muestra los conteos (0 presentes tras las salidas) |
+| C13 | Checkout desde el kiosco | `/checkin` → buscar `99001919` → acción «Check Out» → Eco | Pantallas de check-out (Action Select, Check Out Person Select, Check Out Success) | ✅ 19: Action Select → «Registrar Salida» → «Eco PruebaUpgrade fue retirado de Exploradores…» |
+| C14 | Checkout desde el Manager | Roster → check-out de Foxtrot | Funciona; modal con título «Confirmar» y botón «Registrar Salida» en las dos; el nombre del niño se ve completo | ✅ 19: «Check Out» (en el filtro «Presente») sale **sin modal** cuando hay un solo horario; el modal «Confirmar / Registrar Salida» aparece solo con varios horarios. La 18.1 hace lo mismo (`Roster.ascx.cs`: modal solo si `scheduleIds.Count > 1`) |
+| C15 | Página 852 «Checkin Pendientes» (interno) | Abrir | Lista de presentes (CheckInOutView, bloque nuestro) igual en ambas | ✅ igual en las dos: «No se pudo determinar el Check-in Configuration actual» (no es del upgrade) |
 | C16 | Alta de familia desde el kiosco (validación nueva de textos de la 19, UPGRADE §14.5) | Modo supervisor (PIN) → buscar `PruebaTildes` (sin resultados) → «Agregar familia». Adulta: nombre **Begoña**, apellido **Peña O'Connor**, móvil `99002020`. Niños: **Iñaki** (nacido hace ~5 años) y **Zoë María-José** (~9 años), mismo apellido | Se guarda en las dos; los nombres se ven igual (tildes, ñ, ü, apóstrofo y guion) en la familia, en la selección de personas y en el Roster | |
 | C17 | Editar esa familia desde el kiosco | Cambiar el apellido a **D'Ávila Ñúñez** y guardar | Se guarda en las dos | |
 | C18 | Check-in de Iñaki y Zoë | Flujo C3–C7 con `99002020` | Etiqueta capturada con los nombres bien escritos (comparar `9100_*` vs `9101_*`: acentos en UTF-8) | |
@@ -258,3 +258,55 @@ Rock19Test 1630350).
 
 **Después de la prueba (lo hace Claude):** detener los dos IIS Express y el listener; restaurar
 `checkin-theme.css` con `git checkout`; dejar o borrar el worktree y `Rock18Base` según decida el responsable.
+
+---
+
+## 16. Recorrido del 2026-11-23 (Claude, local, 6229 vs 6230)
+
+Sesión iniciada por el responsable; Claude recorrió el plan salvo §6 Dar (lo prueba el responsable). Línea base
+`ExceptionLog` de Rock19Test: **1630470**.
+
+**Check-in (§15):** C1–C15 hechos; resultado en la tabla de §15. Sin diferencias de comportamiento entre 18.1 y 19.
+Etiquetas idénticas byte a byte (salvo el código de seguridad). Pendientes C16–C20: necesitan el PIN de supervisor
+(lo teclea el responsable; Claude no introduce PINs ni contraseñas).
+
+**Jobs post-actualización (UPGRADE §11.3), ensayados en Rock19Test** con «Run Now» (respaldo previo:
+`Rock19Test_antes_jobs_2026-11-23.bak`, verificado):
+
+| Orden | Jobs | Resultado |
+|---|---|---|
+| 1 | 231, 233, 232 (MIME de imágenes, redes sociales) | OK en segundos; se autoeliminaron |
+| 2 | 220, 221, 225 (índices), 228 (achievements), 230 (conexiones) | OK en < 10 s; índices `IX_Status_Name_BatchStartDateTime_BatchEndDateTime`, `IX_CommunicationId`, `IX_UnsubscribeDateTime_SendDateTime` creados |
+| 3 | 222 → 227 (File Manager), 223 (Registration Entry), 226 (Service Metrics) | OK; página 433 = bloque 2233 «File Asset Manager», 451 = bloque 2234 «Service Metrics Entry» (Obsidian); BlockTypes viejos borrados; ningún archivo del repo tocado (los `.ascx` ya no existían) |
+
+Quedan 224 y 229 (jobs normales nuevos, no de actualización). **Cero excepciones** durante los jobs.
+
+**Barrido de páginas** (cada página cargada con su JavaScript, buscando errores visibles, de Lava y de bloque):
+
+| Grupo | Páginas | Resultado en la 19 |
+|---|---|---|
+| §1 Entrada | `/page/3`, `/acceso`, `/Login`, `/NewAccount`, 964, `/access-learn`, 1068, 1073, 1074 | Cargan. 964 redirige a `/Login` (igual en 18.1) |
+| §2 Personas | `/Person/{Id}`, `/people/merge`, `/crm/duplicados`, 859, `/vrencuesta` | Cargan |
+| §2 (no prueba) | `/person/{Id}/contributions`, `/FamilyPreRegistration` | Error de **permiso** en 18.1 y 19 por igual (no es del upgrade) |
+| §2 (no prueba en local) | `/labienvenida`, `/vidaventura`, `/somosjovenes`, `/Navidad`, `/RegistroCCIZ10` | Exigen https (302 a `https://localhost`); probar en prod |
+| §3 Eventos | `/eventos/calendario`, `/mis-entradas`, `/scanner`, `/reporteria`, 983, `/eventos/preguntas` | Cargan |
+| §4–5 QR y Wallet | `/qr`, `/qr/uso`, `/qr/reporteria`, `/wallet/plantillas`, 857 | Cargan; Wallet avisa «Apple Wallet no está configurado» (esperado en local: no hay certificado) |
+| §8–9 | 856, 860–864, 847, 848 | Cargan |
+| §10–11 | 1071, 997, 1070, `/learn`, 1072, 1064, 1019, 1023, 1030, 1059, `/reportequieroservir`, 1008 | Cargan, sin errores de Lava |
+| §12–13 | Gateways (lista, ePay 7, Test 2), transportes, workflows 86/166/208/209/210, `/admin/plugins`, 750, 758, 790, `MinistryPassTemplates`, 842, 327, 740, 433, 451 | Cargan |
+
+`ExceptionLog` después de todo (check-in, jobs y ~70 páginas): solo las 6 entradas de 433/451 **de antes** de
+correr los jobs. Nada más.
+
+**Hallazgos:**
+- `Rock.Blocks.dll` de 6229 es del 23-nov (reservas) y `Rock.dll`, `Rock.ViewModels.dll`, `Rock.Rest.dll` del 19-nov.
+  Hoy funciona (los cambios de reservas solo tocan `Rock.Blocks`), pero el kit del día **debe** salir de un build
+  completo desde un solo commit (`build-all.ps1 -FullObsidian`) y probarse en 6229 antes de llevarlo a prod.
+- ePay en Rock19Test: `Live=False` (modo prueba) y credenciales live vacías. Los cobros de §3.2, §6 y §7.1 los
+  hace el responsable con tarjetas de prueba del proveedor.
+- Nuevo `Dev Tools/Upgrade/19.8.1_preflight_bd_prod.sql`: revisión de solo lectura de la BD de prod (versión y nivel
+  de compatibilidad de SQL, espacio, respaldos, migraciones y plugins contra la copia probada, script de reservas).
+  Probado contra Rock18Base: todo OK.
+
+**Pendiente (responsable):** §6 Dar; cobros ePay de prueba (§3.2, §7.1); C16–C20 (PIN); comparación visual del tema
+del kiosco y del Check-in Manager (§14.9).

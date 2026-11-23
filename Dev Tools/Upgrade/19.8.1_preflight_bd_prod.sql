@@ -1,0 +1,99 @@
+/*
+    19.8.1_preflight_bd_prod.sql — revisión de la BD de producción ANTES del upgrade a Rock 19.8.1.
+
+    SOLO LECTURA: no cambia nada (solo SELECT sobre la BD, sys.* y msdb). Se puede correr con el sitio arriba.
+    Uso (en el servidor de SQL de prod, con una cuenta que pueda leer la BD y msdb):
+        sqlcmd -S <servidor> -E -d Rock18 -I -f 65001 -W -s "|" -i 19.8.1_preflight_bd_prod.sql -o preflight_resultado.txt
+    No incluye datos de personas: solo versiones, tamaños, conteos y nombres de migraciones.
+
+    Cada bloque dice qué valor se espera. Si algo marca «REVISAR», no seguir con el upgrade hasta entenderlo.
+    Valores de referencia tomados de la copia de prod del 18/19-nov (BD local Rock18Base) el 2026-11-23.
+*/
+SET NOCOUNT ON;
+
+PRINT '== 1. Servidor SQL (la 19 exige SQL Server 2016 o más nuevo; VersionValidationHelper)';
+SELECT CAST(SERVERPROPERTY('ProductVersion') AS varchar(20)) AS VersionProducto,
+       CAST(SERVERPROPERTY('ProductLevel') AS varchar(20)) AS Nivel,
+       CAST(SERVERPROPERTY('Edition') AS varchar(60)) AS Edicion,
+       CASE WHEN CAST(PARSENAME(CAST(SERVERPROPERTY('ProductVersion') AS varchar(20)), 4) AS int) >= 13
+            THEN 'OK' ELSE 'REVISAR: menor que SQL Server 2016' END AS Resultado;
+
+PRINT '== 2. Base de datos (nivel de compatibilidad >= 130; la 19 se niega a instalar con menos)';
+SELECT d.name AS BD, d.compatibility_level AS NivelCompat, d.recovery_model_desc AS Recuperacion,
+       d.state_desc AS Estado, d.collation_name AS Intercalacion, d.is_read_only AS SoloLectura,
+       CASE WHEN d.compatibility_level >= 130 THEN 'OK' ELSE 'REVISAR: subir el nivel de compatibilidad antes' END AS Resultado
+FROM sys.databases d WHERE d.name = DB_NAME();
+
+PRINT '== 3. Tamaño de la BD (referencia: ~7.3 GB en total, ~7.1 GB de datos)';
+SELECT type_desc AS Tipo, name AS ArchivoLogico, physical_name AS Ruta,
+       CAST(size * 8 / 1024 AS int) AS MB, CAST(FILEPROPERTY(name, 'SpaceUsed') * 8 / 1024 AS int) AS MB_usados
+FROM sys.database_files;
+
+PRINT '== 4. Espacio libre en los discos de la BD (el .bak COPY_ONLY ocupa casi lo mismo que los datos)';
+SELECT DISTINCT vs.volume_mount_point AS Disco,
+       CAST(vs.total_bytes / 1048576 AS bigint) AS MB_total,
+       CAST(vs.available_bytes / 1048576 AS bigint) AS MB_libres,
+       CASE WHEN vs.available_bytes / 1048576 > 3 * (SELECT SUM(size) * 8 / 1024 FROM sys.database_files)
+            THEN 'OK' ELSE 'REVISAR: poco espacio para .bak + crecimiento del log en las migraciones' END AS Resultado
+FROM sys.database_files f CROSS APPLY sys.dm_os_volume_stats(DB_ID(), f.file_id) vs;
+
+PRINT '== 5. Últimos respaldos registrados en msdb';
+SELECT TOP 5 bs.type AS Tipo /* D=completo, I=diferencial, L=log */, bs.is_copy_only AS CopyOnly,
+       bs.backup_finish_date AS Termino, CAST(bs.backup_size / 1048576 AS bigint) AS MB,
+       bmf.physical_device_name AS Archivo
+FROM msdb.dbo.backupset bs JOIN msdb.dbo.backupmediafamily bmf ON bmf.media_set_id = bs.media_set_id
+WHERE bs.database_name = DB_NAME() ORDER BY bs.backup_finish_date DESC;
+
+PRINT '== 6. Migraciones del core (esperado en 18.1: última 202511121736124_CodeGenerated_20251112, 707 filas)';
+SELECT (SELECT TOP 1 MigrationId FROM dbo.__MigrationHistory ORDER BY MigrationId DESC) AS UltimaMigracion,
+       (SELECT COUNT(*) FROM dbo.__MigrationHistory) AS Total,
+       CASE WHEN (SELECT TOP 1 MigrationId FROM dbo.__MigrationHistory ORDER BY MigrationId DESC) = '202511121736124_CodeGenerated_20251112'
+            THEN 'OK (igual que la copia probada)' ELSE 'REVISAR: prod no está donde la copia probada' END AS Resultado;
+
+PRINT '== 7. Migraciones de plugins (esperado = columna Esperado; el upgrade solo agrega hotfixes de «Rock»)';
+WITH Esperado AS (
+    SELECT * FROM (VALUES
+        ('apollosproject.ApollosPlugin', 2, 2), ('com.bemaservices.MailChimp', 4, 4),
+        ('com.bemaservices.WorkflowExtensions', 3, 3), ('com.blueboxmoon.AcmeCertificate', 6, 6),
+        ('com.blueboxmoon.DataToolkit', 8, 8), ('com.minecartstudio.MinePass.Client', 3, 3),
+        ('com.vidareal.DupDetect', 5, 5), ('com.vidareal.Events', 25, 9), ('com.vidareal.Qr', 7, 7),
+        ('com.vidareal.Translator', 4, 4), ('com.vidareal.Wallet', 16, 16), ('Rock', 270, 251),
+        ('Rock.Checkr', 11, 11), ('Rock.StatementGenerator', 3, 3),
+        ('rocks.pillars.ServiceReservation', 6, 6), ('tech.triumph.MinistryPass.Client', 3, 3)
+    ) v (Ensamblado, UltimoNumero, Filas)
+)
+SELECT COALESCE(e.Ensamblado, m.PluginAssemblyName) AS Ensamblado,
+       e.UltimoNumero AS EsperadoUltimo, m.UltimoNumero AS ProdUltimo, e.Filas AS EsperadoFilas, m.Filas AS ProdFilas,
+       CASE WHEN e.UltimoNumero = m.UltimoNumero AND e.Filas = m.Filas THEN 'OK'
+            WHEN e.Ensamblado IS NULL THEN 'REVISAR: plugin que no estaba en la copia probada'
+            WHEN m.PluginAssemblyName IS NULL THEN 'REVISAR: falta en prod'
+            ELSE 'REVISAR: distinto de la copia probada' END AS Resultado
+FROM Esperado e
+FULL JOIN (SELECT PluginAssemblyName, MAX(MigrationNumber) AS UltimoNumero, COUNT(*) AS Filas
+           FROM dbo.PluginMigration GROUP BY PluginAssemblyName) m ON m.PluginAssemblyName = e.Ensamblado
+ORDER BY 1;
+
+PRINT '== 8. Reservas dominicales: script QREVENT_SundayService_SlotSettings.sql (NULL = no se ha corrido; runbook §7.3 paso 5b)';
+SELECT COL_LENGTH('dbo.SundayServiceSlot', 'CheckInOpensMinutesBefore') AS ColumnaApertura,
+       COL_LENGTH('dbo.SundayServiceSlot', 'CheckInClosesMinutesAfter') AS ColumnaCierre,
+       COL_LENGTH('dbo.SundayServiceSlot', 'ShowInApp') AS ColumnaVisible;
+
+PRINT '== 9. Bloques que apuntan a un .ascx (los que la 19 quitó se revisan contra quitar_del_servidor.txt)';
+SELECT COUNT(*) AS BloquesWebForms FROM dbo.Block b JOIN dbo.BlockType bt ON bt.Id = b.BlockTypeId
+WHERE bt.Path LIKE '~/%.ascx';
+SELECT bt.Path, COUNT(*) AS Bloques FROM dbo.Block b JOIN dbo.BlockType bt ON bt.Id = b.BlockTypeId
+WHERE bt.Path IN ('~/Blocks/Cms/FileManager.ascx', '~/Blocks/Reporting/ServiceMetricsEntry.ascx',
+                  '~/Blocks/Communication/SystemPhoneNumberList.ascx', '~/Blocks/Event/InteractiveExperiences/InteractiveExperienceList.ascx')
+GROUP BY bt.Path;   -- esperado: las páginas 433, 451, 327, 740 (las arreglan los jobs / el job de UPGRADE §11.4)
+
+PRINT '== 10. Actividad en este momento (el día del cambio debe estar en 0 o casi)';
+SELECT COUNT(*) AS SesionesALaBD FROM sys.dm_exec_sessions WHERE database_id = DB_ID() AND session_id <> @@SPID;
+SELECT COUNT(*) AS CheckInsAbiertosHoy FROM dbo.Attendance
+WHERE StartDateTime >= CAST(GETDATE() AS date) AND EndDateTime IS NULL AND DidAttend = 1;
+
+PRINT '== 11. Tablas grandes (referencia de la copia probada: History ~3.8 M, AttributeValue ~565 mil)';
+SELECT TOP 8 t.name AS Tabla, SUM(p.rows) AS Filas
+FROM sys.tables t JOIN sys.partitions p ON p.object_id = t.object_id AND p.index_id IN (0, 1)
+GROUP BY t.name ORDER BY 2 DESC;
+
+PRINT '== Fin. Nada se modificó.';
