@@ -34,7 +34,7 @@ guía `GUIA_RESERVAS_DOMINGOS.md`.
 
 - Todas las pruebas pasaron en 18.1 (6231): ocultar/mostrar (servicio y plantilla al instante), Editar
   (lugares, puerta, «Puerta normal»), cierre tardío, llegar temprano, ventanas cruzadas.
-- **Ya está en la rama de la 19** (`Test_Update_18.1_a_18.8`, cherry-pick limpio), compilado y publicado en 6229;
+- **Ya está en la rama de la 19** (`Test_Update_18.1_a_19.8.1`, cherry-pick limpio), compilado y publicado en 6229;
   script corrido en `Rock19Test`; probado: crear especial, reservar, escanear, ocultar. Respaldo previo de la DLL
   y las pantallas de la 19 en `dev-isolation\respaldo_19_antes_reservas_2026-11-23`.
 - `Rock18Reservas` y `Rock19Test` quedaron idénticas al original de prod en sábados y domingos (comparadas

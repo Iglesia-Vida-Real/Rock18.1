@@ -838,7 +838,7 @@ de su atributo `AllowedScheduleIds`. Un horario especial exigía crear el Schedu
 agregarlo a los atributos de los bloques 862 y 863 y generar el slot con un rango de un día.
 
 **Rama:** `reservas-servicios-especiales`, sale de `hotfix-18.1` (`81ed172522`). El código de QREVENT
-es idéntico en `hotfix-18.1` y en la rama de la 19 (`Test_Update_18.1_a_18.8`), así que el mismo
+es idéntico en `hotfix-18.1` y en la rama de la 19 (`Test_Update_18.1_a_19.8.1`), así que el mismo
 cambio aplica en las dos (verificado: el parche se aplica limpio y compila contra 19.8.1, ver abajo).
 
 ### Cómo funciona
@@ -889,7 +889,7 @@ cambio aplica en las dos (verificado: el parche se aplica limpio y compila contr
   Schedule), Schedule 62 con `EffectiveStartDate/EndDate` = 2026-11-20, slot 557 (400, ReservedCount 1),
   reserva `Status = 3`. `ExceptionLog`: solo el ruido de arranque conocido y el correo de confirmación
   que no sale (SMTP aislado en `localhost:25`).
-- **Contra la 19 (sin tocar la carpeta de la 19):** worktree temporal de `Test_Update_18.1_a_18.8`
+- **Contra la 19 (sin tocar la carpeta de la 19):** worktree temporal de `Test_Update_18.1_a_19.8.1`
   (`7fbc965239`) con los artefactos de compilación copiados; `git apply --check` limpio; `Rock.Blocks`
   compila **0 errores** contra `Rock.dll` 19.8.1 sin advertencias en QREVENT; tipos del `.obs` sin
   errores contra el framework de la 19; en `Rock19Test` existen todas las columnas usadas (`Category`,
@@ -907,7 +907,7 @@ cambio aplica en las dos (verificado: el parche se aplica limpio y compila contr
 - Copiar la DLL reinicia el sitio (primera carga 2+ min): hacerlo fuera de horario de reservas.
 - Smoke test en prod: crear un especial de prueba para hoy, ver que aparece en la app, desactivarlo
   (sin reservas) y confirmar que desaparece.
-- **Llevar a la 19:** cherry-pick del commit de esta rama sobre `Test_Update_18.1_a_18.8` (se aplica
+- **Llevar a la 19:** cherry-pick del commit de esta rama sobre `Test_Update_18.1_a_19.8.1` (se aplica
   limpio), recompilar y probar en 6229. Pendiente de aprobación.
 
 ## Ajustes por cupo: horario de la puerta, visibilidad en la app y validación por reserva (2026-11-20 / 2026-11-23)

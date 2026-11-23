@@ -1,6 +1,6 @@
 # Archivos de RockWeb que la 19.8.1 BORRÓ y que hay que QUITAR del servidor de prod el día del upgrade.
 # Rutas relativas a RockWeb\. Generado el 2026-11-19 desde el repo:
-#   git diff --name-status --no-renames hotfix-18.1 Test_Update_18.1_a_18.8 -- RockWeb   (filtro D)
+#   git diff --name-status --no-renames hotfix-18.1 Test_Update_18.1_a_19.8.1 -- RockWeb   (filtro D)
 #   menos los que el build vuelve a generar (temas compilados, ver regenerados_por_el_build.txt),
 #   + DLLs de Bin que ningún build 19 produce (no están en git) + bundles .obs.js de fuentes borradas.
 # NO borrar: MOVER a una carpeta de respaldo fuera de RockWeb (p. ej. D:\deploy-backup\2026-xx-xx\retirados\).

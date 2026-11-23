@@ -304,7 +304,7 @@ Via `RockSMSMessage` cualquier Workflow Action de envío de SMS puede rutear men
 - **Limitación conocida:** el estado `read` de WhatsApp solo se escribe en `StatusNote`; no genera interacción de comunicación (no cuenta como "open" en los reportes de Email Analytics).
 - **PENDIENTE (2026-10-15):** limpiar los cuatro Global Attributes `Twilio*` huérfanos del Check-in Manager (ver "Notificaciones desde el Check-in Manager"); pueden seguir guardando credenciales de Twilio en la base sin que nada las use.
 
-## Upgrade a Rock 19.8.1 (2026-11-19, rama `Test_Update_18.1_a_18.8`, solo local)
+## Upgrade a Rock 19.8.1 (2026-11-19, rama `Test_Update_18.1_a_19.8.1`, solo local)
 
 Sin cambios de código. Dos ajustes en `Rock.WhatsApp.csproj` para que compile con la 19:
 

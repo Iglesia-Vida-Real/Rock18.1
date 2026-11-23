@@ -4,7 +4,7 @@
 > como mapa general: **dónde vive cada cosa nuestra y cómo se prueba**. La checklist de pruebas está en
 > `PLAN_PRUEBAS_19.8.1.md`.
 >
-> - **Código:** rama `Test_Update_18.1_a_18.8` contra el tag upstream `19.8.1` (`85705ceb0b`).
+> - **Código:** rama `Test_Update_18.1_a_19.8.1` contra el tag upstream `19.8.1` (`85705ceb0b`).
 >   `git diff --diff-filter=A` = 494 archivos agregados; `--diff-filter=M` = 144 archivos upstream modificados.
 > - **BD:** `Rock19Test` = copia de prod del 2026-11-18 (bacpac) ya migrada a 19.8.1. Las consultas fueron
 >   solo `SELECT`. No se listan datos de personas.

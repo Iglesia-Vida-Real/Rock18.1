@@ -23,7 +23,7 @@ Detalle técnico: `Rock.Blocks/QREVENT/CHANGES.md` (últimas secciones). Guía p
 | | Rama | Commits |
 |---|---|---|
 | 18.1 (lo que va a prod) | `reservas-servicios-especiales` (sale de `hotfix-18.1` `81ed172522`) | `8d1c644263`, `4075d88b3e`, `3965e6aec7`, `ffa1e4786a`, `ad7b0f6776` (+ este documento) |
-| 19 (upgrade) | `Test_Update_18.1_a_18.8` | `055bb6cbdb`, `563f523093`, `8ec5442d7a`, `bdb062dcc2`, `4f1f310323` (cherry-pick limpio) |
+| 19 (upgrade) | `Test_Update_18.1_a_19.8.1` (antes `Test_Update_18.1_a_18.8`; renombrada el 2026-11-23) | `055bb6cbdb`, `563f523093`, `8ec5442d7a`, `bdb062dcc2`, `4f1f310323` (cherry-pick limpio) |
 
 **Las dos ramas están solo en la máquina de desarrollo (sin push).** Antes del despliegue hay que subirlas
 al remoto y unir `reservas-servicios-especiales` a `hotfix-18.1` (con aprobación).
@@ -109,6 +109,6 @@ Recicla el sitio; primera carga 2+ min. Reiniciar el app pool para que Obsidian 
 
 ## Para la 19 (upgrade)
 
-Los commits ya están en `Test_Update_18.1_a_18.8`. Si el script se corre en prod **antes** del upgrade, las
+Los commits ya están en `Test_Update_18.1_a_19.8.1`. Si el script se corre en prod **antes** del upgrade, las
 columnas viajan solas con la BD. Agregar al runbook del upgrade (`docs/HANDOFF/UPGRADE_19.8.1.md`) el paso
 «correr `QREVENT_SundayService_SlotSettings.sql` si no se corrió antes» (idempotente).
