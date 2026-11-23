@@ -39,12 +39,12 @@
                                 </select>
                             </div>
 
-                            <div class="caField">
+                            <div v-if="activeTab !== 'Servicios especiales'" class="caField">
                                 <label class="caLabel">Desde</label>
                                 <input type="date" v-model="rangeStart" class="caInput" />
                             </div>
 
-                            <div class="caField">
+                            <div v-if="activeTab !== 'Servicios especiales'" class="caField">
                                 <label class="caLabel">Hasta</label>
                                 <input type="date" v-model="rangeEnd" class="caInput" />
                             </div>
@@ -56,7 +56,7 @@
                                 <button type="button" class="caChip" @click="applyPastPreset(12)">Últimas 12</button>
                                 <button type="button" class="caChip" @click="applyPastPreset(26)">Últimas 26</button>
                             </div>
-                            <div v-else class="caPresets">
+                            <div v-else-if="activeTab !== 'Servicios especiales'" class="caPresets">
                                 <button type="button" class="caChip" @click="applyConfigWeekPreset(0)">Esta semana</button>
                                 <button type="button" class="caChip" @click="applyConfigWeekPreset(-1)">Semana pasada</button>
                                 <button type="button" class="caChip" @click="applyPreset(28)">4 semanas</button>
@@ -185,6 +185,246 @@
                             </template>
                         </template>
 
+                        <!-- ===== Pestaña: Servicios especiales ===== -->
+                        <template v-else-if="activeTab === 'Servicios especiales'">
+                            <div class="caCard">
+                                <div class="caSpHead">
+                                    <div>
+                                        <div class="caCardTitle">Servicios especiales</div>
+                                        <div class="caCardSub">
+                                            Para Nochebuena, Año Nuevo o un domingo con otro horario. La gente reserva en la app
+                                            y la puerta los lee igual que un domingo normal.
+                                        </div>
+                                    </div>
+                                    <RockButton v-if="!formOpen" btnType="primary" @click="openForm">+ Nuevo servicio especial</RockButton>
+                                </div>
+
+                                <NotificationBox v-if="!config.doorColumnReady" alertType="info" class="caPlannerNote">
+                                    Por ahora todos los servicios se muestran en la app y la puerta abre 15 min antes y cierra 1 h 20 min después del inicio.
+                                    Para poder cambiar eso, TI debe preparar la base de datos (script QREVENT_SundayService_SlotSettings.sql).
+                                </NotificationBox>
+
+                                <NotificationBox v-if="createdResult" :alertType="createdResult.kind" class="caGenResult">
+                                    <div class="notranslate">{{ createdResult.title }}</div>
+                                    <ul v-if="createdResult.lines.length" class="caWarnList">
+                                        <li v-for="(l, i) in createdResult.lines" :key="i" class="notranslate">{{ l }}</li>
+                                    </ul>
+                                </NotificationBox>
+
+                                <!-- Formulario guiado -->
+                                <div v-if="formOpen" class="caSpForm">
+                                    <div class="caSpFormTitle">Nuevo servicio especial</div>
+
+                                    <div class="caSpSection">
+                                        <div class="caSpQ"><span class="caStepNum">1</span> ¿Cuándo es?</div>
+                                        <div class="caSpFields">
+                                            <div class="caField">
+                                                <label class="caLabel">Fecha</label>
+                                                <input type="date" v-model="fDate" :min="todayIso" class="caInput" />
+                                            </div>
+                                            <div class="caField">
+                                                <label class="caLabel">Hora de inicio</label>
+                                                <input type="time" v-model="fTime" step="300" class="caInput" />
+                                            </div>
+                                        </div>
+                                        <div v-if="fDateLong" class="caSpHint notranslate">{{ fDateLong }}</div>
+                                    </div>
+
+                                    <div class="caSpSection">
+                                        <div class="caSpQ"><span class="caStepNum">2</span> ¿Cómo se llama y cuántos lugares hay?</div>
+                                        <div class="caSpFields">
+                                            <div class="caField caFieldWide">
+                                                <label class="caLabel">Nombre <span class="caMuted">(opcional)</span></label>
+                                                <input type="text" v-model="fName" maxlength="40" placeholder="Ej.: Nochebuena" class="caInput" />
+                                            </div>
+                                            <div class="caField">
+                                                <label class="caLabel">Lugares</label>
+                                                <input type="number" min="1" step="1" v-model.number="fCap" class="caInput" />
+                                            </div>
+                                        </div>
+                                        <div class="caSpHint">
+                                            La hora se agrega sola al nombre. Así se verá: <b class="notranslate">«{{ fFinalName }}»</b>.
+                                        </div>
+                                    </div>
+
+                                    <div class="caSpSection">
+                                        <div class="caSpQ"><span class="caStepNum">3</span> ¿A qué hora abre y cierra la puerta?</div>
+                                        <div class="caSpFields">
+                                            <div class="caField">
+                                                <label class="caLabel">La puerta abre a las</label>
+                                                <input type="time" v-model="fOpenTime" step="300" class="caInput" :disabled="fStart === null || !config.doorColumnReady" />
+                                            </div>
+                                            <div class="caField">
+                                                <label class="caLabel">La puerta cierra a las</label>
+                                                <input type="time" v-model="fCloseTime" step="300" class="caInput" :disabled="fStart === null || !config.doorColumnReady" />
+                                            </div>
+                                        </div>
+                                        <div class="caSpHint">
+                                            <template v-if="fStart === null">Primero pon la hora de inicio.</template>
+                                            <template v-else>
+                                                Ya vienen con lo normal: 15 min antes y 1 h 20 min después del inicio. Cámbialas si este servicio lo necesita.
+                                                La app deja de aceptar reservas a la misma hora en que cierra la puerta.
+                                                <button v-if="fDoorIsCustom" type="button" class="caLinkBtn" @click="resetFormDoor">Volver a lo normal</button>
+                                            </template>
+                                        </div>
+                                        <div v-if="fDoorError" class="caSpError notranslate">{{ fDoorError }}</div>
+                                    </div>
+
+                                    <div class="caSpSection">
+                                        <div class="caSpQ"><span class="caStepNum">4</span> ¿Se muestra en la página de reservas?</div>
+                                        <label class="caCheck">
+                                            <input type="checkbox" v-model="fShow" :disabled="!config.doorColumnReady" />
+                                            <span>Mostrar en la app de reservas <span class="caMuted">(la gente lo ve y puede reservar)</span></span>
+                                        </label>
+                                        <div v-if="!fShow" class="caSpHint">
+                                            No aparecerá en la página de reservas, pero la puerta lo leerá igual. Puedes mostrarlo después con «Editar».
+                                        </div>
+                                    </div>
+
+                                    <!-- Solo se pregunta por los servicios ACTIVOS de ese día. Los desactivados se muestran
+                                         como información y el formulario nunca los reactiva (2026-11-23: ofrecer «Se mantiene»
+                                         en uno desactivado lo reactivaba sin querer). -->
+                                    <div v-if="fActiveDaySlots.length > 0 || fInactiveDayNames.length > 0" class="caSpSection">
+                                        <div class="caSpQ"><span class="caStepNum">5</span> Ese día ya hay otros servicios. ¿Siguen ese día?</div>
+                                        <div v-for="s in fActiveDaySlots" :key="s.slotId" class="caKeepRow">
+                                            <div class="caKeepMain">
+                                                <span class="notranslate caKeepName">{{ s.scheduleName }}</span>
+                                                <span v-if="s.isSpecial" class="caBadge caBadgeSpecial">Especial</span>
+                                                <span class="caMuted caSmall notranslate">· {{ s.reservedCount }} reservados</span>
+                                            </div>
+                                            <div class="caChoice" role="group">
+                                                <button type="button" class="caChoiceBtn" :class="{ isActive: s.keep }" @click="s.keep = true">Sí habrá</button>
+                                                <button type="button" class="caChoiceBtn" :class="{ isActive: !s.keep }" :disabled="s.reservedCount + s.holdCount > 0" @click="s.keep = false">No habrá</button>
+                                            </div>
+                                            <div v-if="s.reservedCount + s.holdCount > 0" class="caKeepNote">
+                                                Tiene reservas: no se puede quitar. Puedes ocultarlo de la app con «Editar» en «Semana normal» y avisar a quienes reservaron.
+                                            </div>
+                                        </div>
+                                        <div v-if="fInactiveDayNames.length > 0" class="caSpHint notranslate">
+                                            Ya desactivados ese día (no cambian): {{ fInactiveDayNames.join(", ") }}.
+                                        </div>
+                                    </div>
+
+                                    <div v-if="timelineRows.length > 0" class="caSpSection">
+                                        <div class="caSpQ">Así quedará la puerta ese día</div>
+                                        <div class="caTimeline">
+                                            <div class="caTimelineRow caTimelineAxisRow">
+                                                <div class="caTimelineLabel"></div>
+                                                <div class="caTimelineTrack caTimelineAxis">
+                                                    <span v-for="t in timelineTicks" :key="t.label" class="caTimelineTick notranslate" :style="{ left: t.left + '%' }">{{ t.label }}</span>
+                                                </div>
+                                                <div class="caTimelineHours"></div>
+                                            </div>
+                                            <div v-for="r in timelineRows" :key="r.key" class="caTimelineRow" :class="{ isOff: !r.active, isPreview: r.preview }">
+                                                <div class="caTimelineLabel notranslate" :title="r.name">{{ r.name }}</div>
+                                                <div class="caTimelineTrack">
+                                                    <div class="caTimelineBar" :class="{ isSpecial: r.special, isOff: !r.active, isPreview: r.preview }" :style="{ left: r.left + '%', width: r.width + '%' }" :title="r.title">
+                                                        <span class="caTimelineStart" :style="{ left: r.startPct + '%' }"></span>
+                                                    </div>
+                                                </div>
+                                                <div class="caTimelineHours notranslate">{{ r.hoursText }}</div>
+                                            </div>
+                                            <div class="caTimelineLegend">
+                                                <span><i class="caLegendBar isPreview"></i> Este servicio especial</span>
+                                                <span><i class="caLegendBar"></i> Otros servicios</span>
+                                                <span><i class="caLegendBar isOff"></i> No habrá</span>
+                                                <span><i class="caLegendStart"></i> Hora de inicio</span>
+                                            </div>
+                                            <div v-if="hasOverlap" class="caTimelineNote">
+                                                Algunas puertas están abiertas al mismo tiempo. No hay problema: el escáner reconoce el servicio de cada reserva.
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="caSpSummary">
+                                        <div class="caSpSummaryTitle">Resumen</div>
+                                        <div v-if="fMissing" class="caSpSummaryMissing notranslate">{{ fMissing }}</div>
+                                        <ul v-else>
+                                            <li v-for="(l, i) in fSummary" :key="i" class="notranslate">{{ l }}</li>
+                                        </ul>
+                                        <div class="caSpActions">
+                                            <RockButton btnType="primary" @click="createSpecial" :disabled="formBusy || !!fMissing">
+                                                <span class="notranslate">{{ formBusy ? "Creando…" : "Crear servicio especial" }}</span>
+                                            </RockButton>
+                                            <RockButton btnType="link" @click="closeForm" :disabled="formBusy">Cancelar</RockButton>
+                                        </div>
+                                        <NotificationBox v-if="formError" alertType="warning" class="caGenResult">
+                                            <span class="notranslate">{{ formError }}</span>
+                                        </NotificationBox>
+                                    </div>
+                                </div>
+
+                                <!-- Programados -->
+                                <div class="caSpListTitle">Programados</div>
+                                <div v-if="upcomingBusy && upcomingSpecials.length === 0" class="caMuted caSmall">Cargando…</div>
+                                <div v-else-if="upcomingSpecials.length === 0" class="caEmpty caEmptyCompact">
+                                    Todavía no hay servicios especiales. Usa «+ Nuevo servicio especial».
+                                </div>
+                                <div v-for="s in upcomingSpecials" :key="s.slotId" class="caSpCard" :class="{ isInactive: !s.isActive }">
+                                    <div class="caSpCardRow">
+                                        <div class="caSpCardDate notranslate">{{ s.occurrenceDateText }}</div>
+                                        <div class="caSpCardMain">
+                                            <div class="caSpCardName">
+                                                <span class="notranslate">{{ s.scheduleName }}</span>
+                                                <span v-if="!s.isActive" class="caBadge caBadgeOff">Desactivado</span>
+                                                <span v-else-if="!s.showInApp" class="caBadge caBadgeHidden">Oculto en la app</span>
+                                            </div>
+                                            <div class="caMuted caSmall notranslate">
+                                                {{ s.reservedCount }} de {{ s.capacity }} reservados<template v-if="s.checkedInCount"> · {{ s.checkedInCount }} ingresaron</template><template v-if="s.timeText"> · Puerta de {{ doorRangeText(s) }}</template>
+                                            </div>
+                                        </div>
+                                        <div class="caSpCardActions">
+                                            <button type="button" class="caMiniBtn" :disabled="rowBusy === s.slotId" @click="toggleEditor(s)">
+                                                {{ editors[s.slotId] ? "Cerrar" : "Editar" }}
+                                            </button>
+                                            <button type="button" class="caMiniBtn" :disabled="rowBusy === s.slotId" @click="toggleFromUpcoming(s)">
+                                                <span class="notranslate">{{ s.isActive ? "Desactivar" : "Reactivar" }}</span>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div v-if="editors[s.slotId]" class="caEditor">
+                                        <div class="caEditorFields">
+                                            <div class="caField">
+                                                <label class="caLabel">Lugares</label>
+                                                <input type="number" min="0" step="1" v-model.number="editors[s.slotId].capacity" class="caInput" />
+                                            </div>
+                                            <div class="caField">
+                                                <label class="caLabel">La puerta abre a las</label>
+                                                <input type="time" step="300" v-model="editors[s.slotId].openTime" class="caInput" :disabled="!config.doorColumnReady || !s.timeText" />
+                                            </div>
+                                            <div class="caField">
+                                                <label class="caLabel">La puerta cierra a las</label>
+                                                <input type="time" step="300" v-model="editors[s.slotId].closeTime" class="caInput" :disabled="!config.doorColumnReady || !s.timeText" />
+                                            </div>
+                                        </div>
+                                        <label class="caCheck">
+                                            <input type="checkbox" v-model="editors[s.slotId].showInApp" :disabled="!config.doorColumnReady" />
+                                            <span>Mostrar en la app de reservas</span>
+                                        </label>
+                                        <div v-if="editorError(s)" class="caSpError notranslate">{{ editorError(s) }}</div>
+                                        <div class="caEditorActions">
+                                            <button type="button" class="caMiniBtn caMiniBtnSave" :disabled="rowBusy === s.slotId || !!editorError(s)" @click="saveEditor(s)">Guardar</button>
+                                            <button type="button" class="caMiniBtn" :disabled="rowBusy === s.slotId || !config.doorColumnReady || !s.timeText" @click="normalEditor(s)">Puerta normal</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <details class="caHowTo">
+                                    <summary>¿Cómo funciona?</summary>
+                                    <ul>
+                                        <li>La app muestra los servicios de los próximos 7 días: un servicio especial se puede reservar desde 6 días antes.</li>
+                                        <li>«Mostrar en la app» decide si la gente lo ve en la página de reservas. Si está oculto, nadie nuevo puede reservar, pero quien ya reservó entra igual con su QR.</li>
+                                        <li>La puerta normalmente abre 15 min antes y cierra 1 h 20 min después del inicio. Se puede cambiar en cada servicio (también en los normales, desde «Semana normal» → Editar).</li>
+                                        <li>Si alguien llega antes de que abra la puerta, el escáner le dice a qué hora abre su servicio.</li>
+                                        <li>Un servicio con reservas no se puede desactivar: hazlo antes de que abra la reserva o avisa primero a quienes reservaron.</li>
+                                        <li>Mientras un día tenga un servicio especial, «Aplicar plantilla» no vuelve a activar los servicios normales de ese día.</li>
+                                        <li>Para quitar un servicio especial usa «Desactivar». No lo borres desde Horarios de Rock.</li>
+                                    </ul>
+                                </details>
+                            </div>
+                        </template>
+
                         <template v-else>
                             <!-- ===== Zona 2: Plantilla ===== -->
                             <div class="caCard">
@@ -201,16 +441,22 @@
                                             <span class="caTplMeta">{{ row.dayText }}<template v-if="row.timeText"> · {{ row.timeText }}</template></span>
                                         </label>
 
-                                        <div class="caTplCap">
-                                            <span class="caTplCapLabel">Capacidad</span>
-                                            <input type="number" min="0" step="1" v-model.number="row.capacity" class="caInput caCapInput" :disabled="!row.include" />
+                                        <div class="caTplRight">
+                                            <label class="caCheck caCheckSm" title="Si lo desmarcas, los horarios que cree la plantilla no aparecen en la página de reservas (la puerta los lee igual)">
+                                                <input type="checkbox" v-model="row.showInApp" :disabled="!row.include || !config.doorColumnReady" />
+                                                <span>Visible en la app</span>
+                                            </label>
+                                            <div class="caTplCap">
+                                                <span class="caTplCapLabel">Capacidad</span>
+                                                <input type="number" min="0" step="1" v-model.number="row.capacity" class="caInput caCapInput" :disabled="!row.include" />
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
 
                                 <label class="caOption">
                                     <input type="checkbox" v-model="overwriteCapacity" />
-                                    <span>Sobrescribir la capacidad de las fechas que ya existen <span class="caMuted">(nunca por debajo de los lugares ya tomados)</span></span>
+                                    <span>Sobrescribir capacidad y «visible en la app» de las fechas que ya existen <span class="caMuted">(nunca por debajo de los lugares ya tomados)</span></span>
                                 </label>
 
                                 <label class="caOption">
@@ -234,181 +480,6 @@
                                 </NotificationBox>
                             </div>
 
-                            <!-- ===== Zona 2b: Planificar un día (servicios del día, apertura de la puerta y servicio especial) ===== -->
-                            <div ref="plannerCard" class="caCard caPlanner">
-                                <div class="caCardTitle">Planificar un día</div>
-                                <div class="caCardSub">
-                                    Elige una fecha para ver sus servicios en una línea de tiempo, cambiar a qué hora abre la puerta,
-                                    desactivar los que no habrá o agregar un servicio especial (Nochebuena, un domingo con otro horario).
-                                </div>
-
-                                <NotificationBox v-if="!config.doorColumnReady" alertType="info" class="caPlannerNote">
-                                    Para cambiar a qué hora abre la puerta falta preparar la base de datos (TI: script QREVENT_SundayService_DoorWindow.sql).
-                                    Mientras tanto la puerta abre <span class="notranslate">{{ defaultDoor }}</span> min antes en todos los servicios; lo demás funciona igual.
-                                </NotificationBox>
-
-                                <!-- Paso 1: fecha -->
-                                <div class="caStepTitle"><span class="caStepNum">1</span> Elige la fecha</div>
-                                <div class="caPlannerDate">
-                                    <input type="date" v-model="specialDate" :min="todayIso" class="caInput caDateInput" />
-                                    <span v-if="specialDate" class="caPlannerDateText notranslate">{{ plannerDateLong }}</span>
-                                </div>
-
-                                <div v-if="!specialDate" class="caEmpty caEmptyCompact">
-                                    Elige una fecha para ver y ajustar sus servicios.
-                                </div>
-
-                                <template v-else>
-                                    <!-- Paso 2: línea de tiempo -->
-                                    <div class="caStepTitle"><span class="caStepNum">2</span> Así queda la puerta ese día</div>
-                                    <div v-if="specialDayBusy && specialDaySlots.length === 0" class="caMuted caSmall">Cargando…</div>
-                                    <div v-else-if="timelineRows.length === 0" class="caMuted caSmall">
-                                        Ese día todavía no hay servicios. Puedes agregar uno especial en el paso 4.
-                                    </div>
-                                    <div v-else class="caTimeline">
-                                        <div class="caTimelineRow caTimelineAxisRow">
-                                            <div class="caTimelineLabel"></div>
-                                            <div class="caTimelineTrack caTimelineAxis">
-                                                <span v-for="t in timelineTicks" :key="t.label" class="caTimelineTick notranslate" :style="{ left: t.left + '%' }">{{ t.label }}</span>
-                                            </div>
-                                            <div class="caTimelineHours"></div>
-                                        </div>
-                                        <div v-for="r in timelineRows" :key="r.key" class="caTimelineRow" :class="{ isOff: !r.active, isPreview: r.preview }">
-                                            <div class="caTimelineLabel notranslate" :title="r.name">{{ r.name }}</div>
-                                            <div class="caTimelineTrack">
-                                                <div class="caTimelineBar" :class="{ isSpecial: r.special, isOff: !r.active, isPreview: r.preview }" :style="{ left: r.left + '%', width: r.width + '%' }" :title="r.title">
-                                                    <span class="caTimelineStart" :style="{ left: r.startPct + '%' }"></span>
-                                                </div>
-                                            </div>
-                                            <div class="caTimelineHours notranslate">{{ r.hoursText }}</div>
-                                        </div>
-                                        <div class="caTimelineLegend">
-                                            <span><i class="caLegendBar"></i> Puerta abierta (lee QR)</span>
-                                            <span><i class="caLegendStart"></i> Inicio del servicio</span>
-                                            <span><i class="caLegendBar isSpecial"></i> Especial</span>
-                                            <span><i class="caLegendBar isOff"></i> Desactivado</span>
-                                            <span v-if="specialMinutes !== null"><i class="caLegendBar isPreview"></i> Nuevo (aún sin crear)</span>
-                                        </div>
-                                        <div v-if="hasOverlap" class="caTimelineNote">
-                                            Algunas ventanas se cruzan. No hay problema: la puerta reconoce el servicio de cada reserva.
-                                        </div>
-                                    </div>
-
-                                    <!-- Paso 3: servicios del día -->
-                                    <template v-if="specialDaySlots.length > 0">
-                                        <div class="caStepTitle"><span class="caStepNum">3</span> Ajusta los servicios de ese día</div>
-                                        <div v-for="s in specialDaySlots" :key="s.slotId" class="caDayService" :class="{ isInactive: !s.isActive }">
-                                            <div class="caDayServiceMain">
-                                                <div class="caSpecialDayName">
-                                                    <span class="notranslate">{{ s.scheduleName }}</span>
-                                                    <span v-if="s.isSpecial" class="caBadge caBadgeSpecial">Especial</span>
-                                                    <span v-if="!s.isActive" class="caBadge caBadgeOff">Desactivado</span>
-                                                </div>
-                                                <div class="caMuted caSmall notranslate">
-                                                    {{ s.reservedCount }} de {{ s.capacity }} reservados<template v-if="s.checkedInCount"> · {{ s.checkedInCount }} ingresaron</template><template v-if="s.timeText"> · Puerta de {{ doorRangeText(s.timeText, s.draftDoor) }}</template>
-                                                </div>
-                                            </div>
-                                            <div class="caDayServiceActions">
-                                                <label class="caDoorEdit" title="Minutos antes del inicio en que la puerta empieza a leer los QR de este servicio">
-                                                    <span class="caTplCapLabel">Puerta abre</span>
-                                                    <input type="number" min="0" :max="maxDoor" step="5" v-model.number="s.draftDoor" class="caInput caDoorInput" :disabled="!config.doorColumnReady || rowBusy === s.slotId" />
-                                                    <span class="caTplCapLabel">min antes</span>
-                                                </label>
-                                                <button v-if="s.draftDoor !== s.doorOpensMinutes" type="button" class="caMiniBtn caMiniBtnSave" :disabled="rowBusy === s.slotId" @click="saveDoor(s)">Guardar</button>
-                                                <button v-else-if="s.doorIsCustom" type="button" class="caMiniBtn" :disabled="rowBusy === s.slotId" :title="'Volver a ' + defaultDoor + ' min antes'" @click="resetDoor(s)">
-                                                    <span class="notranslate">Volver a {{ defaultDoor }}</span>
-                                                </button>
-                                                <button type="button" class="caMiniBtn" :disabled="rowBusy === s.slotId" @click="toggleFromSpecialDay(s)">
-                                                    <span class="notranslate">{{ s.isActive ? "Desactivar" : "Reactivar" }}</span>
-                                                </button>
-                                            </div>
-                                        </div>
-                                        <div class="caMuted caSmall caStepHint">
-                                            Un servicio con reservas no se puede desactivar: desactívalo antes de que abra la reserva
-                                            (<span class="notranslate">{{ registrationWindowDays }}</span> días antes) o avisa primero a quienes reservaron.
-                                        </div>
-                                    </template>
-
-                                    <!-- Paso 4: servicio especial -->
-                                    <div class="caStepTitle">
-                                        <span class="caStepNum">{{ specialDaySlots.length > 0 ? 4 : 3 }}</span> Agrega un servicio especial ese día <span class="caMuted">(opcional)</span>
-                                    </div>
-                                    <div class="caSpecialGrid">
-                                        <div class="caField">
-                                            <label class="caLabel">Hora de inicio</label>
-                                            <input type="time" v-model="specialTime" step="300" class="caInput" />
-                                        </div>
-                                        <div class="caField">
-                                            <label class="caLabel">Nombre <span class="caMuted">(opcional)</span></label>
-                                            <input type="text" v-model="specialName" maxlength="40" placeholder="Ej.: Nochebuena" class="caInput" />
-                                        </div>
-                                        <div class="caField">
-                                            <label class="caLabel">Capacidad</label>
-                                            <input type="number" min="1" step="1" v-model.number="specialCapacity" class="caInput" />
-                                        </div>
-                                        <div class="caField">
-                                            <label class="caLabel">Puerta abre (min antes)</label>
-                                            <input type="number" min="0" :max="maxDoor" step="5" v-model.number="specialDoor" class="caInput" :disabled="!config.doorColumnReady" />
-                                        </div>
-                                    </div>
-
-                                    <div class="caPreviewBar">
-                                        <div class="caPreviewText">
-                                            <span class="notranslate">{{ specialPreviewText }}</span>
-                                        </div>
-                                        <RockButton btnType="primary" @click="createSpecial" :disabled="specialBusy || !specialCanCreate">
-                                            <span class="notranslate">{{ specialBusy ? "Creando…" : "Crear servicio especial" }}</span>
-                                        </RockButton>
-                                    </div>
-
-                                    <NotificationBox v-if="specialResult" :alertType="specialResult.kind" class="caGenResult">
-                                        <span class="notranslate">{{ specialResult.message }}</span>
-                                        <div v-if="specialResult.kind === 'success' && !specialDateInRange" class="caEmptyAction">
-                                            <button type="button" class="caChip" @click="showSpecialDateInList">Ver ese día en la lista de abajo</button>
-                                        </div>
-                                    </NotificationBox>
-                                </template>
-
-                                <!-- Próximos servicios especiales (desde hoy), sin depender del rango de la lista -->
-                                <div class="caSpecialDay">
-                                    <div class="caSpecialDayTitle">Próximos servicios especiales</div>
-                                    <div v-if="upcomingBusy && upcomingSpecials.length === 0" class="caMuted caSmall">Cargando…</div>
-                                    <div v-else-if="upcomingSpecials.length === 0" class="caMuted caSmall">
-                                        No hay servicios especiales programados.
-                                    </div>
-                                    <div v-else>
-                                        <div v-for="s in upcomingSpecials" :key="s.slotId" class="caSpecialDayRow" :class="{ isInactive: !s.isActive }">
-                                            <div class="caSpecialDayName">
-                                                <span class="notranslate caUpcomingDate">{{ s.occurrenceDateText }}</span>
-                                                <span class="notranslate">{{ s.scheduleName }}</span>
-                                                <span v-if="!s.isActive" class="caBadge caBadgeOff">Desactivado</span>
-                                                <span class="caMuted caSmall notranslate">· {{ s.reservedCount }} de {{ s.capacity }} reservados<template v-if="s.checkedInCount"> · {{ s.checkedInCount }} ingresaron</template><template v-if="s.timeText"> · Puerta de {{ doorRangeText(s.timeText, s.doorOpensMinutes) }}</template></span>
-                                            </div>
-                                            <div class="caUpcomingActions">
-                                                <button type="button" class="caMiniBtn" @click="planDay(s.occurrenceDate)">Planificar día</button>
-                                                <button type="button"
-                                                        class="caMiniBtn"
-                                                        :disabled="rowBusy === s.slotId"
-                                                        @click="toggleFromUpcoming(s)">
-                                                    <span class="notranslate">{{ s.isActive ? "Desactivar" : "Reactivar" }}</span>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <details class="caHowTo">
-                                    <summary>¿Cómo funciona? (Nochebuena, un domingo con un solo servicio, llegar temprano)</summary>
-                                    <ul>
-                                        <li><b>Nochebuena u otra fecha especial:</b> elige la fecha, pon hora, nombre y capacidad, y crea el servicio. Se puede reservar en la app desde <span class="notranslate">{{ registrationWindowDays - 1 }}</span> días antes.</li>
-                                        <li><b>Domingo con un solo servicio:</b> elige la fecha, desactiva los horarios normales que no habrá (antes de que abra la reserva) y crea el especial. Mientras ese día tenga un especial, «Aplicar plantilla» no vuelve a activar sus horarios normales.</li>
-                                        <li><b>¿A qué hora abre la puerta?</b> Por defecto <span class="notranslate">{{ defaultDoor }}</span> min antes del inicio, y cierra <span class="notranslate">{{ closesAfterText }}</span> después (igual que la reserva). Puedes cambiar la apertura de cada servicio en el paso 3 o al crear el especial.</li>
-                                        <li><b>Si alguien llega antes:</b> el escáner le dice a qué hora abre su servicio. Si dos ventanas se cruzan, la puerta reconoce el servicio de cada reserva.</li>
-                                        <li><b>Para quitar un especial:</b> «Desactivar» (si aún no tiene reservas). No lo borres desde Horarios de Rock.</li>
-                                    </ul>
-                                </details>
-                            </div>
-
                             <!-- ===== Zona 3: Disponibilidad actual ===== -->
                             <div class="caCard">
                                 <div class="caCardTitle">Disponibilidad del rango</div>
@@ -422,44 +493,34 @@
                                 </div>
 
                                 <div v-for="d in days" :key="d.occurrenceDate" class="caDay">
-                                    <div class="caDayTitle caDayTitleRow">
-                                        <span>{{ d.occurrenceDateText }}</span>
-                                        <button type="button" class="caLinkBtn" @click="planDay(d.occurrenceDate)">Planificar este día</button>
-                                    </div>
+                                    <div class="caDayTitle">{{ d.occurrenceDateText }}</div>
 
-                                    <div v-for="s in d.slots" :key="s.slotId" class="caSlot" :class="{ isInactive: !s.isActive }">
+                                    <div v-for="s in d.slots" :key="s.slotId" class="caSlotWrap">
+                                    <div class="caSlot" :class="{ isInactive: !s.isActive }">
                                         <div class="caSlotMain">
                                             <div class="caSlotName">
                                                 {{ s.scheduleName }}
                                                 <span v-if="s.isSpecial" class="caBadge caBadgeSpecial">Especial</span>
                                                 <span v-if="!s.isActive" class="caBadge caBadgeOff">Inactivo</span>
+                                                <span v-else-if="!s.showInApp" class="caBadge caBadgeHidden">Oculto en la app</span>
                                             </div>
                                             <div class="caOccBar">
                                                 <div class="caOccFill" :style="{ width: occupancyPercent(s) + '%' }" :class="{ isFull: s.available === 0 }"></div>
                                             </div>
                                             <div class="caSlotStats">
+                                                <span>Lugares <b>{{ s.capacity }}</b></span>
                                                 <span>Reservados <b>{{ s.reservedCount }}</b></span>
                                                 <span>Ingresaron <b>{{ s.checkedInCount }}</b></span>
                                                 <span>Holds <b>{{ s.holdCount }}</b></span>
                                                 <span :class="s.available === 0 ? 'caStatDanger' : 'caStatOk'">Disponibles <b>{{ s.available }}</b></span>
-                                                <span v-if="s.timeText" class="notranslate">Puerta <b>{{ doorRangeText(s.timeText, s.doorOpensMinutes) }}</b></span>
+                                                <span v-if="s.timeText" class="notranslate">Puerta <b>{{ doorRangeText(s) }}</b></span>
                                             </div>
                                         </div>
 
                                         <div class="caSlotActions">
-                                            <div class="caTplCap">
-                                                <span class="caTplCapLabel">Capacidad</span>
-                                                <input type="number" min="0" step="1" v-model.number="s.draftCapacity" class="caInput caCapInput" :disabled="rowBusy === s.slotId" />
-                                                <button
-                                                    v-if="s.draftCapacity !== s.capacity"
-                                                    type="button"
-                                                    class="caMiniBtn caMiniBtnSave"
-                                                    :disabled="rowBusy === s.slotId"
-                                                    @click="saveCapacity(s)">
-                                                    Guardar
-                                                </button>
-                                            </div>
-
+                                            <button type="button" class="caMiniBtn" :disabled="rowBusy === s.slotId" @click="toggleEditor(s)">
+                                                {{ editors[s.slotId] ? "Cerrar" : "Editar" }}
+                                            </button>
                                             <button
                                                 type="button"
                                                 class="caMiniBtn"
@@ -468,6 +529,34 @@
                                                 {{ s.isActive ? "Desactivar" : "Reactivar" }}
                                             </button>
                                         </div>
+                                    </div>
+
+                                    <div v-if="editors[s.slotId]" class="caEditor caEditorInList">
+                                        <div class="caEditorFields">
+                                            <div class="caField">
+                                                <label class="caLabel">Lugares</label>
+                                                <input type="number" min="0" step="1" v-model.number="editors[s.slotId].capacity" class="caInput" />
+                                            </div>
+                                            <div class="caField">
+                                                <label class="caLabel">La puerta abre a las</label>
+                                                <input type="time" step="300" v-model="editors[s.slotId].openTime" class="caInput" :disabled="!config.doorColumnReady || !s.timeText" />
+                                            </div>
+                                            <div class="caField">
+                                                <label class="caLabel">La puerta cierra a las</label>
+                                                <input type="time" step="300" v-model="editors[s.slotId].closeTime" class="caInput" :disabled="!config.doorColumnReady || !s.timeText" />
+                                            </div>
+                                        </div>
+                                        <label class="caCheck">
+                                            <input type="checkbox" v-model="editors[s.slotId].showInApp" :disabled="!config.doorColumnReady" />
+                                            <span>Mostrar en la app de reservas <span class="caMuted">(si lo desmarcas, nadie nuevo puede reservar; quien ya reservó entra igual)</span></span>
+                                        </label>
+                                        <div v-if="!config.doorColumnReady" class="caSpHint">Para cambiar la puerta o la visibilidad falta preparar la base de datos (TI: script QREVENT_SundayService_SlotSettings.sql).</div>
+                                        <div v-if="editorError(s)" class="caSpError notranslate">{{ editorError(s) }}</div>
+                                        <div class="caEditorActions">
+                                            <button type="button" class="caMiniBtn caMiniBtnSave" :disabled="rowBusy === s.slotId || !!editorError(s)" @click="saveEditor(s)">Guardar</button>
+                                            <button type="button" class="caMiniBtn" :disabled="rowBusy === s.slotId || !config.doorColumnReady || !s.timeText" @click="normalEditor(s)">Puerta normal</button>
+                                        </div>
+                                    </div>
                                     </div>
                                 </div>
                             </div>
@@ -511,11 +600,13 @@ type InitBag = {
     defaultCampusId: number;
     startDate: string;
     endDate: string;
-    /** false = falta el script DoorWindow: la apertura queda fija en el valor de omisión. */
+    /** false = falta el script SlotSettings: puerta 15/80 fija y todo visible en la app. */
     doorColumnReady: boolean;
     defaultDoorOpensMinutes: number;
     maxDoorOpensMinutes: number;
     doorClosesMinutes: number;
+    minDoorClosesMinutes: number;
+    maxDoorClosesMinutes: number;
     registrationWindowDays: number;
     todayIso: string;
 };
@@ -536,8 +627,12 @@ type SlotBag = {
     timeText: string;
     /** Minutos antes del inicio en que abre la puerta (propio o de omisión). */
     doorOpensMinutes: number;
-    /** true = apertura propia; false = usa el valor de omisión. */
+    /** Minutos después del inicio en que cierran la puerta y la reserva (propio o de omisión). */
+    doorClosesMinutes: number;
+    /** true = apertura o cierre propios; false = usa los valores de omisión. */
     doorIsCustom: boolean;
+    /** false = no aparece en la app de reservas (la puerta lo sigue aceptando). */
+    showInApp: boolean;
     draftCapacity: number;
 };
 
@@ -579,6 +674,8 @@ type TemplateRow = {
     timeText: string;
     include: boolean;
     capacity: number;
+    /** false = los horarios que cree la plantilla no aparecen en la app de reservas. */
+    showInApp: boolean;
 };
 
 const config = useConfigurationValues<InitBag>();
@@ -643,7 +740,8 @@ const templateRows = ref<TemplateRow[]>((config.schedules || []).map(s => ({
     dayText: s.dayText,
     timeText: s.timeText,
     include: true,
-    capacity: 0
+    capacity: 0,
+    showInApp: true
 })));
 
 const overwriteCapacity = ref<boolean>(true);
@@ -733,8 +831,8 @@ const previewText = computed<string>(() => {
 });
 
 // ---- Métricas (pestaña dashboard) ----
-const tabs = ["Configuración", "Métricas"];
-const activeTab = ref<string>("Configuración");
+const tabs = ["Semana normal", "Servicios especiales", "Métricas"];
+const activeTab = ref<string>("Semana normal");
 
 const metricsWeeks = ref<WeekMetricsBag[]>([]);
 const metricsBusy = ref<boolean>(false);
@@ -1000,6 +1098,10 @@ function renderCharts(): void {
 }
 
 watch(activeTab, async tab => {
+    if (tab === "Servicios especiales") {
+        void loadUpcomingSpecials();
+        return;
+    }
     if (tab === "Métricas") {
         if (metricsWeeks.value.length === 0) {
             await loadMetrics();
@@ -1103,12 +1205,12 @@ async function generate(): Promise<void> {
     genBusy.value = true;
 
     try {
-        const res = await invokeBlockAction<{ inserted: number; updated: number; reactivated: number; deactivated: number; skippedLowCapacity: number; skippedSpecialDay: number; warnings: string[] }>("Generate", {
+        const res = await invokeBlockAction<{ inserted: number; updated: number; reactivated: number; deactivated: number; skippedLowCapacity: number; skippedSpecialDay: number; visibilityChanged: number; warnings: string[] }>("Generate", {
             bag: {
                 campusId: campusId.value,
                 startDate: startDate.value,
                 endDate: endDate.value,
-                items: templateRows.value.filter(r => r.include).map(r => ({ scheduleId: r.scheduleId, capacity: r.capacity || 0 })),
+                items: templateRows.value.filter(r => r.include).map(r => ({ scheduleId: r.scheduleId, capacity: r.capacity || 0, showInApp: r.showInApp })),
                 overwriteCapacity: overwriteCapacity.value,
                 deactivateOthers: deactivateOthers.value
             }
@@ -1127,6 +1229,7 @@ async function generate(): Promise<void> {
         if (d.deactivated) parts.push(`${d.deactivated} desactivados`);
         if (d.skippedLowCapacity) parts.push(`${d.skippedLowCapacity} omitidos por lugares ya tomados`);
         if (d.skippedSpecialDay) parts.push(`${d.skippedSpecialDay} omitidos por día con servicio especial`);
+        if (d.visibilityChanged) parts.push(`${d.visibilityChanged} con «visible en la app» cambiado`);
 
         const warnings = d.warnings || [];
         genResult.value = {
@@ -1146,43 +1249,7 @@ async function generate(): Promise<void> {
 }
 
 // ---- Edición individual ----
-
-async function saveCapacity(slot: SlotBag): Promise<void> {
-    if (rowBusy.value) {
-        return;
-    }
-
-    const capacity = Number(slot.draftCapacity);
-    if (!Number.isFinite(capacity) || capacity < 0) {
-        showToast("danger", "Capacidad inválida.");
-        slot.draftCapacity = slot.capacity;
-        return;
-    }
-
-    rowBusy.value = slot.slotId;
-    try {
-        const res = await invokeBlockAction<{ resultCode: number; message: string }>("UpdateSlot", {
-            bag: { slotId: slot.slotId, capacity }
-        });
-
-        if (res.isSuccess && res.data?.resultCode === 1) {
-            slot.capacity = capacity;
-            slot.available = Math.max(0, capacity - slot.reservedCount - slot.holdCount);
-            showToast("success", "Capacidad guardada.");
-        }
-        else {
-            slot.draftCapacity = slot.capacity;
-            showToast("danger", res.data?.message || res.errorMessage || "No se pudo guardar.");
-        }
-    }
-    catch {
-        slot.draftCapacity = slot.capacity;
-        showToast("danger", "Error guardando la capacidad.");
-    }
-    finally {
-        rowBusy.value = 0;
-    }
-}
+// Lugares, puerta y visibilidad se editan con el editor de cada servicio (saveEditor, más abajo).
 
 async function toggleActive(slot: SlotBag): Promise<void> {
     if (rowBusy.value) {
@@ -1211,134 +1278,518 @@ async function toggleActive(slot: SlotBag): Promise<void> {
     }
 }
 
-/** Desactivar/Reactivar desde la lista del rango: refresca también el planificador. */
-async function toggleFromList(slot: SlotBag): Promise<void> {
-    await toggleActive(slot);
-    void loadSpecialDay();
-    void loadUpcomingSpecials();
-}
-
-/** Desactivar/Reactivar desde el planificador del día: refresca la lista del rango y los próximos especiales. */
-async function toggleFromSpecialDay(slot: SlotBag): Promise<void> {
-    await toggleActive(slot);
-    void loadSpecialDay();
-    void loadUpcomingSpecials();
-    void loadSlots(false);
-}
-
-/** Desactivar/Reactivar desde «Próximos servicios especiales». */
-async function toggleFromUpcoming(slot: SlotBag): Promise<void> {
-    await toggleActive(slot);
-    void loadSpecialDay();
-    void loadUpcomingSpecials();
-    void loadSlots(false);
-}
-
-// ---- Planificar un día ----
-// Los valores vienen del servidor (SundayServiceCapacityAdmin.cs), que además vuelve a
+// =====================================================================
+// Servicios especiales, editor por servicio (lugares, puerta, visibilidad)
+// =====================================================================
+// Los valores vienen del servidor (SundayServiceCapacityAdmin.cs), que vuelve a
 // validar todo; aquí solo sirven para mostrar y avisar antes de pulsar.
 const defaultDoor = config.defaultDoorOpensMinutes || 15;
 const maxDoor = config.maxDoorOpensMinutes || 180;
-const closesAfter = config.doorClosesMinutes || 80;
+const defaultClose = config.doorClosesMinutes || 80;
+const minClose = config.minDoorClosesMinutes || 15;
+const maxClose = config.maxDoorClosesMinutes || 360;
 const registrationWindowDays = config.registrationWindowDays || 7;
 const todayIso = config.todayIso || toIso(new Date());
-const closesAfterText = closesAfter % 60 === 0
-    ? `${closesAfter / 60} h`
-    : `${Math.floor(closesAfter / 60)} h ${closesAfter % 60} min`;
 
-/** Cupo del planificador: igual que en la lista, más el borrador de la apertura de la puerta. */
-type DaySlot = SlotBag & { draftDoor: number };
+// ---- Utilidades de hora ----
 
-const plannerCard = ref<HTMLElement | null>(null);
-const specialDate = ref<string>("");
-const specialTime = ref<string>("");
-const specialName = ref<string>("");
-const specialCapacity = ref<number>(0);
-const specialDoor = ref<number>(defaultDoor);
-const specialBusy = ref<boolean>(false);
-const specialResult = ref<{ kind: "success" | "warning"; message: string } | null>(null);
-const specialDaySlots = ref<DaySlot[]>([]);
-const specialDayBusy = ref<boolean>(false);
-let specialDayRequest = 0;
-
+/** "13:45" → 825 (minutos desde medianoche). */
 function timeToMinutes(t: string): number | null {
     const m = /^(\d{1,2}):(\d{2})/.exec(t || "");
     return m ? Number(m[1]) * 60 + Number(m[2]) : null;
 }
 
+/** 825 → "13:45" para mostrar. */
 function minutesToText(min: number): string {
     const n = ((min % 1440) + 1440) % 1440;
     return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`;
 }
 
+/** 825 → "13:45" para un <input type="time"> (dos dígitos); "" si cae fuera del día. */
+function minutesToInput(min: number): string {
+    if (min < 0 || min > 1439) {
+        return "";
+    }
+    return `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
+}
+
 function longDate(d: Date): string {
-    return d.toLocaleDateString("es-GT", { weekday: "long", day: "numeric", month: "long" });
+    const text = d.toLocaleDateString("es-GT", { weekday: "long", day: "numeric", month: "long" });
+    return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-function isValidDoor(v: unknown): v is number {
-    return typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= maxDoor;
-}
-
-/** «13:45 a 15:20»: ventana de la puerta de un servicio que empieza a `timeText`. */
-function doorRangeText(timeText: string, doorMinutes: number): string {
-    const start = timeToMinutes(timeText);
+/** «13:45 a 15:20»: ventana de la puerta de un servicio. */
+function doorRangeText(s: { timeText: string; doorOpensMinutes: number; doorClosesMinutes: number }): string {
+    const start = timeToMinutes(s.timeText);
     if (start === null) {
         return "";
     }
-    const door = isValidDoor(doorMinutes) ? doorMinutes : defaultDoor;
-    return `${minutesToText(start - door)} a ${minutesToText(start + closesAfter)}`;
+    return `${minutesToText(start - s.doorOpensMinutes)} a ${minutesToText(start + s.doorClosesMinutes)}`;
 }
 
-const plannerDateLong = computed<string>(() => {
-    const d = parseIso(specialDate.value);
-    if (!d) {
-        return "";
+/** Mensaje si la ventana (en minutos respecto del inicio) no es válida; null si está bien. */
+function doorWindowError(start: number, opensBefore: number, closesAfter: number): string | null {
+    if (!Number.isFinite(opensBefore) || opensBefore < 0) {
+        return "La puerta no puede abrir después de la hora de inicio.";
     }
-    const text = longDate(d);
-    return text.charAt(0).toUpperCase() + text.slice(1);
+    if (opensBefore > maxDoor) {
+        return `La puerta puede abrir como máximo ${maxDoor / 60} horas antes del inicio.`;
+    }
+    if (start - opensBefore < 0) {
+        return "La puerta no puede abrir antes de la medianoche.";
+    }
+    if (!Number.isFinite(closesAfter) || closesAfter < minClose) {
+        return `La puerta debe cerrar al menos ${minClose} min después del inicio.`;
+    }
+    if (closesAfter > maxClose) {
+        return `La puerta puede cerrar como máximo ${maxClose / 60} horas después del inicio.`;
+    }
+    if (start + closesAfter > 1439) {
+        return "La puerta no puede cerrar después de la medianoche.";
+    }
+    return null;
+}
+
+// ---- Editor de un servicio (lista de la semana y programados) ----
+
+type SlotEditor = { capacity: number; openTime: string; closeTime: string; showInApp: boolean };
+
+const editors = ref<Record<number, SlotEditor>>({});
+
+function toggleEditor(s: SlotBag): void {
+    const copy = { ...editors.value };
+    if (copy[s.slotId]) {
+        delete copy[s.slotId];
+    }
+    else {
+        const start = timeToMinutes(s.timeText);
+        copy[s.slotId] = {
+            capacity: s.capacity,
+            openTime: start === null ? "" : minutesToInput(start - s.doorOpensMinutes),
+            closeTime: start === null ? "" : minutesToInput(start + s.doorClosesMinutes),
+            showInApp: s.showInApp
+        };
+    }
+    editors.value = copy;
+}
+
+function closeEditor(slotId: number): void {
+    const copy = { ...editors.value };
+    delete copy[slotId];
+    editors.value = copy;
+}
+
+/** «Puerta normal»: pone en el editor 15 min antes y 1 h 20 min después (se guarda con «Guardar»). */
+function normalEditor(s: SlotBag): void {
+    const e = editors.value[s.slotId];
+    const start = timeToMinutes(s.timeText);
+    if (!e || start === null) {
+        return;
+    }
+    e.openTime = minutesToInput(start - defaultDoor);
+    e.closeTime = minutesToInput(start + defaultClose);
+}
+
+function editorError(s: SlotBag): string | null {
+    const e = editors.value[s.slotId];
+    if (!e) {
+        return null;
+    }
+    if (!Number.isInteger(Number(e.capacity)) || Number(e.capacity) < 0) {
+        return "Los lugares deben ser un número entero.";
+    }
+    if (Number(e.capacity) < s.reservedCount + s.holdCount) {
+        return `No puede haber menos de ${s.reservedCount + s.holdCount} lugares: ya están tomados.`;
+    }
+    const start = timeToMinutes(s.timeText);
+    if (start === null || !config.doorColumnReady) {
+        return null;
+    }
+    const open = timeToMinutes(e.openTime);
+    const close = timeToMinutes(e.closeTime);
+    if (open === null || close === null) {
+        return "Indica a qué hora abre y cierra la puerta.";
+    }
+    return doorWindowError(start, start - open, close - start);
+}
+
+async function saveEditor(s: SlotBag): Promise<void> {
+    const e = editors.value[s.slotId];
+    if (!e || rowBusy.value || editorError(s)) {
+        return;
+    }
+
+    const bag: Record<string, unknown> = { slotId: s.slotId };
+    const capacity = Number(e.capacity);
+    if (capacity !== s.capacity) {
+        bag.capacity = capacity;
+    }
+
+    const start = timeToMinutes(s.timeText);
+    let opens = s.doorOpensMinutes;
+    let closes = s.doorClosesMinutes;
+    if (config.doorColumnReady && start !== null) {
+        opens = start - (timeToMinutes(e.openTime) ?? start);
+        closes = (timeToMinutes(e.closeTime) ?? start) - start;
+        if (opens !== s.doorOpensMinutes) {
+            bag.doorOpensMinutes = opens;
+        }
+        if (closes !== s.doorClosesMinutes) {
+            bag.doorClosesMinutes = closes;
+        }
+    }
+    if (config.doorColumnReady && e.showInApp !== s.showInApp) {
+        bag.showInApp = e.showInApp;
+    }
+
+    if (Object.keys(bag).length === 1) {
+        closeEditor(s.slotId);
+        return;
+    }
+
+    rowBusy.value = s.slotId;
+    try {
+        const res = await invokeBlockAction<{ resultCode: number; message: string }>("UpdateSlot", { bag });
+
+        if (res.isSuccess && res.data?.resultCode === 1) {
+            s.capacity = capacity;
+            s.draftCapacity = capacity;
+            s.available = Math.max(0, capacity - s.reservedCount - s.holdCount);
+            s.doorOpensMinutes = opens;
+            s.doorClosesMinutes = closes;
+            s.doorIsCustom = opens !== defaultDoor || closes !== defaultClose;
+            s.showInApp = e.showInApp;
+            closeEditor(s.slotId);
+            showToast("success", "Cambios guardados.");
+            void loadUpcomingSpecials();
+            void loadSlots(false);
+        }
+        else {
+            showToast("danger", res.data?.message || res.errorMessage || "No se pudo guardar.");
+        }
+    }
+    catch {
+        showToast("danger", "Error guardando los cambios.");
+    }
+    finally {
+        rowBusy.value = 0;
+    }
+}
+
+/** Desactivar/Reactivar desde la lista de la semana: refresca también los programados. */
+async function toggleFromList(slot: SlotBag): Promise<void> {
+    await toggleActive(slot);
+    void loadUpcomingSpecials();
+}
+
+/** Desactivar/Reactivar desde «Programados»: refresca también la lista de la semana. */
+async function toggleFromUpcoming(slot: SlotBag): Promise<void> {
+    await toggleActive(slot);
+    void loadUpcomingSpecials();
+    void loadSlots(false);
+}
+
+// ---- Formulario «Nuevo servicio especial» ----
+
+type KeepSlot = SlotBag & { keep: boolean };
+
+const formOpen = ref<boolean>(false);
+const formBusy = ref<boolean>(false);
+const formError = ref<string>("");
+const createdResult = ref<{ kind: "success" | "warning"; title: string; lines: string[] } | null>(null);
+
+const fDate = ref<string>("");
+const fTime = ref<string>("");
+const fName = ref<string>("");
+const fCap = ref<number>(0);
+const fOpensMin = ref<number>(defaultDoor);
+const fClosesMin = ref<number>(defaultClose);
+const fShow = ref<boolean>(true);
+const fDaySlots = ref<KeepSlot[]>([]);
+const fDayBusy = ref<boolean>(false);
+let fDayRequest = 0;
+
+/** Servicios activos de la fecha: los únicos por los que pregunta el paso 5. */
+const fActiveDaySlots = computed<KeepSlot[]>(() => fDaySlots.value.filter(s => s.isActive));
+
+/** Desactivados de la fecha: solo informativos; el formulario nunca los reactiva. */
+const fInactiveDayNames = computed<string[]>(() => fDaySlots.value.filter(s => !s.isActive).map(s => s.scheduleName));
+
+const fStart = computed<number | null>(() => timeToMinutes(fTime.value));
+
+/** La puerta se guarda relativa al inicio: si cambias la hora de inicio, la ventana se mueve con ella. */
+const fOpenTime = computed<string>({
+    get: () => fStart.value === null ? "" : minutesToInput(fStart.value - fOpensMin.value),
+    set: v => {
+        const m = timeToMinutes(v);
+        if (m !== null && fStart.value !== null) {
+            fOpensMin.value = fStart.value - m;
+        }
+    }
 });
 
-const specialMinutes = computed<number | null>(() => timeToMinutes(specialTime.value));
-const specialNameHasTime = computed<boolean>(() => /\d{1,2}\s*:\s*\d{2}/.test(specialName.value || ""));
-
-const specialFinalName = computed<string>(() => {
-    const label = (specialName.value || "").trim() || "Servicio especial";
-    return specialMinutes.value === null ? label : `${label} ${minutesToText(specialMinutes.value)} h`;
+const fCloseTime = computed<string>({
+    get: () => fStart.value === null ? "" : minutesToInput(fStart.value + fClosesMin.value),
+    set: v => {
+        const m = timeToMinutes(v);
+        if (m !== null && fStart.value !== null) {
+            fClosesMin.value = m - fStart.value;
+        }
+    }
 });
 
-// ---- Línea de tiempo del día ----
+const fDoorIsCustom = computed<boolean>(() => fOpensMin.value !== defaultDoor || fClosesMin.value !== defaultClose);
+
+function resetFormDoor(): void {
+    fOpensMin.value = defaultDoor;
+    fClosesMin.value = defaultClose;
+}
+
+const fDoorError = computed<string | null>(() =>
+    fStart.value === null ? null : doorWindowError(fStart.value, fOpensMin.value, fClosesMin.value));
+
+const fDateLong = computed<string>(() => {
+    const d = parseIso(fDate.value);
+    return d ? longDate(d) : "";
+});
+
+const fNameHasTime = computed<boolean>(() => /\d{1,2}\s*:\s*\d{2}/.test(fName.value || ""));
+
+const fFinalName = computed<string>(() => {
+    const label = (fName.value || "").trim() || "Servicio especial";
+    return fStart.value === null ? label : `${label} ${minutesToText(fStart.value)} h`;
+});
+
+/** Minutos desde medianoche según el reloj del equipo; solo para avisar «ya pasó». */
+function nowMinutesLocal(): number {
+    const n = new Date();
+    return n.getHours() * 60 + n.getMinutes();
+}
+
+/** Lo que falta para poder crear (null = listo). */
+const fMissing = computed<string | null>(() => {
+    if (!campusId.value) {
+        return "Elige la sede arriba.";
+    }
+    if (!parseIso(fDate.value)) {
+        return "Falta la fecha (paso 1).";
+    }
+    if (fDate.value < todayIso) {
+        return "Esa fecha ya pasó.";
+    }
+    if (fStart.value === null) {
+        return "Falta la hora de inicio (paso 1).";
+    }
+    if (fDate.value === todayIso && fStart.value + fClosesMin.value <= nowMinutesLocal()) {
+        return "Esa hora ya pasó: la puerta ya habría cerrado.";
+    }
+    if (fNameHasTime.value) {
+        return "Quita la hora del nombre: se agrega sola (paso 2).";
+    }
+    if (!(Number(fCap.value) > 0)) {
+        return "Faltan los lugares (paso 2).";
+    }
+    if (fDoorError.value) {
+        return `${fDoorError.value} (paso 3)`;
+    }
+    if (!config.doorColumnReady && (fDoorIsCustom.value || !fShow.value)) {
+        return "Para cambiar la puerta o la visibilidad falta preparar la base de datos (ver el aviso de arriba).";
+    }
+    if (fDayBusy.value) {
+        return "Cargando los servicios de ese día…";
+    }
+    return null;
+});
+
+const fSummary = computed<string[]>(() => {
+    const d = parseIso(fDate.value);
+    if (!d || fStart.value === null) {
+        return [];
+    }
+    const lines: string[] = [];
+    const open = minutesToText(fStart.value - fOpensMin.value);
+    const close = minutesToText(fStart.value + fClosesMin.value);
+
+    lines.push(`«${fFinalName.value}» · ${longDate(d)} · ${fCap.value} lugares.`);
+
+    if (fShow.value) {
+        const opens = new Date(d.getTime());
+        opens.setDate(opens.getDate() - (registrationWindowDays - 1));
+        const opensText = toIso(opens) <= todayIso ? "desde hoy" : `desde el ${longDate(opens).toLowerCase()}`;
+        lines.push(`Se podrá reservar en la app ${opensText} hasta las ${close}.`);
+    }
+    else {
+        lines.push("No aparecerá en la app de reservas (nadie podrá reservar); la puerta lo leerá igual.");
+    }
+
+    lines.push(`La puerta leerá los QR de ${open} a ${close}.`);
+
+    const off = fActiveDaySlots.value.filter(s => !s.keep).map(s => s.scheduleName);
+    if (off.length) {
+        lines.push(`Ese día no habrá: ${off.join(", ")}.`);
+    }
+
+    return lines;
+});
+
+function openForm(): void {
+    fDate.value = "";
+    fTime.value = "";
+    fName.value = "";
+    fCap.value = 0;
+    fShow.value = true;
+    resetFormDoor();
+    fDaySlots.value = [];
+    formError.value = "";
+    createdResult.value = null;
+    formOpen.value = true;
+}
+
+function closeForm(): void {
+    formOpen.value = false;
+    formError.value = "";
+}
+
+/** Servicios que ya existen en la fecha del formulario (para «¿se mantienen?»). */
+async function loadFormDay(): Promise<void> {
+    const request = ++fDayRequest;
+
+    if (!campusId.value || !parseIso(fDate.value)) {
+        fDaySlots.value = [];
+        fDayBusy.value = false;
+        return;
+    }
+
+    fDayBusy.value = true;
+
+    try {
+        const res = await invokeBlockAction<{ days: DaySlotsBag[] }>("GetSlots", {
+            bag: { campusId: campusId.value, startDate: fDate.value, endDate: fDate.value }
+        });
+
+        if (request !== fDayRequest) {
+            return;
+        }
+
+        const slots: KeepSlot[] = [];
+        for (const d of (res.isSuccess && res.data ? res.data.days || [] : [])) {
+            for (const s of d.slots || []) {
+                slots.push({ ...s, draftCapacity: s.capacity, keep: s.isActive });
+            }
+        }
+        slots.sort((a, b) => (timeToMinutes(a.timeText) ?? 9999) - (timeToMinutes(b.timeText) ?? 9999));
+        fDaySlots.value = slots;
+    }
+    catch {
+        if (request === fDayRequest) {
+            fDaySlots.value = [];
+        }
+    }
+    finally {
+        if (request === fDayRequest) {
+            fDayBusy.value = false;
+        }
+    }
+}
+
+watch([campusId, fDate], () => {
+    void loadFormDay();
+});
+
+async function createSpecial(): Promise<void> {
+    if (formBusy.value || fMissing.value) {
+        return;
+    }
+
+    formBusy.value = true;
+    formError.value = "";
+
+    try {
+        const res = await invokeBlockAction<{ resultCode: number; message: string }>("CreateSpecialService", {
+            bag: {
+                campusId: campusId.value,
+                date: fDate.value,
+                time: fTime.value,
+                name: (fName.value || "").trim(),
+                capacity: Number(fCap.value),
+                doorOpensMinutes: fOpensMin.value === defaultDoor ? null : fOpensMin.value,
+                doorClosesMinutes: fClosesMin.value === defaultClose ? null : fClosesMin.value,
+                showInApp: fShow.value
+            }
+        });
+
+        if (!res.isSuccess || res.data?.resultCode !== 1) {
+            formError.value = res.data?.message || res.errorMessage || "No se pudo crear el servicio especial.";
+            return;
+        }
+
+        // Servicio creado: ahora se desactivan, uno por uno, los servicios activos marcados «No habrá».
+        // Solo desactiva: nunca reactiva nada.
+        const lines: string[] = [];
+        let failed = false;
+        for (const s of fActiveDaySlots.value.filter(x => !x.keep)) {
+            try {
+                const r = await invokeBlockAction<{ resultCode: number; message: string }>("UpdateSlot", {
+                    bag: { slotId: s.slotId, isActive: false }
+                });
+                if (r.isSuccess && r.data?.resultCode === 1) {
+                    lines.push(`Se desactivó ${s.scheduleName}.`);
+                }
+                else {
+                    failed = true;
+                    lines.push(`${s.scheduleName}: ${r.data?.message || r.errorMessage || "no se pudo cambiar"}`);
+                }
+            }
+            catch {
+                failed = true;
+                lines.push(`${s.scheduleName}: error al cambiarlo.`);
+            }
+        }
+
+        createdResult.value = { kind: failed ? "warning" : "success", title: res.data.message, lines };
+        formOpen.value = false;
+        showToast("success", "Servicio especial creado.");
+    }
+    catch {
+        formError.value = "Error creando el servicio especial.";
+    }
+    finally {
+        formBusy.value = false;
+        void loadUpcomingSpecials();
+        void loadSlots(false);
+    }
+}
+
+// ---- Línea de tiempo del día del formulario ----
 
 type TimelineItem = { key: string; name: string; active: boolean; special: boolean; preview: boolean; start: number; open: number; close: number };
 
-/** Servicios del día (con la apertura en borrador, para ver el cambio antes de guardar) y el especial nuevo. */
 const timelineItems = computed<TimelineItem[]>(() => {
     const items: TimelineItem[] = [];
 
-    for (const s of specialDaySlots.value) {
+    for (const s of fDaySlots.value) {
         const start = timeToMinutes(s.timeText);
         if (start === null) {
             continue;
         }
-        const door = isValidDoor(s.draftDoor) ? s.draftDoor : s.doorOpensMinutes;
-        items.push({ key: `s${s.slotId}`, name: s.scheduleName, active: s.isActive, special: s.isSpecial, preview: false, start, open: start - door, close: start + closesAfter });
+        items.push({ key: `s${s.slotId}`, name: s.scheduleName, active: s.isActive && s.keep, special: s.isSpecial, preview: false, start, open: start - s.doorOpensMinutes, close: start + s.doorClosesMinutes });
     }
 
-    if (specialMinutes.value !== null) {
-        const door = isValidDoor(specialDoor.value) ? specialDoor.value : defaultDoor;
-        items.push({ key: "new", name: `${specialFinalName.value} (nuevo)`, active: true, special: true, preview: true, start: specialMinutes.value, open: specialMinutes.value - door, close: specialMinutes.value + closesAfter });
+    if (fStart.value !== null && !fDoorError.value) {
+        items.push({ key: "new", name: fFinalName.value, active: true, special: true, preview: true, start: fStart.value, open: fStart.value - fOpensMin.value, close: fStart.value + fClosesMin.value });
     }
 
     return items.sort((a, b) => a.start - b.start);
 });
 
-/** Eje de la línea de tiempo: horas completas con 30 min de margen. */
+/** Eje: horas completas con 30 min de margen. */
 const timelineRange = computed<{ min: number; max: number } | null>(() => {
     const items = timelineItems.value;
     if (items.length === 0) {
         return null;
     }
-    const min = Math.floor((Math.min(...items.map(i => i.open)) - 30) / 60) * 60;
-    const max = Math.ceil((Math.max(...items.map(i => i.close)) + 30) / 60) * 60;
+    const min = Math.max(0, Math.floor((Math.min(...items.map(i => i.open)) - 30) / 60) * 60);
+    const max = Math.min(1440, Math.ceil((Math.max(...items.map(i => i.close)) + 30) / 60) * 60);
     return { min, max: Math.max(max, min + 120) };
 });
 
@@ -1376,7 +1827,7 @@ const timelineRows = computed(() => {
     }));
 });
 
-/** ¿Dos ventanas activas se cruzan? Solo informativo: la puerta valida cada QR con su propio servicio. */
+/** ¿Dos puertas abiertas a la vez? Solo informativo: el escáner valida cada QR con su propio servicio. */
 const hasOverlap = computed<boolean>(() => {
     const active = timelineItems.value.filter(i => i.active).sort((a, b) => a.open - b.open);
     for (let i = 1; i < active.length; i++) {
@@ -1387,222 +1838,7 @@ const hasOverlap = computed<boolean>(() => {
     return false;
 });
 
-const specialDateInRange = computed<boolean>(() =>
-    !!specialDate.value && specialDate.value >= startDate.value && specialDate.value <= endDate.value);
-
-/** Minutos desde medianoche según el reloj del equipo; solo para avisar «ya pasó». */
-function nowMinutesLocal(): number {
-    const n = new Date();
-    return n.getHours() * 60 + n.getMinutes();
-}
-
-const specialDoorAllowed = computed<boolean>(() =>
-    isValidDoor(specialDoor.value) && (config.doorColumnReady || specialDoor.value === defaultDoor));
-
-const specialCanCreate = computed<boolean>(() =>
-    !!campusId.value
-    && !!parseIso(specialDate.value)
-    && specialDate.value >= todayIso
-    && specialMinutes.value !== null
-    && Number(specialCapacity.value) > 0
-    && !specialNameHasTime.value
-    && specialDoorAllowed.value
-    && !specialDayBusy.value);
-
-const specialPreviewText = computed<string>(() => {
-    const d = parseIso(specialDate.value);
-    if (!campusId.value) {
-        return "Selecciona una sede arriba.";
-    }
-    if (!d) {
-        return "Elige la fecha en el paso 1.";
-    }
-    if (specialDate.value < todayIso) {
-        return "Esa fecha ya pasó.";
-    }
-    if (specialMinutes.value === null) {
-        return "Indica la hora de inicio.";
-    }
-    if (specialDate.value === todayIso && specialMinutes.value + closesAfter <= nowMinutesLocal()) {
-        return "Esa hora ya pasó.";
-    }
-    if (specialNameHasTime.value) {
-        return "Quita la hora del nombre: se agrega sola.";
-    }
-    if (!(Number(specialCapacity.value) > 0)) {
-        return "Indica la capacidad.";
-    }
-    if (!isValidDoor(specialDoor.value)) {
-        return `La puerta puede abrir entre 0 y ${maxDoor} min antes.`;
-    }
-    if (!specialDoorAllowed.value) {
-        return `Para abrir distinto de ${defaultDoor} min falta preparar la base de datos (ver el aviso de arriba).`;
-    }
-
-    const opens = new Date(d.getTime());
-    opens.setDate(opens.getDate() - (registrationWindowDays - 1));
-    const opensText = toIso(opens) <= todayIso ? "en cuanto lo crees" : `desde el ${longDate(opens)}`;
-    const door = doorRangeText(minutesToText(specialMinutes.value), specialDoor.value);
-
-    return `Se publicará como «${specialFinalName.value}» con ${specialCapacity.value} lugares. Se podrá reservar ${opensText} y la puerta leerá los QR de ${door}.`;
-});
-
-/** Carga los servicios de la fecha elegida (activos y desactivados). */
-async function loadSpecialDay(): Promise<void> {
-    const request = ++specialDayRequest;
-
-    if (!campusId.value || !parseIso(specialDate.value)) {
-        specialDaySlots.value = [];
-        specialDayBusy.value = false;
-        return;
-    }
-
-    specialDayBusy.value = true;
-
-    try {
-        const res = await invokeBlockAction<{ days: DaySlotsBag[] }>("GetSlots", {
-            bag: { campusId: campusId.value, startDate: specialDate.value, endDate: specialDate.value }
-        });
-
-        if (request !== specialDayRequest) {
-            return;
-        }
-
-        const slots: DaySlot[] = [];
-        for (const d of (res.isSuccess && res.data ? res.data.days || [] : [])) {
-            for (const s of d.slots || []) {
-                slots.push({ ...s, draftCapacity: s.capacity, draftDoor: s.doorOpensMinutes });
-            }
-        }
-        slots.sort((a, b) => (timeToMinutes(a.timeText) ?? 9999) - (timeToMinutes(b.timeText) ?? 9999));
-        specialDaySlots.value = slots;
-    }
-    catch {
-        if (request === specialDayRequest) {
-            specialDaySlots.value = [];
-        }
-    }
-    finally {
-        if (request === specialDayRequest) {
-            specialDayBusy.value = false;
-        }
-    }
-}
-
-watch([campusId, specialDate], () => {
-    specialResult.value = null;
-    void loadSpecialDay();
-});
-
-/** Abre el planificador en una fecha (desde la lista del rango o los próximos especiales). */
-function planDay(dateIso: string): void {
-    specialDate.value = dateIso;
-    void nextTick(() => plannerCard.value?.scrollIntoView({ behavior: "smooth", block: "start" }));
-}
-
-function showSpecialDateInList(): void {
-    if (specialDate.value) {
-        startDate.value = specialDate.value;
-        endDate.value = specialDate.value;
-    }
-}
-
-/** Guarda la apertura de la puerta de un cupo. Igual al valor de omisión = vuelve a «normal». */
-async function saveDoor(slot: DaySlot): Promise<void> {
-    if (rowBusy.value) {
-        return;
-    }
-
-    const value = Number(slot.draftDoor);
-    if (!isValidDoor(value)) {
-        showToast("danger", `La puerta puede abrir entre 0 y ${maxDoor} min antes.`);
-        slot.draftDoor = slot.doorOpensMinutes;
-        return;
-    }
-
-    await updateDoor(slot, value === defaultDoor ? { resetDoorToDefault: true } : { doorOpensMinutes: value });
-}
-
-async function resetDoor(slot: DaySlot): Promise<void> {
-    if (rowBusy.value) {
-        return;
-    }
-    await updateDoor(slot, { resetDoorToDefault: true });
-}
-
-async function updateDoor(slot: DaySlot, change: { doorOpensMinutes?: number; resetDoorToDefault?: boolean }): Promise<void> {
-    rowBusy.value = slot.slotId;
-    try {
-        const res = await invokeBlockAction<{ resultCode: number; message: string }>("UpdateSlot", {
-            bag: { slotId: slot.slotId, ...change }
-        });
-
-        if (res.isSuccess && res.data?.resultCode === 1) {
-            const value = change.resetDoorToDefault ? defaultDoor : (change.doorOpensMinutes ?? defaultDoor);
-            slot.doorOpensMinutes = value;
-            slot.draftDoor = value;
-            slot.doorIsCustom = !change.resetDoorToDefault;
-            showToast("success", `La puerta abrirá ${value} min antes.`);
-            void loadSlots(false);
-            void loadUpcomingSpecials();
-        }
-        else {
-            slot.draftDoor = slot.doorOpensMinutes;
-            showToast("danger", res.data?.message || res.errorMessage || "No se pudo guardar.");
-        }
-    }
-    catch {
-        slot.draftDoor = slot.doorOpensMinutes;
-        showToast("danger", "Error guardando la apertura de la puerta.");
-    }
-    finally {
-        rowBusy.value = 0;
-    }
-}
-
-async function createSpecial(): Promise<void> {
-    if (specialBusy.value || !specialCanCreate.value) {
-        return;
-    }
-
-    specialBusy.value = true;
-    specialResult.value = null;
-
-    try {
-        const res = await invokeBlockAction<{ resultCode: number; message: string; scheduleName: string; occurrenceDate: string }>("CreateSpecialService", {
-            bag: {
-                campusId: campusId.value,
-                date: specialDate.value,
-                time: specialTime.value,
-                name: (specialName.value || "").trim(),
-                capacity: Number(specialCapacity.value),
-                doorOpensMinutes: specialDoor.value === defaultDoor ? null : specialDoor.value
-            }
-        });
-
-        if (res.isSuccess && res.data?.resultCode === 1) {
-            specialResult.value = { kind: "success", message: res.data.message };
-            specialTime.value = "";
-            specialName.value = "";
-            specialDoor.value = defaultDoor;
-            showToast("success", "Servicio especial creado.");
-        }
-        else {
-            specialResult.value = { kind: "warning", message: res.data?.message || res.errorMessage || "No se pudo crear el servicio especial." };
-        }
-    }
-    catch {
-        specialResult.value = { kind: "warning", message: "Error creando el servicio especial." };
-    }
-    finally {
-        specialBusy.value = false;
-        void loadSpecialDay();
-        void loadUpcomingSpecials();
-        void loadSlots(false);
-    }
-}
-
-// ---- Próximos servicios especiales ----
+// ---- Programados (servicios especiales desde hoy) ----
 
 type UpcomingSpecialBag = SlotBag & { occurrenceDate: string; occurrenceDateText: string };
 
@@ -1610,7 +1846,6 @@ const upcomingSpecials = ref<UpcomingSpecialBag[]>([]);
 const upcomingBusy = ref<boolean>(false);
 let upcomingRequest = 0;
 
-/** Servicios especiales del campus desde hoy. */
 async function loadUpcomingSpecials(): Promise<void> {
     const request = ++upcomingRequest;
 
@@ -1644,6 +1879,7 @@ async function loadUpcomingSpecials(): Promise<void> {
 }
 
 watch(campusId, () => {
+    editors.value = {};
     void loadUpcomingSpecials();
 });
 
@@ -2160,4 +2396,98 @@ onBeforeUnmount(() => {
 }
 .caToast.success { border-left: 6px solid rgba(16,185,129,.65); }
 .caToast.danger { border-left: 6px solid rgba(239,68,68,.65); }
+/* ===== Servicios especiales y editor por servicio (2026-11-23) ===== */
+.caBadgeHidden { background: rgba(107,114,128,.12); color: #374151; border: 1px solid rgba(107,114,128,.30); }
+
+.caCheck { display: flex; align-items: flex-start; gap: 8px; margin: 8px 0 0; font-size: 13px; font-weight: 600; cursor: pointer; }
+.caCheck input { width: 17px; height: 17px; margin: 1px 0 0; flex-shrink: 0; }
+.caCheckSm { margin: 0; font-size: 12px; white-space: nowrap; }
+.caTplRight { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; justify-content: flex-end; }
+
+.caSpHead { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.caSpForm {
+    margin-top: 12px;
+    border: 1px solid rgba(37,99,235,.25);
+    background: rgba(37,99,235,.03);
+    border-radius: 12px;
+    padding: 14px 16px;
+}
+.caSpFormTitle { font-weight: 900; font-size: 16px; margin-bottom: 4px; }
+.caSpSection { padding: 12px 0; border-bottom: 1px solid rgba(17,24,39,.06); }
+.caSpQ { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 800; margin-bottom: 8px; }
+.caSpFields { display: grid; grid-template-columns: repeat(2, minmax(0, 220px)); gap: 12px; align-items: end; }
+.caSpFields .caFieldWide { min-width: 0; }
+.caSpFields:has(.caFieldWide) { grid-template-columns: minmax(0, 1fr) minmax(0, 160px); max-width: 560px; }
+.caSpHint { margin-top: 6px; font-size: 12px; color: var(--ca-muted); }
+.caSpError { margin-top: 6px; font-size: 12px; font-weight: 700; color: #B91C1C; }
+
+.caKeepRow {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px 12px;
+    align-items: center;
+    padding: 8px 0;
+    border-top: 1px solid rgba(17,24,39,.05);
+}
+.caKeepRow:first-of-type { border-top: none; }
+.caKeepMain { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.caKeepName { font-weight: 700; font-size: 13px; }
+.caKeepNote { grid-column: 1 / -1; font-size: 12px; color: #B45309; }
+.caChoice { display: inline-flex; border: 1px solid var(--ca-border); border-radius: 999px; overflow: hidden; }
+.caChoiceBtn {
+    border: 0;
+    background: var(--ca-surface);
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ca-muted);
+    cursor: pointer;
+}
+.caChoiceBtn + .caChoiceBtn { border-left: 1px solid var(--ca-border); }
+.caChoiceBtn.isActive { background: #272B32; color: #fff; }
+.caChoiceBtn:disabled { opacity: .45; cursor: not-allowed; }
+
+.caSpSummary {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: var(--ca-surface);
+    border: 1px solid var(--ca-border);
+}
+.caSpSummaryTitle { font-weight: 900; font-size: 13px; margin-bottom: 6px; }
+.caSpSummary ul { margin: 0 0 10px; padding-left: 18px; font-size: 13px; }
+.caSpSummary li { margin-bottom: 3px; }
+.caSpSummaryMissing { font-size: 13px; color: #B45309; font-weight: 700; margin-bottom: 10px; }
+.caSpActions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.caSpListTitle { margin: 18px 0 8px; font-weight: 900; font-size: 14px; }
+.caSpCard { border: 1px solid var(--ca-border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+.caSpCard.isInactive { background: rgba(17,24,39,.03); }
+.caSpCard.isInactive .caSpCardMain { opacity: .65; }
+.caSpCardRow { display: flex; align-items: center; gap: 14px; }
+.caSpCardDate { font-weight: 900; font-size: 13px; min-width: 120px; text-transform: capitalize; }
+.caSpCardMain { flex: 1; min-width: 0; }
+.caSpCardName { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-weight: 700; font-size: 14px; }
+.caSpCardActions { display: flex; gap: 6px; flex-shrink: 0; }
+
+.caSlotWrap { margin-bottom: 8px; }
+.caSlotWrap .caSlot { margin-bottom: 0; }
+.caEditor {
+    margin-top: 8px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(37,99,235,.04);
+    border: 1px dashed rgba(37,99,235,.30);
+}
+.caEditorInList { margin-top: 4px; }
+.caEditorFields { display: grid; grid-template-columns: repeat(3, minmax(0, 170px)); gap: 12px; align-items: end; }
+.caEditorActions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+@media (max-width: 720px) {
+    .caSpFields, .caSpFields:has(.caFieldWide), .caEditorFields { grid-template-columns: 1fr 1fr; max-width: none; }
+    .caSpCardRow { flex-direction: column; align-items: stretch; }
+    .caSpCardDate { min-width: 0; }
+    .caKeepRow { grid-template-columns: 1fr; }
+    .caTplRight { justify-content: space-between; width: 100%; }
+}
 </style>

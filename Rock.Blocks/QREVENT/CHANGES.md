@@ -823,6 +823,10 @@ quepa en una linea de movil; se quito el CTA «Reservar otro servicio».
 
 ## Servicios especiales de una sola fecha (2026-11-20)
 
+> **Actualizado 2026-11-23** (sección siguiente): ya **no** hay bloqueo por «choque» de horarios (el escáner
+> valida cada QR contra su propio cupo), la pantalla se rehízo en pestañas y el despliegue ahora lleva el script
+> `QREVENT_SundayService_SlotSettings.sql`. Lo de abajo sobre choques y despliegue queda como historia.
+
 **Pedido:** poder habilitar desde la pantalla Configuración Domingos (página 862) un servicio que no
 es de la plantilla semanal (Nochebuena el 24 de diciembre, un domingo con un solo servicio o con otro
 horario), con reservas y escaneo en la puerta, **sin tocar horarios de Rock ni atributos de bloques**
@@ -905,3 +909,86 @@ cambio aplica en las dos (verificado: el parche se aplica limpio y compila contr
   (sin reservas) y confirmar que desaparece.
 - **Llevar a la 19:** cherry-pick del commit de esta rama sobre `Test_Update_18.1_a_18.8` (se aplica
   limpio), recompilar y probar en 6229. Pendiente de aprobación.
+
+## Ajustes por cupo: horario de la puerta, visibilidad en la app y validación por reserva (2026-11-20 / 2026-11-23)
+
+Rama `reservas-servicios-especiales`. **No desplegado.** Pedido de Fredy: configurar desde la pantalla a qué
+hora abre y cierra la puerta de cada servicio (Nochebuena, un servicio largo), decidir si un horario
+aparece en la página de reservas, y que el escáner reconozca el servicio de cada reserva.
+
+### Datos
+
+Script `Dev Tools/Sql/QREVENT_SundayService_SlotSettings.sql` (idempotente; trae cómo revertir). Agrega a
+`SundayServiceSlot`:
+
+| Columna | NULL = | Uso |
+|---|---|---|
+| `CheckInOpensMinutesBefore` INT (CHECK 0–240) | 15 | Minutos antes del inicio en que la puerta empieza a aceptar QR del cupo |
+| `CheckInClosesMinutesAfter` INT (CHECK 0–720) | 80 | Minutos después del inicio en que cierran la puerta **y** la reserva |
+| `ShowInApp` BIT | visible | 0 = no aparece en la app ni se puede reservar; las reservas existentes valen en la puerta |
+
+NULL en las tres = comportamiento de siempre. Un valor igual al de omisión se guarda como NULL.
+**El DLL funciona con y sin las columnas:** `SundayServiceCapacityAdmin.SlotSettingsColumnsExist` las detecta
+(un «sí» se recuerda; un «no» se vuelve a consultar cada minuto) y, sin ellas, las expresiones
+`DoorOpensSqlExpression` / `DoorClosesSqlExpression` / `ShowInAppSqlExpression` devuelven 15 / 80 / 1 y la
+pantalla avisa que falta el script. Valores de omisión y rangos de pantalla (0–180 apertura, 15–360 cierre)
+en `SundayServiceCapacityAdmin` (`DefaultDoorOpensMinutesBefore`, `DefaultDoorClosesMinutesAfter`, …).
+
+### Escáner (`ReservationScanner`)
+
+- **Cada QR se valida contra la ventana de SU propio cupo** (`ResolveReservationSlot`): antes había un único
+  cupo «activo» y `sp_SundayServiceCheckIn` rechazaba (`-2`) las reservas de cualquier otro, así que dos
+  ventanas cruzadas rechazaban en la puerta a gente con reserva válida. El SP no cambió: se le pasa el cupo de
+  la propia reserva, ya validado; si cambiara entre la lectura y el SP, devuelve `-2` y se rechaza como antes.
+- Mensajes (`other_schedule`, ámbar): «Esta reserva es del servicio de las 18:00. La puerta abre a las 17:45.»,
+  «El ingreso para el servicio de las 13:00 cerró a las 14:20.», «Esta reserva no es para hoy.», «Esta reserva
+  es de otro horario.» (otra sede, horario no recibido o cupo desactivado). Llegar temprano o tarde con una
+  reserva real **no cuenta** para el throttle de intentos inválidos.
+- El encabezado nombra todos los servicios con la puerta abierta («A + B») y el «Próximo» es el que **abre
+  primero la puerta**. La visibilidad en la app **no** afecta a la puerta (a propósito).
+- Sin cambios en el `.obs` del escáner.
+
+### App de reservas (`SundayServiceRegistration`)
+
+- El corte de reserva de cada cupo es su cierre de puerta (`CheckInClosesMinutesAfter`), en los cuatro
+  puntos: lista de la semana, «mi reserva activa», `HoldUpsert` (ahora busca el cupo por sede + fecha +
+  horario) y `ConfirmReservation` (vía el hold).
+- Cupo oculto (`ShowInApp = 0`): no se lista y `HoldUpsert` / `ConfirmReservation` lo tratan como cerrado
+  (`-4`). «Mi reserva activa» **no** se filtra: quien ya reservó sigue viendo su QR.
+- Sin cambios en el `.obs` ni en los SPs.
+
+### Configuración (`SundayServiceCapacityAdmin`)
+
+- `GetSlots` / `GetUpcomingSpecialServices` devuelven `doorOpensMinutes`, `doorClosesMinutes`, `doorIsCustom`,
+  `showInApp`. `UpdateSlot` acepta `doorOpensMinutes`, `doorClosesMinutes`, `resetDoorToDefault`, `showInApp`.
+  `CreateSpecialService` acepta `doorOpensMinutes`, `doorClosesMinutes`, `showInApp`.
+- `Generate`: cada horario de la plantilla trae `showInApp`; los cupos que crea quedan ocultos si se desmarcó, y
+  con «Sobrescribir» también se aplica a las fechas existentes (`visibilityChanged` en la respuesta).
+- Se **quitó** el bloqueo por «choque» de horarios al crear y al reactivar (ya no hace falta).
+- `InitBag` lleva `doorColumnReady` y los valores/rangos para que la pantalla no los tenga fijos.
+
+### Regresión encontrada y corregida en la prueba (2026-11-23)
+
+El primer formulario guiado listaba también los servicios **ya desactivados** del día con «Se mantiene / No
+habrá»; marcar «Se mantiene» en uno desactivado lo **reactivaba** (pasó con Mega Sport Camp del 23 y 24-nov en
+`Rock18Reservas`; se devolvieron a desactivados). Ahora el paso 5 solo pregunta por los **activos** («Sí habrá /
+No habrá»), los desactivados se muestran como información y el formulario **solo puede desactivar**.
+
+### Verificación (2026-11-23)
+
+- Build 18.1: `Rock.Blocks` 0 errores; `npm run build` con el tsconfig de QREVENT sin errores.
+- Script en `Rock18Reservas`: 3 columnas + 2 CHECK; segunda corrida sin cambios.
+- Prueba de Fredy en 6231: especiales «Prueba tarde 18:00» (puerta 17:30), «Prueba mañana 10:30» (24-nov,
+  10:00–13:00), «Prueba ahora 10:00» (puerta desde 8:30); reserva, cambio de horario (la anterior quedó
+  `Status 2`), check-in 09:53 (`Status 3`), «Oculto en la app» visible en la lista. `ExceptionLog`: solo el
+  correo de confirmación que no sale (SMTP aislado).
+- **Contra la 19.8.1** (worktree temporal, carpeta de la 19 intacta): `git apply` limpio, `Rock.Blocks` 0
+  errores sin advertencias en QREVENT, tipos del `.obs` sin errores.
+
+### Despliegue (cuando se apruebe; nada de esto está en producción)
+
+1. `QREVENT_SundayService_SlotSettings.sql` en la BD (segundos, fuera de horario de reservas).
+2. `Rock.Blocks.dll` + `RockWeb/Obsidian/Blocks/QREVENT/SundayServiceCapacityAdmin.obs.js` juntos (reinicia el
+   sitio). Si el DLL sube antes que el SQL, todo funciona con 15/80/visible y la pantalla avisa.
+3. Smoke test: crear un especial de prueba oculto, verlo en «Programados», confirmar que no sale en la app,
+   desactivarlo.

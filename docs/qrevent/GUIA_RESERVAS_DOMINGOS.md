@@ -4,84 +4,85 @@ Pantallas (sitio interno):
 
 | Página | Nombre | Para qué |
 |---|---|---|
-| 862 | Configuracion Domingos | Crear y ajustar los cupos; servicios especiales; métricas |
+| 862 | Configuración de Domingos | Cupos de la semana, servicios especiales, horario de la puerta, visibilidad, métricas |
 | 860 | Registro Domingos App | Donde la gente reserva (la app) |
 | 863 | Domingos Scanner | Puerta: lee el QR de la reserva |
 
 Detalle técnico: `Rock.Blocks/QREVENT/CHANGES.md` y `Rock.JavaScript.Obsidian.Blocks/src/QREVENT/CHANGES.md`.
 
-## Dos piezas: horario y cupo
+## Ideas básicas
 
-- **Horario** (Schedule de Rock): el día de la semana y la hora. Lo de siempre («Domingo 9:00 h»).
-- **Cupo** (slot): una **fecha concreta** con su capacidad. La app (860) y la puerta (863) **solo trabajan
-  con cupos**. Cambiar la hora de un horario no crea cupos.
+- **Horario** (Schedule de Rock): el día de la semana y la hora («Domingo 9:00 h»).
+- **Cupo**: una **fecha concreta** de ese horario, con sus lugares. La app y la puerta trabajan con cupos.
+- **Puerta**: por omisión abre **15 min antes** y cierra **1 h 20 min después** del inicio. La app deja de aceptar
+  reservas a la misma hora en que cierra la puerta. Se puede cambiar en cada cupo.
+- **Visible en la app**: si un cupo está oculto, no aparece en la página de reservas y nadie nuevo puede
+  reservarlo; **quien ya reservó entra igual** con su QR.
+- **Desactivar**: el cupo no existe ese día (ni app ni puerta). Solo se puede si **no tiene reservas**.
 
-## Uso semanal: la plantilla (página 862)
+## Pestaña «Semana normal»
 
-1. Elige la **Sede** y el rango **Desde / Hasta** (atajos: 4 semanas, 3 meses, 6 meses).
-2. En **Plantilla de horarios** marca los horarios y su **Capacidad** (se prellena con la última usada).
+1. Elige la **Sede** y el rango **Desde / Hasta** (atajos: esta semana, 4 semanas, 3 meses…).
+2. **Plantilla de horarios:** marca los horarios, su **Capacidad** y si quedan **Visibles en la app**.
 3. Opciones:
-   - **Sobrescribir la capacidad**: cambia el cupo de fechas que ya existen (nunca por debajo de lo ya tomado).
-   - **Desactivar horarios fuera de la plantilla**: apaga los no marcados, solo si no tienen reservas.
-     Nunca apaga un servicio especial.
-4. **Aplicar plantilla**. Abajo, en **Disponibilidad del rango**, se ajusta un día suelto (capacidad,
-   Desactivar / Reactivar).
+   - **Sobrescribir capacidad y «visible en la app»** de las fechas que ya existen (nunca por debajo de lo tomado).
+   - **Desactivar horarios fuera de la plantilla** (solo sin reservas; nunca toca un servicio especial).
+4. **Aplicar plantilla.**
+5. En la lista, cada servicio muestra lugares, reservas y «Puerta 8:45 a 10:20». Con **Editar** cambias:
+   lugares, **a qué hora abre y cierra la puerta** y **Mostrar en la app de reservas**. «Puerta normal» vuelve a
+   15 min antes / 1 h 20 min después (y se guarda con «Guardar»).
 
-## Servicio especial (Nochebuena, Año Nuevo, un domingo distinto)
+Mientras un día tenga un servicio especial activo, «Aplicar plantilla» **no** vuelve a activar los servicios
+normales de ese día.
 
-En la misma página 862, tarjeta **«Servicio especial»**. No hace falta tocar horarios de Rock ni la
-configuración de los bloques.
+## Pestaña «Servicios especiales» (Nochebuena, Año Nuevo, un domingo distinto)
 
-1. **Fecha**: al elegirla aparece «Lo que ya hay» ese día, con botón Desactivar / Reactivar en cada horario.
-2. **Hora de inicio**, **Nombre** opcional (sin hora: se agrega sola, p. ej. «Nochebuena 20:00 h») y **Capacidad**.
-3. La barra de abajo resume cómo quedará: nombre, desde cuándo se puede reservar y a qué hora lee la puerta.
-4. **Crear servicio especial**. Aparece en la lista con la etiqueta **Especial**.
-5. Abajo, en **Próximos servicios especiales**, se ven todos los especiales desde hoy (sin mover el rango),
-   con cuántos reservaron, **Ver día** y Desactivar / Reactivar.
+Botón **+ Nuevo servicio especial** y responde:
 
-Si algo choca (otro horario activo ese día a menos de 1 h 35 min), la pantalla lo marca en naranja como
-**Choca** y no deja crear hasta desactivarlo o cambiar la hora.
+1. **¿Cuándo es?** Fecha y hora de inicio.
+2. **¿Cómo se llama y cuántos lugares?** La hora se agrega sola al nombre («Nochebuena 20:00 h»).
+3. **¿A qué hora abre y cierra la puerta?** Viene con lo normal; cámbiala si hace falta (por ejemplo, abrir 1 h
+   antes o cerrar a las 15:00 en un servicio largo).
+4. **¿Se muestra en la página de reservas?** Desmárcalo para prepararlo con tiempo y publicarlo después con
+   «Editar».
+5. **Los otros servicios de ese día** (solo los activos): «Sí habrá» / «No habrá». Los que tienen reservas no se
+   pueden quitar. Los ya desactivados no cambian.
 
-### Un domingo con un solo servicio o con otro horario
+Revisa la **línea de tiempo** «Así quedará la puerta ese día» y el **Resumen**, y pulsa **Crear servicio especial**.
+Abajo, en **Programados**, están todos los especiales desde hoy con **Editar** y **Desactivar**.
 
-1. Elige la fecha en la tarjeta «Servicio especial».
-2. **Desactiva** los horarios normales que no habrá. Solo se puede si **no tienen reservas**: hazlo
-   **antes de que abra la reserva** (la app muestra los próximos 7 días; para el domingo 27, antes del lunes 21).
-3. Crea el servicio especial.
-
-### Reglas que conviene saber
+## Reglas que conviene saber
 
 | Regla | Por qué |
 |---|---|
-| La app muestra los servicios de los **próximos 7 días** | El servicio especial aparece para reservar 6 días antes |
-| La puerta abre **15 min antes** y cierra **1 h 20 min después** del inicio; la reserva cierra a la misma hora | Fijo en el código |
-| Dos servicios **activos** del mismo día deben empezar con **1 h 35 min** de diferencia como mínimo | Si no, las ventanas de la puerta se cruzan y rechaza reservas válidas. La pantalla no deja crear ni reactivar un horario que choque con un especial |
-| Mientras un día tenga un servicio especial activo, **Aplicar plantilla no crea ni reactiva** horarios normales ese día | Para no deshacer lo que se desactivó a mano |
-| Un horario con reservas **no se puede desactivar** | Protege a quien ya reservó |
-| Para quitar un servicio especial: **Desactivar** en la lista (si no tiene reservas) | El horario queda guardado en Rock, inactivo para reservas |
+| La app muestra los servicios de los **próximos 7 días** | Un especial se puede reservar desde 6 días antes |
+| Si alguien llega antes de que abra la puerta, el escáner le dice a qué hora abre **su** servicio | Cada QR se valida con su propio servicio |
+| Dos puertas pueden estar abiertas a la vez | El escáner reconoce el servicio de cada reserva |
+| Después de su check-in, una persona no puede reservar otro servicio durante **30 min** | Regla de septiembre, para no apartar dos lugares |
+| Un servicio con reservas **no se puede desactivar** | Protege a quien ya reservó: ocúltalo de la app y avisa |
+| Ocultar en la app **no apaga la puerta** | Para apagarla: desactivar (sin reservas) o cambiar la hora de cierre |
 
-Los servicios especiales quedan en Rock en la categoría de horarios **«Servicios especiales (Reservas)»**
+### Un domingo con un solo servicio o con otro horario
+
+**Antes de que abra la reserva** (7 días antes; para el domingo 27, antes del lunes 21): «Servicios especiales»
+→ «+ Nuevo servicio especial» con la fecha del domingo → en el paso 5 marca «No habrá» en los normales → Crear.
+Si alguno ya tiene reservas, ocúltalo de la app («Semana normal» → Editar) y avisa a quienes reservaron.
+
+### El horario especial en Rock
+
+Los especiales quedan en Rock en la categoría de horarios **«Servicios especiales (Reservas)»**
 (Administración → General → Horarios). Es solo el registro de la hora; todo se maneja desde la 862:
 
 - **No moverlos a otra categoría:** la puerta los reconoce por esa categoría.
 - **No usar «Eliminar» ahí:** el cupo y las reservas quedarían apuntando a un horario que ya no existe.
-  Para quitar un especial, **Desactivar** en la 862.
-- **No llenar «Enable Check-in / Close Check-in» ni ligarlos a grupos:** así el check-in de Rock
-  (VidAventura y demás) nunca los ve. El escaneo de reservas no usa esos campos.
-
-### Si cambia la hora de un servicio especial ya creado
-
-- **Sin reservas:** desactívalo y crea otro con la hora correcta.
-- **Con reservas:** no se puede desactivar. Pedir a TI que cambie en Rock la hora **y el nombre** del
-  horario (el nombre lleva la hora y la app ordena por ella), en Administración → Horarios →
-  «Servicios especiales (Reservas)». Desde ahí la pantalla no valida choques: revisar que quede a
-  1 h 35 min o más de otros horarios activos de ese día. Avisar a quienes reservaron: el QR sigue
-  siendo válido, pero la puerta abrirá con la hora nueva.
+- **No llenar «Enable Check-in / Close Check-in» ni ligarlos a grupos:** así el check-in de Rock (VidAventura y
+  demás) nunca los ve. El horario de la puerta de reservas se configura en la 862, no ahí.
+- Si cambia la **hora de inicio** de un especial con reservas: pedir a TI que cambie en Rock la hora **y el
+  nombre** (lleva la hora) y avisar a quienes reservaron. La ventana de la puerta se mueve sola con el inicio.
 
 ## Ejemplo: Navidad
 
 | Fecha | Qué hacer en la 862 |
 |---|---|
-| Jueves 24 dic, Nochebuena | Servicio especial: fecha 24/12, hora, nombre «Nochebuena», capacidad. Se puede reservar desde el viernes 18 |
-| Domingo 27 dic con un solo servicio | Antes del lunes 21: elegir 27/12, desactivar los horarios normales, crear el especial |
-
+| Jueves 24 dic, Nochebuena | Nuevo servicio especial: 24/12, hora, «Nochebuena», lugares; puerta como se necesite. Se puede reservar desde el viernes 18 |
+| Domingo 27 dic con un solo servicio | Antes del lunes 21: nuevo especial el 27/12 y «No habrá» en los normales |

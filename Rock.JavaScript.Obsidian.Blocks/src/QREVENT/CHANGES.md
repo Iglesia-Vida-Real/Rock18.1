@@ -1248,3 +1248,27 @@ Tarjeta nueva **«Servicio especial»** en la pestaña Configuración, entre la 
   `toggleFromSpecialDay`, `toggleFromUpcoming`, todos sobre `toggleActive`).
 - Textos dinámicos en `<span class="notranslate">` (trampa 4 de `CLAUDE.md`). Sin timers ni listeners
   nuevos; los flags `specialBusy`, `specialDayBusy` y `upcomingBusy` se liberan en `finally`.
+
+## SundayServiceCapacityAdmin: pestañas, formulario guiado y editor por servicio (2026-11-23)
+
+Reemplaza la tarjeta «Servicio especial» de la sección anterior y la tarjeta intermedia «Planificar un día»
+(Fredy: «confunde bastante»). Contraparte de servidor: `Rock.Blocks/QREVENT/CHANGES.md`, última sección.
+
+- **Pestañas:** «Semana normal» · «Servicios especiales» · «Métricas». En «Servicios especiales» la barra de
+  arriba solo muestra la sede (las fechas no aplican).
+- **Semana normal:** cada fila de la plantilla tiene «Visible en la app». En la lista, cada servicio muestra
+  «Lugares», «Puerta 8:45 a 10:20» y, si aplica, «Oculto en la app»; el botón **Editar** abre un editor con
+  lugares, «La puerta abre a las / cierra a las» (horas de reloj) y «Mostrar en la app de reservas». Se quitó
+  la edición de capacidad en línea (`saveCapacity`): ahora va por el editor.
+- **Servicios especiales:** botón «+ Nuevo servicio especial» → formulario por pasos (1 cuándo, 2 nombre y
+  lugares, 3 puerta, 4 mostrar en la app, 5 los otros servicios **activos** del día: «Sí habrá / No habrá»),
+  línea de tiempo «Así quedará la puerta ese día» y resumen en frases antes de crear. Debajo, «Programados»
+  con Editar y Desactivar.
+- La puerta se guarda **relativa al inicio** (`fOpensMin` / `fClosesMin`): al cambiar la hora de inicio, la
+  ventana se mueve con ella. Validación igual que el servidor (`doorWindowError`).
+- El formulario **solo desactiva** servicios («No habrá»); nunca reactiva (ver la regresión corregida en el
+  CHANGES del servidor).
+- Peticiones con contador (`fDayRequest`, `upcomingRequest`); `formBusy`, `fDayBusy`, `upcomingBusy` y
+  `rowBusy` se liberan en `finally`. Sin timers ni listeners nuevos. Textos dinámicos en `notranslate`.
+- Valores de omisión y rangos vienen del servidor (`InitBag`); `doorColumnReady = false` deshabilita los campos
+  de puerta y visibilidad y muestra el aviso del script.

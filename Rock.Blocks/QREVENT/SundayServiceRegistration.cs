@@ -703,6 +703,8 @@ FROM dbo.SundayServiceSlot s
 LEFT JOIN dbo.[Schedule] sch ON sch.Id = s.ScheduleId
 WHERE
     s.IsActive = 1
+    -- Oculto desde Configuracion Domingos ( ShowInApp = 0 ): no se lista ni se puede reservar.
+    AND " + SundayServiceCapacityAdmin.ShowInAppSqlExpression( rockContext, "s" ) + @" = 1
     AND s.CampusId = @CampusId
     AND s.OccurrenceDate >= @StartDate
     AND s.OccurrenceDate < @EndDate
@@ -849,7 +851,8 @@ ORDER BY
 SELECT TOP 1
     sl.OccurrenceDate,
     sch.iCalendarContent AS ICalendarContent,
-    " + SundayServiceCapacityAdmin.DoorClosesSqlExpression( rockContext, "sl" ) + @" AS DoorClosesMinutes
+    " + SundayServiceCapacityAdmin.DoorClosesSqlExpression( rockContext, "sl" ) + @" AS DoorClosesMinutes,
+    " + SundayServiceCapacityAdmin.ShowInAppSqlExpression( rockContext, "sl" ) + @" AS ShowInApp
 FROM dbo.SundayServiceSlot sl
 INNER JOIN dbo.[Schedule] sch ON sch.Id = sl.ScheduleId
 WHERE sl.CampusId = @CampusId
@@ -861,7 +864,8 @@ WHERE sl.CampusId = @CampusId
 
             if ( row != null )
             {
-                return IsSlotClosedForReservation( occurrenceDate, row.ICalendarContent, row.DoorClosesMinutes, RockDateTime.Now );
+                // Oculto de la app = cerrado para reservas nuevas ( la pantalla pudo quedar abierta ).
+                return !row.ShowInApp || IsSlotClosedForReservation( occurrenceDate, row.ICalendarContent, row.DoorClosesMinutes, RockDateTime.Now );
             }
 
             var iCal = rockContext.Database
@@ -881,7 +885,8 @@ WHERE sl.CampusId = @CampusId
 SELECT
     sl.OccurrenceDate,
     sch.iCalendarContent AS ICalendarContent,
-    " + SundayServiceCapacityAdmin.DoorClosesSqlExpression( rockContext, "sl" ) + @" AS DoorClosesMinutes
+    " + SundayServiceCapacityAdmin.DoorClosesSqlExpression( rockContext, "sl" ) + @" AS DoorClosesMinutes,
+    " + SundayServiceCapacityAdmin.ShowInAppSqlExpression( rockContext, "sl" ) + @" AS ShowInApp
 FROM dbo.SundayServiceHold h
 INNER JOIN dbo.SundayServiceSlot sl ON sl.Id = h.SlotId
 LEFT JOIN dbo.[Schedule] sch ON sch.Id = sl.ScheduleId
@@ -895,7 +900,8 @@ WHERE h.HoldToken = @HoldToken";
                 return false;
             }
 
-            return IsSlotClosedForReservation( row.OccurrenceDate, row.ICalendarContent, row.DoorClosesMinutes, RockDateTime.Now );
+            // Oculto de la app entre el hold y la confirmacion = cerrado para reservas nuevas.
+            return !row.ShowInApp || IsSlotClosedForReservation( row.OccurrenceDate, row.ICalendarContent, row.DoorClosesMinutes, RockDateTime.Now );
         }
 
         private static TimeSpan? ExtractICalProperty( string iCal, string property )
@@ -1522,6 +1528,7 @@ ORDER BY
             public DateTime OccurrenceDate { get; set; }
             public string ICalendarContent { get; set; }
             public int DoorClosesMinutes { get; set; }
+            public bool ShowInApp { get; set; }
         }
 
         /// <summary>

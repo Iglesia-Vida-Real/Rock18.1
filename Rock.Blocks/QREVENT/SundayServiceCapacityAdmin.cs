@@ -94,12 +94,12 @@ namespace Rock.Blocks.QREVENT
         private static DateTime _doorColumnCheckedUtc = DateTime.MinValue;
 
         /// <summary>
-        /// ¿Ya se corrió <c>Dev Tools/Sql/QREVENT_SundayService_DoorWindow.sql</c> (las DOS columnas)?
+        /// ¿Ya se corrió <c>Dev Tools/Sql/QREVENT_SundayService_SlotSettings.sql</c> (las TRES columnas)?
         /// Sin ellas, todo funciona con los valores de omisión fijos y la pantalla avisa. Un "sí" se
         /// recuerda para siempre; un "no" se vuelve a preguntar cada minuto (así, correr el script no
         /// exige reiniciar el sitio).
         /// </summary>
-        public static bool DoorColumnExists( RockContext rockContext )
+        public static bool SlotSettingsColumnsExist( RockContext rockContext )
         {
             lock ( DoorColumnLock )
             {
@@ -112,6 +112,7 @@ namespace Rock.Blocks.QREVENT
             var exists = rockContext.Database
                 .SqlQuery<int>( @"SELECT CASE WHEN COL_LENGTH( 'dbo.SundayServiceSlot', 'CheckInOpensMinutesBefore' ) IS NOT NULL
                                               AND COL_LENGTH( 'dbo.SundayServiceSlot', 'CheckInClosesMinutesAfter' ) IS NOT NULL
+                                              AND COL_LENGTH( 'dbo.SundayServiceSlot', 'ShowInApp' ) IS NOT NULL
                                          THEN 1 ELSE 0 END" )
                 .FirstOrDefault() == 1;
 
@@ -130,7 +131,7 @@ namespace Rock.Blocks.QREVENT
         /// </summary>
         public static string DoorOpensSqlExpression( RockContext rockContext, string slotAlias )
         {
-            return DoorColumnExists( rockContext )
+            return SlotSettingsColumnsExist( rockContext )
                 ? $"ISNULL( {slotAlias}.CheckInOpensMinutesBefore, {DefaultDoorOpensMinutesBefore} )"
                 : DefaultDoorOpensMinutesBefore.ToString( CultureInfo.InvariantCulture );
         }
@@ -141,14 +142,25 @@ namespace Rock.Blocks.QREVENT
         /// </summary>
         public static string DoorClosesSqlExpression( RockContext rockContext, string slotAlias )
         {
-            return DoorColumnExists( rockContext )
+            return SlotSettingsColumnsExist( rockContext )
                 ? $"ISNULL( {slotAlias}.CheckInClosesMinutesAfter, {DefaultDoorClosesMinutesAfter} )"
                 : DefaultDoorClosesMinutesAfter.ToString( CultureInfo.InvariantCulture );
         }
 
+        /// <summary>
+        /// Expresión SQL (bit) de si el cupo se muestra en la app de reservas. Sin la columna, siempre 1.
+        /// Oculto = no aparece ni se puede reservar; las reservas que ya existen siguen valiendo en la puerta.
+        /// </summary>
+        public static string ShowInAppSqlExpression( RockContext rockContext, string slotAlias )
+        {
+            return SlotSettingsColumnsExist( rockContext )
+                ? $"CAST( ISNULL( {slotAlias}.ShowInApp, 1 ) AS bit )"
+                : "CAST( 1 AS bit )";
+        }
+
         private const string DoorScriptMissingMessage =
-            "Para cambiar a qué hora abre o cierra la puerta falta preparar la base de datos (TI: script QREVENT_SundayService_DoorWindow.sql). "
-            + "Mientras tanto la puerta abre 15 min antes y cierra 1 h 20 min después del inicio en todos los servicios.";
+            "Para cambiar el horario de la puerta o la visibilidad en la app falta preparar la base de datos (TI: script QREVENT_SundayService_SlotSettings.sql). "
+            + "Mientras tanto todos los servicios se muestran en la app y la puerta abre 15 min antes y cierra 1 h 20 min después del inicio.";
 
         /// <summary>null si la ventana es válida; si no, el mensaje para el usuario. Valores null = no se cambian.</summary>
         private static string ValidateDoorWindow( int? opensMinutes, int? closesMinutes )
@@ -169,7 +181,7 @@ namespace Rock.Blocks.QREVENT
         /// <summary>Expresión SQL (bit): ¿el cupo tiene apertura o cierre propios (no los de omisión)?</summary>
         private static string DoorCustomSqlExpression( RockContext rockContext, string slotAlias )
         {
-            return DoorColumnExists( rockContext )
+            return SlotSettingsColumnsExist( rockContext )
                 ? $"CAST( CASE WHEN {slotAlias}.CheckInOpensMinutesBefore IS NULL AND {slotAlias}.CheckInClosesMinutesAfter IS NULL THEN 0 ELSE 1 END AS bit )"
                 : "CAST( 0 AS bit )";
         }
@@ -224,7 +236,7 @@ namespace Rock.Blocks.QREVENT
                     defaultCampusId = GetAttributeValue( AttributeKey.DefaultCampusId ).AsInteger(),
                     startDate = RockDateTime.Today.ToString( "yyyy-MM-dd" ),
                     endDate = RockDateTime.Today.AddMonths( 3 ).ToString( "yyyy-MM-dd" ),
-                    doorColumnReady = DoorColumnExists( rockContext ),
+                    doorColumnReady = SlotSettingsColumnsExist( rockContext ),
                     defaultDoorOpensMinutes = DefaultDoorOpensMinutesBefore,
                     maxDoorOpensMinutes = MaxDoorOpensMinutesBefore,
                     doorClosesMinutes = DefaultDoorClosesMinutesAfter,
@@ -285,7 +297,8 @@ SELECT
     sch.iCalendarContent AS ICalendarContent,
     " + DoorOpensSqlExpression( rockContext, "s" ) + @" AS DoorOpensMinutes,
     " + DoorClosesSqlExpression( rockContext, "s" ) + @" AS DoorClosesMinutes,
-    " + DoorCustomSqlExpression( rockContext, "s" ) + @" AS DoorIsCustom
+    " + DoorCustomSqlExpression( rockContext, "s" ) + @" AS DoorIsCustom,
+    " + ShowInAppSqlExpression( rockContext, "s" ) + @" AS ShowInApp
 FROM dbo.SundayServiceSlot s
 LEFT JOIN dbo.[Schedule] sch ON sch.Id = s.ScheduleId
 LEFT JOIN dbo.[Category] cat ON cat.Id = sch.CategoryId
@@ -324,7 +337,8 @@ ORDER BY s.OccurrenceDate, sch.[Name]";
                             timeText = FormatICalTime( r.ICalendarContent ),
                             doorOpensMinutes = r.DoorOpensMinutes,
                             doorClosesMinutes = r.DoorClosesMinutes,
-                            doorIsCustom = r.DoorIsCustom
+                            doorIsCustom = r.DoorIsCustom,
+                            showInApp = r.ShowInApp
                         } ).ToList()
                     } )
                     .ToList();
@@ -380,13 +394,18 @@ WHERE x.rn = 1";
                 .GroupBy( i => i.scheduleId )
                 .ToDictionary( g => g.Key, g => g.First().capacity );
 
+            // Horarios de la plantilla marcados «no visible en la app» (por omisión todos visibles).
+            var hiddenScheduleIds = new HashSet<int>( ( bag.items ?? new List<GenerateItemBag>() )
+                .Where( i => i != null && i.showInApp == false )
+                .Select( i => i.scheduleId ) );
+
             if ( items.Count == 0 )
             {
                 return ActionBadRequest( "Selecciona al menos un horario permitido." );
             }
 
             var warnings = new List<string>();
-            int inserted = 0, updated = 0, reactivated = 0, deactivated = 0, skippedLowCapacity = 0, skippedSpecialDay = 0;
+            int inserted = 0, updated = 0, reactivated = 0, deactivated = 0, skippedLowCapacity = 0, skippedSpecialDay = 0, visibilityChanged = 0;
 
             using ( var rockContext = new RockContext() )
             {
@@ -455,6 +474,13 @@ WHERE CampusId = @CampusId AND OccurrenceDate >= @StartDate AND OccurrenceDate <
                     .Select( r => r.OccurrenceDate.Date ) );
                 var warnedSpecialDates = new HashSet<DateTime>();
 
+                // Visibilidad en la app: solo si ya se corrió el script de ajustes por cupo.
+                var settingsColumns = SlotSettingsColumnsExist( rockContext );
+                if ( hiddenScheduleIds.Count > 0 && !settingsColumns )
+                {
+                    warnings.Add( "No se pudo ocultar de la app: falta preparar la base de datos (script QREVENT_SundayService_SlotSettings.sql). Los horarios quedaron visibles." );
+                }
+
                 // 3) Upsert dentro de una sola transacción
                 rockContext.WrapTransaction( () =>
                 {
@@ -505,12 +531,21 @@ WHERE CampusId = @CampusId AND OccurrenceDate >= @StartDate AND OccurrenceDate <
                                     new SqlParameter( "@Id", ex.SlotId ) );
                                 reactivated++;
                             }
+
+                            // «Sobrescribir» también aplica la visibilidad de la plantilla a las fechas que ya existían.
+                            if ( bag.overwriteCapacity && settingsColumns )
+                            {
+                                var hide = hiddenScheduleIds.Contains( scheduleId );
+                                visibilityChanged += rockContext.Database.ExecuteSqlCommand(
+                                    "UPDATE dbo.SundayServiceSlot SET ShowInApp = " + ( hide ? "0" : "NULL" ) + ", ModifiedDateTime = GETDATE() WHERE Id = @Id AND ISNULL( ShowInApp, 1 ) <> " + ( hide ? "0" : "1" ),
+                                    new SqlParameter( "@Id", ex.SlotId ) );
+                            }
                         }
                         else
                         {
                             rockContext.Database.ExecuteSqlCommand( @"
-INSERT INTO dbo.SundayServiceSlot ( CampusId, OccurrenceDate, ScheduleId, Capacity, ReservedCount, HoldCount, IsActive, CreatedDateTime, ModifiedDateTime )
-VALUES ( @CampusId, @OccurrenceDate, @ScheduleId, @Capacity, 0, 0, 1, GETDATE(), GETDATE() )",
+INSERT INTO dbo.SundayServiceSlot ( CampusId, OccurrenceDate, ScheduleId, Capacity, ReservedCount, HoldCount, IsActive, CreatedDateTime, ModifiedDateTime" + ( settingsColumns && hiddenScheduleIds.Contains( scheduleId ) ? ", ShowInApp" : "" ) + @" )
+VALUES ( @CampusId, @OccurrenceDate, @ScheduleId, @Capacity, 0, 0, 1, GETDATE(), GETDATE()" + ( settingsColumns && hiddenScheduleIds.Contains( scheduleId ) ? ", 0" : "" ) + @" )",
                                 new SqlParameter( "@CampusId", bag.campusId ),
                                 new SqlParameter( "@OccurrenceDate", date ),
                                 new SqlParameter( "@ScheduleId", scheduleId ),
@@ -554,6 +589,7 @@ VALUES ( @CampusId, @OccurrenceDate, @ScheduleId, @Capacity, 0, 0, 1, GETDATE(),
                 deactivated = deactivated,
                 skippedLowCapacity = skippedLowCapacity,
                 skippedSpecialDay = skippedSpecialDay,
+                visibilityChanged = visibilityChanged,
                 warnings = warnings
             } );
         }
@@ -572,8 +608,9 @@ VALUES ( @CampusId, @OccurrenceDate, @ScheduleId, @Capacity, 0, 0, 1, GETDATE(),
             }
 
             var changesDoor = bag != null && ( bag.doorOpensMinutes.HasValue || bag.doorClosesMinutes.HasValue || bag.resetDoorToDefault );
+            var changesSettings = changesDoor || ( bag != null && bag.showInApp.HasValue );
 
-            if ( bag == null || bag.slotId <= 0 || ( !bag.capacity.HasValue && !bag.isActive.HasValue && !changesDoor ) )
+            if ( bag == null || bag.slotId <= 0 || ( !bag.capacity.HasValue && !bag.isActive.HasValue && !changesSettings ) )
             {
                 return ActionBadRequest( "Parámetros inválidos." );
             }
@@ -620,7 +657,7 @@ FROM dbo.SundayServiceSlot WHERE Id = @Id",
                 // valida cada QR contra la ventana de SU propio cupo, así que dos ventanas que se
                 // cruzan ya no rechazan reservas válidas. La pantalla solo lo muestra.
 
-                if ( changesDoor && !DoorColumnExists( rockContext ) )
+                if ( changesSettings && !SlotSettingsColumnsExist( rockContext ) )
                 {
                     return ActionOk( new UpdateSlotResponseBag
                     {
@@ -652,6 +689,12 @@ FROM dbo.SundayServiceSlot WHERE Id = @Id",
                         doorSet += ", CheckInClosesMinutesAfter = @DoorCloses";
                         doorClosesValue = bag.doorClosesMinutes.Value == DefaultDoorClosesMinutesAfter ? ( object ) DBNull.Value : bag.doorClosesMinutes.Value;
                     }
+                }
+
+                // Visible = NULL (valor de siempre); oculto = 0.
+                if ( bag.showInApp.HasValue )
+                {
+                    doorSet += ", ShowInApp = " + ( bag.showInApp.Value ? "NULL" : "0" );
                 }
 
                 rockContext.Database.ExecuteSqlCommand( @"
@@ -709,7 +752,8 @@ SELECT TOP 100
     sch.iCalendarContent AS ICalendarContent,
     " + DoorOpensSqlExpression( rockContext, "s" ) + @" AS DoorOpensMinutes,
     " + DoorClosesSqlExpression( rockContext, "s" ) + @" AS DoorClosesMinutes,
-    " + DoorCustomSqlExpression( rockContext, "s" ) + @" AS DoorIsCustom
+    " + DoorCustomSqlExpression( rockContext, "s" ) + @" AS DoorIsCustom,
+    " + ShowInAppSqlExpression( rockContext, "s" ) + @" AS ShowInApp
 FROM dbo.SundayServiceSlot s
 INNER JOIN dbo.[Schedule] sch ON sch.Id = s.ScheduleId
 INNER JOIN dbo.[Category] cat ON cat.Id = sch.CategoryId
@@ -739,6 +783,7 @@ ORDER BY s.OccurrenceDate, s.Id",
                         doorOpensMinutes = r.DoorOpensMinutes,
                         doorClosesMinutes = r.DoorClosesMinutes,
                         doorIsCustom = r.DoorIsCustom,
+                        showInApp = r.ShowInApp,
                         occurrenceDate = r.OccurrenceDate.ToString( "yyyy-MM-dd" ),
                         occurrenceDateText = r.OccurrenceDate.ToString( "ddd d MMM yyyy", SpanishCulture ).Replace( ".", "" )
                     } )
@@ -828,8 +873,9 @@ ORDER BY s.OccurrenceDate, s.Id",
             using ( var rockContext = new RockContext() )
             {
                 // Sin las columnas solo se admiten los valores de omisión (no hay dónde guardar otros).
-                var doorColumn = DoorColumnExists( rockContext );
-                var customDoor = doorOpens != DefaultDoorOpensMinutesBefore || doorCloses != DefaultDoorClosesMinutesAfter;
+                var doorColumn = SlotSettingsColumnsExist( rockContext );
+                var hidden = bag.showInApp == false;
+                var customDoor = doorOpens != DefaultDoorOpensMinutesBefore || doorCloses != DefaultDoorClosesMinutesAfter || hidden;
                 if ( !doorColumn && customDoor )
                 {
                     return ActionOk( new CreateSpecialServiceResponseBag
@@ -864,14 +910,15 @@ ORDER BY s.OccurrenceDate, s.Id",
                     rockContext.SaveChanges();
 
                     rockContext.Database.ExecuteSqlCommand( @"
-INSERT INTO dbo.SundayServiceSlot ( CampusId, OccurrenceDate, ScheduleId, Capacity, ReservedCount, HoldCount, IsActive, CreatedDateTime, ModifiedDateTime" + ( storeDoor ? ", CheckInOpensMinutesBefore, CheckInClosesMinutesAfter" : "" ) + @" )
-VALUES ( @CampusId, @OccurrenceDate, @ScheduleId, @Capacity, 0, 0, 1, GETDATE(), GETDATE()" + ( storeDoor ? ", @DoorOpens, @DoorCloses" : "" ) + @" )",
+INSERT INTO dbo.SundayServiceSlot ( CampusId, OccurrenceDate, ScheduleId, Capacity, ReservedCount, HoldCount, IsActive, CreatedDateTime, ModifiedDateTime" + ( storeDoor ? ", CheckInOpensMinutesBefore, CheckInClosesMinutesAfter, ShowInApp" : "" ) + @" )
+VALUES ( @CampusId, @OccurrenceDate, @ScheduleId, @Capacity, 0, 0, 1, GETDATE(), GETDATE()" + ( storeDoor ? ", @DoorOpens, @DoorCloses, @ShowInApp" : "" ) + @" )",
                         new SqlParameter( "@CampusId", bag.campusId ),
                         new SqlParameter( "@OccurrenceDate", date.Date ),
                         new SqlParameter( "@ScheduleId", schedule.Id ),
                         new SqlParameter( "@Capacity", bag.capacity ),
                         new SqlParameter( "@DoorOpens", doorOpensValue ),
-                        new SqlParameter( "@DoorCloses", doorClosesValue ) );
+                        new SqlParameter( "@DoorCloses", doorClosesValue ),
+                        new SqlParameter( "@ShowInApp", hidden ? ( object ) false : DBNull.Value ) );
                 } );
 
                 return ActionOk( new CreateSpecialServiceResponseBag
@@ -1409,6 +1456,9 @@ WHERE s.CampusId = @CampusId
 
             /// <summary>true si el cupo tiene apertura propia; false = usa el valor de omisión.</summary>
             public bool doorIsCustom { get; set; }
+
+            /// <summary>false = no aparece en la app de reservas (la puerta lo sigue aceptando).</summary>
+            public bool showInApp { get; set; }
         }
 
         public class UpcomingSpecialBag : SlotBag
@@ -1437,6 +1487,9 @@ WHERE s.CampusId = @CampusId
 
             /// <summary>Minutos después del inicio en que cierran puerta y reserva (15 a 360).</summary>
             public int? doorClosesMinutes { get; set; }
+
+            /// <summary>false = no aparece en la app de reservas; null/true = visible.</summary>
+            public bool? showInApp { get; set; }
         }
 
         public class CreateSpecialServiceResponseBag
@@ -1451,6 +1504,9 @@ WHERE s.CampusId = @CampusId
         {
             public int scheduleId { get; set; }
             public int capacity { get; set; }
+
+            /// <summary>false = los cupos que crea no aparecen en la app de reservas; null/true = visibles.</summary>
+            public bool? showInApp { get; set; }
         }
 
         public class GenerateRequestBag
@@ -1471,6 +1527,7 @@ WHERE s.CampusId = @CampusId
             public int deactivated { get; set; }
             public int skippedLowCapacity { get; set; }
             public int skippedSpecialDay { get; set; }
+            public int visibilityChanged { get; set; }
             public List<string> warnings { get; set; }
         }
 
@@ -1484,6 +1541,9 @@ WHERE s.CampusId = @CampusId
 
             /// <summary>true = volver al valor de omisión (NULL en la columna).</summary>
             public bool resetDoorToDefault { get; set; }
+
+            /// <summary>true = visible en la app de reservas; false = oculto; null = no se cambia.</summary>
+            public bool? showInApp { get; set; }
 
             public int slotId { get; set; }
             public int? capacity { get; set; }
@@ -1523,6 +1583,7 @@ WHERE s.CampusId = @CampusId
             public int DoorOpensMinutes { get; set; }
             public int DoorClosesMinutes { get; set; }
             public bool DoorIsCustom { get; set; }
+            public bool ShowInApp { get; set; }
         }
 
         /// <summary>Fila de <see cref="LoadSlotTimes"/>. Tipo propio: no reutilizar SlotRow (ver arriba).</summary>

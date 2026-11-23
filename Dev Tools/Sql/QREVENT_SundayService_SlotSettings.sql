@@ -1,22 +1,24 @@
 /*
 ================================================================================
-  QREVENT · Sunday Service — ventana de la puerta configurable por cupo
-  (2026-11-20)
+  QREVENT · Sunday Service — ajustes por cupo (2026-11-20 / 2026-11-23)
 ================================================================================
 
-  Agrega a dbo.SundayServiceSlot dos columnas:
+  Agrega a dbo.SundayServiceSlot tres columnas que se configuran desde
+  Configuración Domingos (página 862), por cupo y al crear un servicio especial:
 
-    · CheckInOpensMinutesBefore  — cuántos minutos ANTES de la hora de inicio
-      el escáner de la puerta (página 863) empieza a aceptar los QR del cupo.
+    · CheckInOpensMinutesBefore  — minutos ANTES de la hora de inicio en que el
+      escáner de la puerta (página 863) empieza a aceptar los QR del cupo.
       NULL = 15 (valor de siempre).
-    · CheckInClosesMinutesAfter  — cuántos minutos DESPUÉS de la hora de inicio
-      la puerta deja de aceptar QR y la app (página 860) deja de aceptar
-      reservas para ese cupo (cierran juntas a propósito). NULL = 80 (valor de
-      siempre). No hay check-out en este módulo.
+    · CheckInClosesMinutesAfter  — minutos DESPUÉS de la hora de inicio en que la
+      puerta deja de aceptar QR y la app (página 860) deja de aceptar reservas
+      para ese cupo (cierran juntas a propósito). NULL = 80 (valor de siempre).
+      No hay check-out en este módulo.
+    · ShowInApp                  — 0 = el cupo NO aparece en la app de reservas y
+      no se puede reservar; quien ya reservó sigue entrando por la puerta con su
+      QR. NULL o 1 = visible (valor de siempre).
 
-  NULL en las dos = exactamente el comportamiento de antes del cambio: ninguna
-  fila existente cambia. Se editan desde Configuración Domingos (página 862),
-  tarjeta «Planificar un día»: por cupo y al crear un servicio especial.
+  NULL en las tres = exactamente el comportamiento de antes del cambio: ninguna
+  fila existente cambia.
 
   IDEMPOTENTE: se puede correr varias veces; la segunda no cambia nada.
   Toma segundos: agregar columnas NULL es solo metadato (no reescribe la
@@ -24,18 +26,18 @@
 
   ORDEN DE DESPLIEGUE
     El DLL nuevo funciona CON y SIN estas columnas (las detecta solo y, sin
-    ellas, usa 15 / 80 fijos y la pantalla avisa que falta el script).
+    ellas, usa los valores de siempre y la pantalla avisa que falta el script).
     Lo recomendado igual es: 1) este SQL, 2) DLL + bundle.
 
   Correr con:
-    sqlcmd -S <servidor> -E -d <BD> -I -f 65001 -i QREVENT_SundayService_DoorWindow.sql
+    sqlcmd -S <servidor> -E -d <BD> -I -f 65001 -i QREVENT_SundayService_SlotSettings.sql
   (-I = QUOTED_IDENTIFIER ON; la tabla hermana tiene índice filtrado.)
 
   REVERTIR (solo si hiciera falta). Después de revertir, REINICIAR el sitio:
   el DLL recuerda que las columnas existían y seguiría usándolas.
     ALTER TABLE dbo.SundayServiceSlot DROP CONSTRAINT CK_SundayServiceSlot_CheckInOpensMinutesBefore;
     ALTER TABLE dbo.SundayServiceSlot DROP CONSTRAINT CK_SundayServiceSlot_CheckInClosesMinutesAfter;
-    ALTER TABLE dbo.SundayServiceSlot DROP COLUMN CheckInOpensMinutesBefore, CheckInClosesMinutesAfter;
+    ALTER TABLE dbo.SundayServiceSlot DROP COLUMN CheckInOpensMinutesBefore, CheckInClosesMinutesAfter, ShowInApp;
 ================================================================================
 */
 
@@ -72,6 +74,14 @@ END
 ELSE
     PRINT N'Columna CheckInClosesMinutesAfter ya existía.';
 
+IF COL_LENGTH( N'dbo.SundayServiceSlot', N'ShowInApp' ) IS NULL
+BEGIN
+    ALTER TABLE dbo.SundayServiceSlot ADD ShowInApp BIT NULL;
+    PRINT N'Columna ShowInApp agregada.';
+END
+ELSE
+    PRINT N'Columna ShowInApp ya existía.';
+
 COMMIT TRANSACTION;
 GO
 
@@ -105,6 +115,7 @@ GO
 SELECT
     ColumnaApertura = CASE WHEN COL_LENGTH( N'dbo.SundayServiceSlot', N'CheckInOpensMinutesBefore' ) IS NULL THEN 0 ELSE 1 END,
     ColumnaCierre   = CASE WHEN COL_LENGTH( N'dbo.SundayServiceSlot', N'CheckInClosesMinutesAfter' ) IS NULL THEN 0 ELSE 1 END,
+    ColumnaVisible  = CASE WHEN COL_LENGTH( N'dbo.SundayServiceSlot', N'ShowInApp' ) IS NULL THEN 0 ELSE 1 END,
     Restricciones   = ( SELECT COUNT(*) FROM sys.check_constraints
                         WHERE name IN ( N'CK_SundayServiceSlot_CheckInOpensMinutesBefore', N'CK_SundayServiceSlot_CheckInClosesMinutesAfter' ) );
 GO
