@@ -330,6 +330,17 @@ correr los jobs. Nada más.
   ePay en local tiene el mismo problema: `TestMerchantPasswd` es «Encrypted Text» y `EpayVisanetGateway.Decrypt` no
   lo puede descifrar con la llave local (devuelve vacío o el texto cifrado), así que el cobro de prueba de §3.2/§7.1
   no llega a autenticarse en `epaytestvisanet.com.gt`.
+- **Pagos lado a lado (Claude, 2026-11-23, tarde):**
+  - §7.1 Inscripción con la Test Gateway en la 19 (plantilla de muestra «Summer Camp», activada solo para la prueba
+    y devuelta a su estado): completa; transacción con la misma forma que las de prod de junio; saldo neto Q200 por la
+    personalización `GetTotalPayments`. Hallazgo previo (igual en 18.1): con pago parcial, «Monto a pagar hoy» nunca
+    valida en quetzales. Sin impacto hoy (la única inscripción con cobro exige pago completo).
+  - §3.2 Eventos hasta el pago, 19 y 18.1 (evento 1, con la fecha igualada en Rock18Base y devuelta): mismos pasos y
+    el mismo rechazo controlado de ePay («El pago no pudo procesarse…»), orden `Failed`, cupo liberado, 0
+    transacciones, 0 excepciones. El mensaje real de ePay no se guarda (defecto previo).
+  - Auditoría del núcleo (agente): sin cambios en `GatewayComponent`, lotes ni SaveHooks; cifrado compatible; nuevo
+    formato V2 al escribir. Revisión de los 83 valores cifrados de la copia: 0 en riesgo (preflight bloque 12).
+  - Todo en `upgrade-19.8.1/GUIA_FALLAS_PAGOS_19.8.1.md`.
 - Nuevo `Dev Tools/Upgrade/19.8.1_preflight_bd_prod.sql`: revisión de solo lectura de la BD de prod (versión y nivel
   de compatibilidad de SQL, espacio, respaldos, migraciones y plugins contra la copia probada, script de reservas).
   Probado contra Rock18Base: todo OK.

@@ -408,7 +408,10 @@ vacía `RockWeb`: tiene carpetas y archivos que solo existen en el servidor (§5
 6b. Correr en el SQL de prod `Dev Tools/Upgrade/19.8.1_preflight_bd_prod.sql` (solo lectura, con el sitio arriba) y
    guardar la salida. Todo debe decir «OK»: SQL Server ≥ 2016, nivel de compatibilidad ≥ 130, espacio para el
    `.bak`, migraciones del core y de plugins iguales a la copia probada. Cualquier «REVISAR» detiene el upgrade
-   hasta entenderlo. (El bloque 8 del script responde el paso 6.)
+   hasta entenderlo. (El bloque 8 del script responde el paso 6; el bloque 12 revisa que la 19 pueda descifrar los
+   secretos de pagos, ver `upgrade-19.8.1/GUIA_FALLAS_PAGOS_19.8.1.md` §3.)
+6c. TI confirma, sin mostrar los valores (p. ej. comparando su hash), que `DataEncryptionKey` y `PasswordKey` del
+   `web.config` de la 19 son **idénticas** a las de la 18.1. Si difieren, fallan todos los cobros (Dar, ePay).
 7. Armar el kit (fuera del repo) **desde un commit**, con `build-all.ps1 -FullObsidian` + `npm run build` en
    `Rock.JavaScript.Obsidian.Reporting` (build-all no lo recompila completo), prueba rápida en 6229 y luego
    `Dev Tools/Upgrade/New-KitUpgrade.ps1 -Destino <carpeta fuera del repo>`, que hace todo lo de esta lista y verifica
@@ -484,6 +487,9 @@ vacía `RockWeb`: tiene carpetas y archivos que solo existen en el servidor (§5
    está configurado) se lanza; `ExceptionLog` sin entradas nuevas de `CybersourceDonationEntry`. Si falla: anotar el
    mensaje exacto y la hora; **no** reintentar con otra tarjeta sin revisar primero (la idempotencia evita doble
    cobro con la misma solicitud, no entre intentos distintos).
+   **Si falla cualquier pago (Dar, Eventos, inscripciones):** `docs/HANDOFF/upgrade-19.8.1/GUIA_FALLAS_PAGOS_19.8.1.md`
+   (síntoma → dónde mirar → qué hacer, consultas de solo lectura y líneas base). La causa más probable de que fallen
+   **todos** es que `DataEncryptionKey` del `web.config` fusionado no sea idéntica a la de la 18.1 (guía §2).
    Avisar a los supervisores de check-in de cada sede, antes del primer domingo, del límite nuevo de la 19: tras
    **10 PIN fallidos en 10 min desde la misma red**, el PIN de supervisor queda bloqueado hasta 10 min, incluso el
    correcto (§14.8). Que cada supervisor confirme su PIN antes del servicio.

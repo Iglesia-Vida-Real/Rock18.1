@@ -96,4 +96,16 @@ SELECT TOP 8 t.name AS Tabla, SUM(p.rows) AS Filas
 FROM sys.tables t JOIN sys.partitions p ON p.object_id = t.object_id AND p.index_id IN (0, 1)
 GROUP BY t.name ORDER BY 2 DESC;
 
+PRINT '== 12. Valores cifrados que la 19 confundiría con su formato nuevo «V2» (esperado: 0; en la copia del 19-nov: 0 de 83)';
+-- La 19 (Encryption.cs, DecryptString) trata como V2 todo valor cuyos 2 últimos bytes sean 0x56 0x32 y entonces NO
+-- intenta el descifrado de siempre: ese secreto (p. ej. de ePay o Dar) quedaría vacío. Probabilidad 1/65536 por valor.
+-- Solo cuenta; no muestra ningún valor.
+SELECT COUNT(*) AS ValoresCifrados,
+       SUM(CASE WHEN SUBSTRING(b.Bytes, DATALENGTH(b.Bytes) - 1, 2) = 0x5632 THEN 1 ELSE 0 END) AS ConPieV2,
+       CASE WHEN SUM(CASE WHEN SUBSTRING(b.Bytes, DATALENGTH(b.Bytes) - 1, 2) = 0x5632 THEN 1 ELSE 0 END) = 0 THEN 'OK'
+            ELSE 'REVISAR: re-guardar ese secreto en la 19 desde la UI (ver GUIA_FALLAS_PAGOS_19.8.1.md)' END AS Resultado
+FROM dbo.AttributeValue av
+CROSS APPLY (SELECT CAST(N'' AS xml).value('xs:base64Binary(sql:column("av.Value"))', 'varbinary(max)') AS Bytes) b
+WHERE LEFT(av.Value, 5) = 'EAAAA';
+
 PRINT '== Fin. Nada se modificó.';
