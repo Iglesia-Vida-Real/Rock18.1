@@ -30,10 +30,19 @@ La 19 (`Rock18.1`, 6229, `Rock19Test`) y la 18.1 base de comparación (`Rock18Ba
 Detalle: `Rock.Blocks/QREVENT/CHANGES.md` (últimas dos secciones), `src/QREVENT/CHANGES.md`,
 guía `GUIA_RESERVAS_DOMINGOS.md`.
 
+## Estado al cierre del 2026-11-23
+
+- Todas las pruebas pasaron en 18.1 (6231): ocultar/mostrar (servicio y plantilla al instante), Editar
+  (lugares, puerta, «Puerta normal»), cierre tardío, llegar temprano, ventanas cruzadas.
+- **Ya está en la rama de la 19** (`Test_Update_18.1_a_18.8`, cherry-pick limpio), compilado y publicado en 6229;
+  script corrido en `Rock19Test`; probado: crear especial, reservar, escanear, ocultar. Respaldo previo de la DLL
+  y las pantallas de la 19 en `dev-isolation\respaldo_19_antes_reservas_2026-11-23`.
+- `Rock18Reservas` y `Rock19Test` quedaron idénticas al original de prod en sábados y domingos (comparadas
+  contra `Rock18Base`); los especiales de prueba quedaron ocultos.
+
 ## Pendiente
 
-1. Terminar de probar en 6231: que un servicio **oculto** no salga en la 860 y no se pueda reservar; **Editar**
-   en «Semana normal» (lugares, puerta, visible); «Visible en la app» en la plantilla.
-2. Decidir con Fredy/Rodolfo el paso a la 19 (cherry-pick sobre `Test_Update_18.1_a_18.8`, recompilar, probar
-   en 6229 y correr el script en `Rock19Test`) y el despliegue a producción (orden: script SQL → DLL + bundle).
-3. Opcional: borrar los especiales de prueba de `Rock18Reservas` (solo BD local).
+1. Paquete para TI: `DESPLIEGUE_RESERVAS_SERVICIOS_ESPECIALES.md` (qué subir, orden, verificación, reversa,
+   fecha límite 11-dic / 18-dic).
+2. Con aprobación: push de las ramas y unir `reservas-servicios-especiales` a `hotfix-18.1`.
+3. Agregar al runbook del upgrade (`UPGRADE_19.8.1.md`, lo edita la sesión de la 19) el paso del script.
