@@ -962,8 +962,12 @@ en `SundayServiceCapacityAdmin` (`DefaultDoorOpensMinutesBefore`, `DefaultDoorCl
 - `GetSlots` / `GetUpcomingSpecialServices` devuelven `doorOpensMinutes`, `doorClosesMinutes`, `doorIsCustom`,
   `showInApp`. `UpdateSlot` acepta `doorOpensMinutes`, `doorClosesMinutes`, `resetDoorToDefault`, `showInApp`.
   `CreateSpecialService` acepta `doorOpensMinutes`, `doorClosesMinutes`, `showInApp`.
-- `Generate`: cada horario de la plantilla trae `showInApp`; los cupos que crea quedan ocultos si se desmarcó, y
-  con «Sobrescribir» también se aplica a las fechas existentes (`visibilityChanged` en la respuesta).
+- `Generate`: cada horario de la plantilla trae `showInApp`; los cupos que **crea** quedan ocultos si se desmarcó.
+  No toca la visibilidad de las fechas que ya existían (eso lo hace `SetScheduleVisibility`).
+- `SetScheduleVisibility(campusId, scheduleId, startDate, endDate, showInApp)` (2026-11-23): la casilla «Visible
+  en la app» de la plantilla se aplica **al instante** a todas las fechas del horario en el rango, de hoy en
+  adelante (las pasadas no se tocan). Pedido de Fredy: «solo con un check que ya no salga disponible para
+  reservar».
 - Se **quitó** el bloqueo por «choque» de horarios al crear y al reactivar (ya no hace falta).
 - `InitBag` lleva `doorColumnReady` y los valores/rangos para que la pantalla no los tenga fijos.
 

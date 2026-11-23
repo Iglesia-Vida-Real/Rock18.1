@@ -405,7 +405,7 @@ WHERE x.rn = 1";
             }
 
             var warnings = new List<string>();
-            int inserted = 0, updated = 0, reactivated = 0, deactivated = 0, skippedLowCapacity = 0, skippedSpecialDay = 0, visibilityChanged = 0;
+            int inserted = 0, updated = 0, reactivated = 0, deactivated = 0, skippedLowCapacity = 0, skippedSpecialDay = 0;
 
             using ( var rockContext = new RockContext() )
             {
@@ -532,14 +532,6 @@ WHERE CampusId = @CampusId AND OccurrenceDate >= @StartDate AND OccurrenceDate <
                                 reactivated++;
                             }
 
-                            // «Sobrescribir» también aplica la visibilidad de la plantilla a las fechas que ya existían.
-                            if ( bag.overwriteCapacity && settingsColumns )
-                            {
-                                var hide = hiddenScheduleIds.Contains( scheduleId );
-                                visibilityChanged += rockContext.Database.ExecuteSqlCommand(
-                                    "UPDATE dbo.SundayServiceSlot SET ShowInApp = " + ( hide ? "0" : "NULL" ) + ", ModifiedDateTime = GETDATE() WHERE Id = @Id AND ISNULL( ShowInApp, 1 ) <> " + ( hide ? "0" : "1" ),
-                                    new SqlParameter( "@Id", ex.SlotId ) );
-                            }
                         }
                         else
                         {
@@ -589,7 +581,6 @@ VALUES ( @CampusId, @OccurrenceDate, @ScheduleId, @Capacity, 0, 0, 1, GETDATE(),
                 deactivated = deactivated,
                 skippedLowCapacity = skippedLowCapacity,
                 skippedSpecialDay = skippedSpecialDay,
-                visibilityChanged = visibilityChanged,
                 warnings = warnings
             } );
         }
@@ -710,6 +701,61 @@ WHERE Id = @Id",
                     new SqlParameter( "@Id", bag.slotId ) );
 
                 return ActionOk( new UpdateSlotResponseBag { resultCode = 1, message = "Guardado." } );
+            }
+        }
+
+        /// <summary>
+        /// Muestra u oculta en la app de reservas TODAS las fechas de un horario dentro del rango (de hoy en
+        /// adelante). Es la casilla «Visible en la app» de la plantilla: se aplica al instante, sin «Aplicar
+        /// plantilla». Ocultar no toca la puerta: quien ya reservó entra igual.
+        /// </summary>
+        [BlockAction( "SetScheduleVisibility" )]
+        public BlockActionResult SetScheduleVisibility( SetScheduleVisibilityRequestBag bag )
+        {
+            if ( !IsAdminAuthorized() )
+            {
+                return ActionForbidden( "No autorizado." );
+            }
+
+            if ( bag == null || bag.campusId <= 0 || bag.scheduleId <= 0 )
+            {
+                return ActionBadRequest( "Parámetros inválidos." );
+            }
+
+            if ( !TryParseRange( bag.startDate, bag.endDate, out var start, out var end, out var rangeError ) )
+            {
+                return ActionBadRequest( rangeError );
+            }
+
+            // Las fechas pasadas no se tocan.
+            var from = start < RockDateTime.Today ? RockDateTime.Today : start;
+            if ( from > end )
+            {
+                return ActionOk( new SetScheduleVisibilityResponseBag { resultCode = 1, changed = 0, message = "No hay fechas de hoy en adelante en ese rango." } );
+            }
+
+            using ( var rockContext = new RockContext() )
+            {
+                if ( !SlotSettingsColumnsExist( rockContext ) )
+                {
+                    return ActionOk( new SetScheduleVisibilityResponseBag { resultCode = 0, message = DoorScriptMissingMessage } );
+                }
+
+                var changed = rockContext.Database.ExecuteSqlCommand(
+                    "UPDATE dbo.SundayServiceSlot SET ShowInApp = " + ( bag.showInApp ? "NULL" : "0" ) + ", ModifiedDateTime = GETDATE() "
+                    + "WHERE CampusId = @CampusId AND ScheduleId = @ScheduleId AND OccurrenceDate >= @From AND OccurrenceDate <= @To "
+                    + "AND ISNULL( ShowInApp, 1 ) <> " + ( bag.showInApp ? "1" : "0" ),
+                    new SqlParameter( "@CampusId", bag.campusId ),
+                    new SqlParameter( "@ScheduleId", bag.scheduleId ),
+                    new SqlParameter( "@From", from.Date ),
+                    new SqlParameter( "@To", end.Date ) );
+
+                var rangeText = from.ToString( "d MMM", SpanishCulture ).Replace( ".", "" ) + " al " + end.ToString( "d MMM", SpanishCulture ).Replace( ".", "" );
+                var message = changed == 0
+                    ? "No había nada que cambiar en ese rango."
+                    : ( bag.showInApp ? "Visible en la app: " : "Oculto en la app: " ) + changed + ( changed == 1 ? " fecha" : " fechas" ) + " (del " + rangeText + ").";
+
+                return ActionOk( new SetScheduleVisibilityResponseBag { resultCode = 1, changed = changed, message = message } );
             }
         }
 
@@ -1492,6 +1538,22 @@ WHERE s.CampusId = @CampusId
             public bool? showInApp { get; set; }
         }
 
+        public class SetScheduleVisibilityRequestBag
+        {
+            public int campusId { get; set; }
+            public int scheduleId { get; set; }
+            public string startDate { get; set; }
+            public string endDate { get; set; }
+            public bool showInApp { get; set; }
+        }
+
+        public class SetScheduleVisibilityResponseBag
+        {
+            public int resultCode { get; set; }
+            public int changed { get; set; }
+            public string message { get; set; }
+        }
+
         public class CreateSpecialServiceResponseBag
         {
             public int resultCode { get; set; }
@@ -1527,7 +1589,6 @@ WHERE s.CampusId = @CampusId
             public int deactivated { get; set; }
             public int skippedLowCapacity { get; set; }
             public int skippedSpecialDay { get; set; }
-            public int visibilityChanged { get; set; }
             public List<string> warnings { get; set; }
         }
 

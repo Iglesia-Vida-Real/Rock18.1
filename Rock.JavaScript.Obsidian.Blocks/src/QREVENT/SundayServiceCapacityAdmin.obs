@@ -431,7 +431,12 @@
                                 <div class="caCardTitle">Plantilla de horarios</div>
                                 <div class="caCardSub">
                                     Define la capacidad de cada horario y aplícala a todas las fechas del rango de arriba.
+                                    La casilla de la izquierda solo elige a qué horarios se aplica la plantilla: <b>no oculta nada</b>.
+                                    Para que un horario no salga en la página de reservas, desmarca su «Visible en la app»: <b>se aplica al instante</b>
+                                    a sus fechas del rango de arriba (de hoy en adelante). Para una sola fecha usa <b>Editar</b> en la lista de abajo.
                                 </div>
+
+                                <div class="caTplHeader">☑ = aplicar la plantilla a este horario</div>
 
                                 <div class="caTplRows">
                                     <div v-for="row in templateRows" :key="row.scheduleId" class="caTplRow" :class="{ isOff: !row.include }">
@@ -442,9 +447,14 @@
                                         </label>
 
                                         <div class="caTplRight">
-                                            <label class="caCheck caCheckSm" title="Si lo desmarcas, los horarios que cree la plantilla no aparecen en la página de reservas (la puerta los lee igual)">
-                                                <input type="checkbox" v-model="row.showInApp" :disabled="!row.include || !config.doorColumnReady" />
+                                            <label class="caCheck caCheckSm" title="Se aplica al instante a las fechas de este horario dentro del rango de arriba (de hoy en adelante) y a las que cree la plantilla. Ocultar no apaga la puerta: quien ya reservó entra igual.">
+                                                <input type="checkbox"
+                                                       :checked="rowVisibility(row).allVisible"
+                                                       :indeterminate.prop="rowVisibility(row).mixed"
+                                                       :disabled="!config.doorColumnReady || visBusy === row.scheduleId"
+                                                       @change="onRowVisibilityChange(row, $event)" />
                                                 <span>Visible en la app</span>
+                                                <span v-if="rowVisibility(row).hidden > 0" class="caMuted notranslate">({{ rowVisibility(row).hidden }} oculta{{ rowVisibility(row).hidden === 1 ? "" : "s" }})</span>
                                             </label>
                                             <div class="caTplCap">
                                                 <span class="caTplCapLabel">Capacidad</span>
@@ -456,7 +466,7 @@
 
                                 <label class="caOption">
                                     <input type="checkbox" v-model="overwriteCapacity" />
-                                    <span>Sobrescribir capacidad y «visible en la app» de las fechas que ya existen <span class="caMuted">(nunca por debajo de los lugares ya tomados)</span></span>
+                                    <span>Sobrescribir la capacidad de las fechas que ya existen <span class="caMuted">(nunca por debajo de los lugares ya tomados)</span></span>
                                 </label>
 
                                 <label class="caOption">
@@ -1205,7 +1215,7 @@ async function generate(): Promise<void> {
     genBusy.value = true;
 
     try {
-        const res = await invokeBlockAction<{ inserted: number; updated: number; reactivated: number; deactivated: number; skippedLowCapacity: number; skippedSpecialDay: number; visibilityChanged: number; warnings: string[] }>("Generate", {
+        const res = await invokeBlockAction<{ inserted: number; updated: number; reactivated: number; deactivated: number; skippedLowCapacity: number; skippedSpecialDay: number; warnings: string[] }>("Generate", {
             bag: {
                 campusId: campusId.value,
                 startDate: startDate.value,
@@ -1229,7 +1239,6 @@ async function generate(): Promise<void> {
         if (d.deactivated) parts.push(`${d.deactivated} desactivados`);
         if (d.skippedLowCapacity) parts.push(`${d.skippedLowCapacity} omitidos por lugares ya tomados`);
         if (d.skippedSpecialDay) parts.push(`${d.skippedSpecialDay} omitidos por día con servicio especial`);
-        if (d.visibilityChanged) parts.push(`${d.visibilityChanged} con «visible en la app» cambiado`);
 
         const warnings = d.warnings || [];
         genResult.value = {
@@ -1245,6 +1254,75 @@ async function generate(): Promise<void> {
     }
     finally {
         genBusy.value = false;
+    }
+}
+
+// ---- «Visible en la app» de la plantilla (se aplica al instante) ----
+
+const visBusy = ref<number>(0);
+
+/** Fechas de hoy en adelante del horario dentro del rango cargado, y cuántas están ocultas. */
+function rowVisibility(row: TemplateRow): { total: number; hidden: number; allVisible: boolean; mixed: boolean } {
+    const today = config.todayIso || toIso(new Date());
+    let total = 0;
+    let hidden = 0;
+    for (const d of days.value) {
+        if (d.occurrenceDate < today) {
+            continue;
+        }
+        for (const s of d.slots) {
+            if (s.scheduleId === row.scheduleId) {
+                total++;
+                if (!s.showInApp) {
+                    hidden++;
+                }
+            }
+        }
+    }
+    return { total, hidden, allVisible: total === 0 ? row.showInApp : hidden === 0, mixed: hidden > 0 && hidden < total };
+}
+
+/** La casilla de la plantilla sigue el estado real: así «Aplicar plantilla» crea las fechas nuevas igual. */
+watch(days, () => {
+    for (const row of templateRows.value) {
+        const v = rowVisibility(row);
+        if (v.total > 0) {
+            row.showInApp = v.allVisible;
+        }
+    }
+});
+
+async function onRowVisibilityChange(row: TemplateRow, ev: Event): Promise<void> {
+    const input = ev.target as HTMLInputElement;
+    const show = input.checked;
+    row.showInApp = show;
+
+    if (rowVisibility(row).total === 0) {
+        showToast("success", show ? "Las fechas que cree la plantilla saldrán en la app." : "Las fechas que cree la plantilla no saldrán en la app.");
+        return;
+    }
+
+    visBusy.value = row.scheduleId;
+    try {
+        const res = await invokeBlockAction<{ resultCode: number; changed: number; message: string }>("SetScheduleVisibility", {
+            bag: { campusId: campusId.value, scheduleId: row.scheduleId, startDate: startDate.value, endDate: endDate.value, showInApp: show }
+        });
+
+        if (res.isSuccess && res.data?.resultCode === 1) {
+            showToast("success", `${row.name}: ${res.data.message}`);
+        }
+        else {
+            showToast("danger", res.data?.message || res.errorMessage || "No se pudo cambiar la visibilidad.");
+        }
+    }
+    catch {
+        showToast("danger", "Error cambiando la visibilidad.");
+    }
+    finally {
+        visBusy.value = 0;
+        // Recarga en cualquier caso: la casilla vuelve a mostrar el estado real.
+        await loadSlots(false);
+        void loadUpcomingSpecials();
     }
 }
 
@@ -2403,6 +2481,7 @@ onBeforeUnmount(() => {
 .caCheck input { width: 17px; height: 17px; margin: 1px 0 0; flex-shrink: 0; }
 .caCheckSm { margin: 0; font-size: 12px; white-space: nowrap; }
 .caTplRight { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; justify-content: flex-end; }
+.caTplHeader { font-size: 11px; font-weight: 800; color: var(--ca-muted); text-transform: uppercase; letter-spacing: .4px; margin: 0 0 6px 2px; }
 
 .caSpHead { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
 .caSpForm {

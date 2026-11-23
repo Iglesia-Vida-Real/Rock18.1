@@ -1256,7 +1256,11 @@ Reemplaza la tarjeta «Servicio especial» de la sección anterior y la tarjeta 
 
 - **Pestañas:** «Semana normal» · «Servicios especiales» · «Métricas». En «Servicios especiales» la barra de
   arriba solo muestra la sede (las fechas no aplican).
-- **Semana normal:** cada fila de la plantilla tiene «Visible en la app». En la lista, cada servicio muestra
+- **Semana normal:** cada fila de la plantilla tiene «Visible en la app», que **se aplica al instante**
+  (`SetScheduleVisibility`) a las fechas del horario en el rango de arriba, de hoy en adelante, y refleja el
+  estado real (`rowVisibility`: marcada = todas visibles, a medias = mezcla, «(N ocultas)»). La casilla de la
+  izquierda solo elige a qué horarios se aplica la plantilla; el texto de la tarjeta lo explica (Fredy la
+  desmarcó esperando ocultar el sábado). En la lista, cada servicio muestra
   «Lugares», «Puerta 8:45 a 10:20» y, si aplica, «Oculto en la app»; el botón **Editar** abre un editor con
   lugares, «La puerta abre a las / cierra a las» (horas de reloj) y «Mostrar en la app de reservas». Se quitó
   la edición de capacidad en línea (`saveCapacity`): ahora va por el editor.

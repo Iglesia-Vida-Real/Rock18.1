@@ -23,7 +23,10 @@ Detalle técnico: `Rock.Blocks/QREVENT/CHANGES.md` y `Rock.JavaScript.Obsidian.B
 ## Pestaña «Semana normal»
 
 1. Elige la **Sede** y el rango **Desde / Hasta** (atajos: esta semana, 4 semanas, 3 meses…).
-2. **Plantilla de horarios:** marca los horarios, su **Capacidad** y si quedan **Visibles en la app**.
+2. **Plantilla de horarios:** la casilla de la **izquierda** elige a qué horarios se aplica la plantilla (no oculta
+   nada). **«Visible en la app»** se aplica **al instante**, sin pulsar «Aplicar plantilla», a todas las fechas de
+   ese horario del rango de arriba (de hoy en adelante): desmárcalo y ese horario deja de salir en la página de
+   reservas. Si en el rango hay fechas visibles y ocultas, la casilla queda a medias y dice «(N ocultas)».
 3. Opciones:
    - **Sobrescribir capacidad y «visible en la app»** de las fechas que ya existen (nunca por debajo de lo tomado).
    - **Desactivar horarios fuera de la plantilla** (solo sin reservas; nunca toca un servicio especial).
