@@ -44,6 +44,39 @@ System.register(['vue', '@Obsidian/Controls/panel.obs', '@Obsidian/Controls/rock
     }],
     execute: (function () {
 
+      function asyncGeneratorStep(n, t, e, r, o, a, c) {
+        try {
+          var i = n[a](c),
+            u = i.value;
+        } catch (n) {
+          return void e(n);
+        }
+        i.done ? t(u) : Promise.resolve(u).then(r, o);
+      }
+      function _asyncToGenerator(n) {
+        return function () {
+          var t = this,
+            e = arguments;
+          return new Promise(function (r, o) {
+            var a = n.apply(t, e);
+            function _next(n) {
+              asyncGeneratorStep(a, r, o, _next, _throw, "next", n);
+            }
+            function _throw(n) {
+              asyncGeneratorStep(a, r, o, _next, _throw, "throw", n);
+            }
+            _next(void 0);
+          });
+        };
+      }
+      function _defineProperty(e, r, t) {
+        return (r = _toPropertyKey(r)) in e ? Object.defineProperty(e, r, {
+          value: t,
+          enumerable: !0,
+          configurable: !0,
+          writable: !0
+        }) : e[r] = t, e;
+      }
       function ownKeys(e, r) {
         var t = Object.keys(e);
         if (Object.getOwnPropertySymbols) {
@@ -65,63 +98,19 @@ System.register(['vue', '@Obsidian/Controls/panel.obs', '@Obsidian/Controls/rock
         }
         return e;
       }
-      function asyncGeneratorStep(gen, resolve, reject, _next, _throw, key, arg) {
-        try {
-          var info = gen[key](arg);
-          var value = info.value;
-        } catch (error) {
-          reject(error);
-          return;
-        }
-        if (info.done) {
-          resolve(value);
-        } else {
-          Promise.resolve(value).then(_next, _throw);
-        }
-      }
-      function _asyncToGenerator(fn) {
-        return function () {
-          var self = this,
-            args = arguments;
-          return new Promise(function (resolve, reject) {
-            var gen = fn.apply(self, args);
-            function _next(value) {
-              asyncGeneratorStep(gen, resolve, reject, _next, _throw, "next", value);
-            }
-            function _throw(err) {
-              asyncGeneratorStep(gen, resolve, reject, _next, _throw, "throw", err);
-            }
-            _next(undefined);
-          });
-        };
-      }
-      function _defineProperty(obj, key, value) {
-        key = _toPropertyKey(key);
-        if (key in obj) {
-          Object.defineProperty(obj, key, {
-            value: value,
-            enumerable: true,
-            configurable: true,
-            writable: true
-          });
-        } else {
-          obj[key] = value;
-        }
-        return obj;
-      }
-      function _toPrimitive(input, hint) {
-        if (typeof input !== "object" || input === null) return input;
-        var prim = input[Symbol.toPrimitive];
-        if (prim !== undefined) {
-          var res = prim.call(input, hint || "default");
-          if (typeof res !== "object") return res;
+      function _toPrimitive(t, r) {
+        if ("object" != typeof t || !t) return t;
+        var e = t[Symbol.toPrimitive];
+        if (void 0 !== e) {
+          var i = e.call(t, r || "default");
+          if ("object" != typeof i) return i;
           throw new TypeError("@@toPrimitive must return a primitive value.");
         }
-        return (hint === "string" ? String : Number)(input);
+        return ("string" === r ? String : Number)(t);
       }
-      function _toPropertyKey(arg) {
-        var key = _toPrimitive(arg, "string");
-        return typeof key === "symbol" ? key : String(key);
+      function _toPropertyKey(t) {
+        var i = _toPrimitive(t, "string");
+        return "symbol" == typeof i ? i : i + "";
       }
 
       var _hoisted_1 = {
@@ -803,7 +792,7 @@ System.register(['vue', '@Obsidian/Controls/panel.obs', '@Obsidian/Controls/rock
             return openBlock(), createBlock(unref(Panel), {
               type: "block"
             }, {
-              default: withCtx(() => [createCommentVNode(" notranslate: la pagina admin del propio traductor NO se traduce (el grid muestra\n                 los textos originales; traducirlos en el DOM mutaria justo lo que se esta revisando). "), createElementVNode("div", _hoisted_1, [err.value ? (openBlock(), createElementBlock("div", _hoisted_2, [_hoisted_3, createElementVNode("span", null, toDisplayString(err.value), 1), createElementVNode("button", {
+              default: withCtx(() => [createCommentVNode(" notranslate: la pagina admin del propio traductor NO se traduce (el grid muestra\r\n                 los textos originales; traducirlos en el DOM mutaria justo lo que se esta revisando). "), createElementVNode("div", _hoisted_1, [err.value ? (openBlock(), createElementBlock("div", _hoisted_2, [_hoisted_3, createElementVNode("span", null, toDisplayString(err.value), 1), createElementVNode("button", {
                 type: "button",
                 class: "vtToastX",
                 "aria-label": "Cerrar",
@@ -988,7 +977,7 @@ System.register(['vue', '@Obsidian/Controls/panel.obs', '@Obsidian/Controls/rock
                 class: "vtPageBtn",
                 disabled: filter.page >= pageCount.value - 1 || busy.grid,
                 onClick: _cache[19] || (_cache[19] = $event => goPage(filter.page + 1))
-              }, [..._hoisted_122], 8, _hoisted_120)])) : createCommentVNode("v-if", true)]), createCommentVNode(" ===== Modal de edicion =====\n                     El Modal se teletransporta FUERA del arbol del bloque (al body), asi que el\n                     notranslate del vtWrap no lo cubre: se marca via modalWrapperClasses. "), createVNode(unref(Modal), {
+              }, [..._hoisted_122], 8, _hoisted_120)])) : createCommentVNode("v-if", true)]), createCommentVNode(" ===== Modal de edicion =====\r\n                     El Modal se teletransporta FUERA del arbol del bloque (al body), asi que el\r\n                     notranslate del vtWrap no lo cubre: se marca via modalWrapperClasses. "), createVNode(unref(Modal), {
                 modelValue: editOpen.value,
                 "onUpdate:modelValue": _cache[22] || (_cache[22] = $event => editOpen.value = $event),
                 title: "Editar traducción",
@@ -1049,7 +1038,7 @@ System.register(['vue', '@Obsidian/Controls/panel.obs', '@Obsidian/Controls/rock
         }
       }
 
-      var css_248z = ".panel-block:has(.vtWrap)>.panel-header,.panel-block:has(.vtWrap)>.panel-heading{display:none!important}.panel-block:has(.vtWrap){background:transparent!important;border:none!important;box-shadow:none!important;margin:0!important;padding:0!important}.panel-block:has(.vtWrap)>.panel-body{padding:0!important}.vtWrap{--vt-ink:#0f172a;--vt-muted:#64748b;--vt-line:#e2e8f0;--vt-surface:#fff;--vt-soft:#f8fafc;--vt-indigo:#3b43f6;--vt-indigo-soft:#eef0ff;--vt-ok:#059669;--vt-ok-soft:#ecfdf5;--vt-warn:#b45309;--vt-warn-soft:#fffbeb;--vt-err:#dc2626;--vt-err-soft:#fef2f2;-webkit-font-smoothing:antialiased;color:var(--vt-ink);font-family:Roboto,Arial,sans-serif;padding-bottom:24px}.vtWrap *,.vtWrap :after,.vtWrap :before{box-sizing:border-box}.vtMono{font-family:Roboto Mono,Consolas,monospace}.vtMuted{color:var(--vt-muted)}.vtToast{align-items:center;border-radius:10px;display:flex;font-size:14px;gap:10px;margin-bottom:14px;padding:12px 16px}.vtToast--ok{background:var(--vt-ok-soft);border:1px solid #a7f3d0;color:var(--vt-ok)}.vtToast--err{background:var(--vt-err-soft);border:1px solid #fecaca;color:var(--vt-err)}.vtToastX{background:none;border:0;color:inherit;cursor:pointer;font-size:18px;line-height:1;margin-left:auto}.vtBar{align-items:flex-start;display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between;margin-bottom:18px}.vtTitle{font-size:24px;font-weight:700;margin:0 0 4px}.vtTitle .fa{color:var(--vt-indigo);margin-right:6px}.vtSub{color:var(--vt-muted);font-size:14px;margin:0}.vtBarRight{align-items:center;display:flex;gap:14px}.vtVer{background:var(--vt-soft);border:1px solid var(--vt-line);border-radius:999px;color:var(--vt-muted);font-size:12px;padding:4px 10px}.vtSwitch{align-items:center;cursor:pointer;display:flex;font-weight:400;gap:8px;margin:0}.vtSwitch input{opacity:0;position:absolute}.vtSwitchTrack{background:#cbd5e1;border-radius:999px;flex:none;height:24px;position:relative;transition:background .15s ease;width:44px}.vtSwitch input:checked+.vtSwitchTrack{background:var(--vt-ok)}.vtSwitch input:disabled+.vtSwitchTrack{opacity:.5}.vtSwitchThumb{background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(15,23,42,.3);height:18px;left:3px;position:absolute;top:3px;transition:left .15s ease;width:18px}.vtSwitch input:checked+.vtSwitchTrack .vtSwitchThumb{left:23px}.vtSwitchLbl{color:var(--vt-muted);font-size:14px;min-width:60px}.vtSwitchLbl.is-on{color:var(--vt-ok);font-weight:600}.vtCards{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));margin-bottom:14px}.vtCard{align-items:flex-start;background:var(--vt-surface);border:1px solid var(--vt-line);border-radius:12px;display:flex;gap:12px;padding:16px}.vtCardIcon{align-items:center;border-radius:10px;display:flex;flex:none;font-size:16px;height:40px;justify-content:center;width:40px}.vtIco--indigo{background:var(--vt-indigo-soft);color:var(--vt-indigo)}.vtIco--amber{background:var(--vt-warn-soft);color:var(--vt-warn)}.vtIco--teal{background:#f0fdfa;color:#0d9488}.vtIco--sky{background:#f0f9ff;color:#0284c7}.vtCardBody{display:flex;flex-direction:column;gap:2px;min-width:0}.vtCardNum{font-size:22px;font-weight:700;line-height:1.1}.vtCardNum small{color:var(--vt-muted);font-size:13px;font-weight:400}.vtCardNum--sm{font-size:16px}.vtCardLbl{color:var(--vt-muted);font-size:13px}.vtCardHint{color:var(--vt-muted);font-size:12px}.vtCardHint--warn{color:var(--vt-warn)}.vtMeter{background:var(--vt-line);border-radius:999px;height:6px;margin-top:4px;max-width:160px;overflow:hidden;width:100%}.vtMeterFill{background:var(--vt-ok);border-radius:999px;display:block;height:100%;transition:width .3s ease}.vtMeterFill.is-hot{background:var(--vt-err)}.vtTest{border-radius:10px;font-size:14px;margin-bottom:14px;padding:10px 16px}.vtTest--ok{background:var(--vt-ok-soft);border:1px solid #a7f3d0;color:var(--vt-ok)}.vtTest--err{background:var(--vt-err-soft);border:1px solid #fecaca;color:var(--vt-err)}.vtSec{background:var(--vt-surface);border:1px solid var(--vt-line);border-radius:12px;padding:20px}.vtSec,.vtSecHead{margin-bottom:14px}.vtSecHead{align-items:center;display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between}.vtSecTitle{font-size:17px;font-weight:700;margin:0}.vtSecTitle .fa{color:var(--vt-indigo);font-size:15px;margin-right:6px}.vtSecBtns{display:flex;flex-wrap:wrap;gap:8px}.vtSubHead{color:var(--vt-muted);font-size:12px;font-weight:700;letter-spacing:.06em;margin:18px 0 10px;text-transform:uppercase}.vtSubHead:first-child{margin-top:0}.vtX.btn{background:var(--vt-indigo)!important;border-color:var(--vt-indigo)!important;border-radius:8px;color:#fff!important}.vtX.btn:focus,.vtX.btn:hover{background:#2f36d8!important;border-color:#2f36d8!important}.vtGhost.btn{background:var(--vt-surface)!important;border:1px solid var(--vt-line)!important;border-radius:8px;color:var(--vt-ink)!important}.vtGhost.btn:hover{background:var(--vt-soft)!important}.vtGhost--danger.btn{color:var(--vt-err)!important}.vtLink{background:none;border:0;color:var(--vt-indigo);cursor:pointer;font-size:13px;padding:0;text-align:left}.vtLink:hover{text-decoration:underline}.vtLink:disabled{cursor:default;opacity:.6}.vtLink--danger{color:var(--vt-err)}.vtScroll{overflow-x:auto}.vtTable{border-collapse:collapse;font-size:14px;width:100%}.vtTable th{border-bottom:1px solid var(--vt-line);color:var(--vt-muted);font-size:12px;font-weight:600;letter-spacing:.05em;padding:8px 10px;text-align:left;text-transform:uppercase;white-space:nowrap}.vtTable td{border-bottom:1px solid var(--vt-soft);padding:10px;vertical-align:middle}.vtTable tbody tr:last-child td{border-bottom:0}.vtNum,th.vtNum{text-align:right}.vtTable--tight td,.vtTable--tight th{padding:6px 10px}.vtSites{margin-top:18px;max-width:560px}.vtRow{cursor:pointer}.vtRow:hover td{background:var(--vt-indigo-soft)}.vtCell{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.vtRowActions{text-align:right;white-space:nowrap}.vtPill{background:var(--vt-indigo-soft);border-radius:999px;color:var(--vt-indigo);display:inline-block;font-size:12px;padding:2px 10px}.vtPill--ok{background:var(--vt-ok-soft);color:var(--vt-ok)}.vtPill--warn{background:var(--vt-warn-soft);color:var(--vt-warn)}.vtPill--off{background:#f1f5f9;color:var(--vt-muted)}.vtFilters{align-items:flex-start;display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px}.vtFilterGrow{flex:1 1 260px}.vtFilterSel{min-width:160px}.vtFilters .form-group{margin-bottom:0}.vtEmpty{color:var(--vt-muted);padding:28px 0;text-align:center}.vtEmpty .fa{display:block;font-size:26px;margin-bottom:8px}.vtEmpty p{margin:0}.vtPager{align-items:center;display:flex;gap:14px;justify-content:center;margin-top:14px}.vtPageBtn{background:var(--vt-surface);border:1px solid var(--vt-line);border-radius:8px;color:var(--vt-ink);cursor:pointer;height:32px;width:32px}.vtPageBtn:disabled{cursor:default;opacity:.4}.vtEditSrc,.vtPageBtn:not(:disabled):hover{background:var(--vt-soft)}.vtEditSrc{border:1px solid var(--vt-line);border-radius:10px;margin-bottom:14px;padding:12px 14px}.vtEditLbl{color:var(--vt-muted);display:block;font-size:11px;letter-spacing:.06em;margin-bottom:4px;text-transform:uppercase}.vtEditSrc p{font-size:14px;margin:0}@media (max-width:720px){.vtBar{flex-direction:column}.vtCell{max-width:180px}}";
+      var css_248z = ".panel-block:has(.vtWrap)>.panel-header,.panel-block:has(.vtWrap)>.panel-heading{display:none!important}.panel-block:has(.vtWrap){background:transparent!important;border:none!important;box-shadow:none!important;margin:0!important;padding:0!important}.panel-block:has(.vtWrap)>.panel-body{padding:0!important}.vtWrap{--vt-ink:#0f172a;--vt-muted:#64748b;--vt-line:#e2e8f0;--vt-surface:#fff;--vt-soft:#f8fafc;--vt-indigo:#3b43f6;--vt-indigo-soft:#eef0ff;--vt-ok:#059669;--vt-ok-soft:#ecfdf5;--vt-warn:#b45309;--vt-warn-soft:#fffbeb;--vt-err:#dc2626;--vt-err-soft:#fef2f2;font-family:Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased;color:var(--vt-ink);padding-bottom:24px}.vtWrap *,.vtWrap :after,.vtWrap :before{box-sizing:border-box}.vtMono{font-family:Roboto Mono,Consolas,monospace}.vtMuted{color:var(--vt-muted)}.vtToast{align-items:center;border-radius:10px;display:flex;font-size:14px;gap:10px;margin-bottom:14px;padding:12px 16px}.vtToast--ok{background:var(--vt-ok-soft);border:1px solid #a7f3d0;color:var(--vt-ok)}.vtToast--err{background:var(--vt-err-soft);border:1px solid #fecaca;color:var(--vt-err)}.vtToastX{background:none;border:0;color:inherit;cursor:pointer;font-size:18px;line-height:1;margin-left:auto}.vtBar{align-items:flex-start;display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between;margin-bottom:18px}.vtTitle{font-size:24px;font-weight:700;margin:0 0 4px}.vtTitle .fa{color:var(--vt-indigo);margin-right:6px}.vtSub{color:var(--vt-muted);font-size:14px;margin:0}.vtBarRight{align-items:center;display:flex;gap:14px}.vtVer{background:var(--vt-soft);border:1px solid var(--vt-line);border-radius:999px;color:var(--vt-muted);font-size:12px;padding:4px 10px}.vtSwitch{align-items:center;cursor:pointer;display:flex;font-weight:400;gap:8px;margin:0}.vtSwitch input{opacity:0;position:absolute}.vtSwitchTrack{background:#cbd5e1;border-radius:999px;flex:none;height:24px;position:relative;transition:background .15s ease;width:44px}.vtSwitch input:checked+.vtSwitchTrack{background:var(--vt-ok)}.vtSwitch input:disabled+.vtSwitchTrack{opacity:.5}.vtSwitchThumb{background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(15,23,42,.3);height:18px;left:3px;position:absolute;top:3px;transition:left .15s ease;width:18px}.vtSwitch input:checked+.vtSwitchTrack .vtSwitchThumb{left:23px}.vtSwitchLbl{color:var(--vt-muted);font-size:14px;min-width:60px}.vtSwitchLbl.is-on{color:var(--vt-ok);font-weight:600}.vtCards{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));margin-bottom:14px}.vtCard{align-items:flex-start;background:var(--vt-surface);border:1px solid var(--vt-line);border-radius:12px;display:flex;gap:12px;padding:16px}.vtCardIcon{align-items:center;border-radius:10px;display:flex;flex:none;font-size:16px;height:40px;justify-content:center;width:40px}.vtIco--indigo{background:var(--vt-indigo-soft);color:var(--vt-indigo)}.vtIco--amber{background:var(--vt-warn-soft);color:var(--vt-warn)}.vtIco--teal{background:#f0fdfa;color:#0d9488}.vtIco--sky{background:#f0f9ff;color:#0284c7}.vtCardBody{display:flex;flex-direction:column;gap:2px;min-width:0}.vtCardNum{font-size:22px;font-weight:700;line-height:1.1}.vtCardNum small{color:var(--vt-muted);font-size:13px;font-weight:400}.vtCardNum--sm{font-size:16px}.vtCardLbl{color:var(--vt-muted);font-size:13px}.vtCardHint{color:var(--vt-muted);font-size:12px}.vtCardHint--warn{color:var(--vt-warn)}.vtMeter{background:var(--vt-line);border-radius:999px;height:6px;margin-top:4px;max-width:160px;overflow:hidden;width:100%}.vtMeterFill{background:var(--vt-ok);border-radius:999px;display:block;height:100%;transition:width .3s ease}.vtMeterFill.is-hot{background:var(--vt-err)}.vtTest{border-radius:10px;font-size:14px;margin-bottom:14px;padding:10px 16px}.vtTest--ok{background:var(--vt-ok-soft);border:1px solid #a7f3d0;color:var(--vt-ok)}.vtTest--err{background:var(--vt-err-soft);border:1px solid #fecaca;color:var(--vt-err)}.vtSec{background:var(--vt-surface);border:1px solid var(--vt-line);border-radius:12px;padding:20px}.vtSec,.vtSecHead{margin-bottom:14px}.vtSecHead{align-items:center;display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between}.vtSecTitle{font-size:17px;font-weight:700;margin:0}.vtSecTitle .fa{color:var(--vt-indigo);font-size:15px;margin-right:6px}.vtSecBtns{display:flex;flex-wrap:wrap;gap:8px}.vtSubHead{color:var(--vt-muted);font-size:12px;font-weight:700;letter-spacing:.06em;margin:18px 0 10px;text-transform:uppercase}.vtSubHead:first-child{margin-top:0}.vtX.btn{background:var(--vt-indigo)!important;border-color:var(--vt-indigo)!important;border-radius:8px;color:#fff!important}.vtX.btn:focus,.vtX.btn:hover{background:#2f36d8!important;border-color:#2f36d8!important}.vtGhost.btn{background:var(--vt-surface)!important;border:1px solid var(--vt-line)!important;border-radius:8px;color:var(--vt-ink)!important}.vtGhost.btn:hover{background:var(--vt-soft)!important}.vtGhost--danger.btn{color:var(--vt-err)!important}.vtLink{background:none;border:0;color:var(--vt-indigo);cursor:pointer;font-size:13px;padding:0;text-align:left}.vtLink:hover{text-decoration:underline}.vtLink:disabled{cursor:default;opacity:.6}.vtLink--danger{color:var(--vt-err)}.vtScroll{overflow-x:auto}.vtTable{border-collapse:collapse;font-size:14px;width:100%}.vtTable th{border-bottom:1px solid var(--vt-line);color:var(--vt-muted);font-size:12px;font-weight:600;letter-spacing:.05em;padding:8px 10px;text-align:left;text-transform:uppercase;white-space:nowrap}.vtTable td{border-bottom:1px solid var(--vt-soft);padding:10px;vertical-align:middle}.vtTable tbody tr:last-child td{border-bottom:0}.vtNum,th.vtNum{text-align:right}.vtTable--tight td,.vtTable--tight th{padding:6px 10px}.vtSites{margin-top:18px;max-width:560px}.vtRow{cursor:pointer}.vtRow:hover td{background:var(--vt-indigo-soft)}.vtCell{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.vtRowActions{text-align:right;white-space:nowrap}.vtPill{background:var(--vt-indigo-soft);border-radius:999px;color:var(--vt-indigo);display:inline-block;font-size:12px;padding:2px 10px}.vtPill--ok{background:var(--vt-ok-soft);color:var(--vt-ok)}.vtPill--warn{background:var(--vt-warn-soft);color:var(--vt-warn)}.vtPill--off{background:#f1f5f9;color:var(--vt-muted)}.vtFilters{align-items:flex-start;display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px}.vtFilterGrow{flex:1 1 260px}.vtFilterSel{min-width:160px}.vtFilters .form-group{margin-bottom:0}.vtEmpty{color:var(--vt-muted);padding:28px 0;text-align:center}.vtEmpty .fa{display:block;font-size:26px;margin-bottom:8px}.vtEmpty p{margin:0}.vtPager{align-items:center;display:flex;gap:14px;justify-content:center;margin-top:14px}.vtPageBtn{background:var(--vt-surface);border:1px solid var(--vt-line);border-radius:8px;color:var(--vt-ink);cursor:pointer;height:32px;width:32px}.vtPageBtn:disabled{cursor:default;opacity:.4}.vtEditSrc,.vtPageBtn:not(:disabled):hover{background:var(--vt-soft)}.vtEditSrc{border:1px solid var(--vt-line);border-radius:10px;margin-bottom:14px;padding:12px 14px}.vtEditLbl{color:var(--vt-muted);display:block;font-size:11px;letter-spacing:.06em;margin-bottom:4px;text-transform:uppercase}.vtEditSrc p{font-size:14px;margin:0}@media (max-width:720px){.vtBar{flex-direction:column}.vtCell{max-width:180px}}";
       styleInject(css_248z);
 
       script.__file = "src/Translator/translatorDashboard.obs";
