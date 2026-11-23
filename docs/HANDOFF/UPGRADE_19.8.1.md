@@ -1,12 +1,12 @@
 # Upgrade de Rock 18.1 → 19.8.1 (prueba local y runbook del cambio real)
 
-> **Estado:** en prueba **local** (máquina `DESKTOP-PB412F9`, BD `Rock19Test`). Nada de esto se ha
+> **Estado:** en prueba **local** (PC de desarrollo, BD `Rock19Test`). Nada de esto se ha
 > aplicado en producción. Este documento se actualiza al cerrar cada fase.
 >
 > | Fase | Estado |
 > |---|---|
 > | 1. BD nueva aislada | ✅ 2026-11-19 |
-> | 2. Merge de código + build | ✅ commiteado (local, sin push); core + 8 plugins compilan; precompilación completa de `RockWeb` sin errores (§14.2) |
+> | 2. Merge de código + build | ✅ commiteado; rama `Test_Update_18.1_a_19.8.1` en GitHub desde el 2026-11-23; core + 8 plugins compilan; precompilación completa de `RockWeb` sin errores (§14.2) |
 > | 3. Arranque y migraciones | ✅ migraciones aplicadas y sitio arriba (§5b). Respaldo `.bak` de Rock19Test migrada **antes de jobs** (§11.1). Jobs post-actualización de upstream: analizados, **sin correr** (§11); job propio 234 (bloques huérfanos) corrido el 2026-11-19 (§11.4) |
 > | 3b. Análisis previo a las pruebas | ✅ 2026-11-19: diagnósticos locales (§5c), inventario (`INVENTARIO_DESARROLLOS_VR.md`), jobs (§11), check-in (§12), comparación servidor vs repo preparada (§13) |
 > | 3c. Prueba comparativa de check-in 18.1 vs 19 | ⏳ entorno listo (§14); Roster en español aplicado (§14.6); **falta el recorrido** |
@@ -17,9 +17,14 @@
 ## 0. Cómo retomar (cierre del 2026-11-19)
 
 **Estado actual**
-- Todo es **local** (`DESKTOP-PB412F9`). Nada en producción. **Nada de esto está en GitHub**:
-  `origin/Test_Update_18.1_a_18.8` sigue en `81ed172522` (2026-10-21, igual que `hotfix-18.1`) y la rama local va
-  «ahead 3027» (el merge de upstream + los commits del día); ningún commit del día está en una rama remota.
+- Todo es **local** (PC de desarrollo). Nada en producción.
+- Rama `Test_Update_18.1_a_19.8.1` (antes `Test_Update_18.1_a_18.8`; renombrada el 2026-11-23). Desde ese día está
+  en GitHub con upstream configurado; la rama vieja se borró del remoto.
+- **2026-11-23:** el trabajo de reservas dominicales (QREVENT: servicios especiales, puerta por servicio, «visible en
+  la app») se pasó a esta rama (cherry-pick), se publicó en 6229 (`Rock.Blocks.dll` y bundles) y se corrió
+  `Dev Tools/Sql/QREVENT_SundayService_SlotSettings.sql` en `Rock19Test`. Respaldo previo en
+  `dev-isolation\respaldo_19_antes_reservas_2026-11-23`. Estado: `docs/qrevent/ESTADO_TRABAJO_RESERVAS.md`.
+- 6229 está abierto a la red local (§15).
 - BDs locales (se dejaron como están):
   - `Rock19Test`: bacpac de prod del 18-nov, aislada, **migrada a 19.8.1**; job 234 ya corrido (páginas 327 y 740
     con bloques Obsidian); preparación de la prueba de check-in aplicada (§14.4).
@@ -34,7 +39,8 @@
   `.git/info/exclude`, solo para la prueba; §12).
 - Servidores **detenidos** (6229, 6230 e impresora falsa).
 
-**Commits del día** (rama `Test_Update_18.1_a_18.8`, solo locales):
+**Commits del 2026-11-19** (hechos en la rama cuando se llamaba `Test_Update_18.1_a_18.8`; hoy en
+`Test_Update_18.1_a_19.8.1`):
 
 | Commit | Qué |
 |---|---|
@@ -64,7 +70,10 @@
 
 ```powershell
 # 19.8.1 en http://localhost:6229 (BD Rock19Test; ver Initial Catalog en RockWeb\web.ConnectionStrings.config)
-& "C:\Program Files\IIS Express\iisexpress.exe" /path:"C:\Users\Servr local Rock RMS\Documents\GitHub\Rock18.1\RockWeb" /port:6229 /clr:v4.0
+# Desde el 2026-11-20 está abierto a la red local (§15): mientras exista la reserva http://*:6229/, arrancarlo así:
+& "C:\Program Files\IIS Express\iisexpress.exe" /site:Rock19-6229
+# Cerrado el acceso (§15.2), vuelve a ser:
+# & "C:\Program Files\IIS Express\iisexpress.exe" /path:"C:\Users\Servr local Rock RMS\Documents\GitHub\Rock18.1\RockWeb" /port:6229 /clr:v4.0
 
 # 18.1 en http://localhost:6230 (BD Rock18Base; connection string en el worktree)
 & "C:\Program Files\IIS Express\iisexpress.exe" /path:"C:\Users\Servr local Rock RMS\Documents\GitHub\Rock18Base-wt\RockWeb" /port:6230 /clr:v4.0
@@ -85,10 +94,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Users\Servr local Rock R
 
 | | Valor |
 |---|---|
-| Origen | Rock **18.1** con el fork de Vida Real (rama `hotfix-18.1` / `Test_Update_18.1_a_18.8`) |
+| Origen | Rock **18.1** con el fork de Vida Real (rama `hotfix-18.1`) |
 | Base común del merge | tag `18.1.0` = `f8e5bcf161` |
 | Destino | tag upstream **`19.8.1`** = `85705ceb0b` (SparkDevNetwork/Rock; mismo commit que `19.8.1-alpha`) |
-| Rama de prueba | `Test_Update_18.1_a_18.8` |
+| Rama de prueba | `Test_Update_18.1_a_19.8.1` (antes `Test_Update_18.1_a_18.8`) |
 | Commit antes del merge | `b61a80a019` (incluye el merge de `origin/Rock_RMS_Rama_Fredy`) |
 | Commit del merge con 19.8.1 | El merge que agrega este archivo: `git log --merges -1 --format=%H -- docs/HANDOFF/UPGRADE_19.8.1.md` (2026-11-19) |
 | BD de prueba | `Rock19Test`, importada de `Rock18_Prod_20261119.bacpac` |
@@ -383,8 +392,11 @@ vacía `RockWeb`: tiene carpetas y archivos que solo existen en el servidor (§5
    (`INVENTARIO_DESARROLLOS_VR.md` §3). En local cargan las versiones actuales.
 4. Pedir a TI el **valor** de `RunJobsInIISContext` en el `web.config` de prod (solo el valor; no copiar el archivo).
 5. Preparar el `web.config` de la 19 con las llaves de prod (`PasswordKey`, `DataEncryptionKey`, `machineKey`…)
-   fusionadas; lo hace TI en el servidor. Ponerle `RunJobsInIISContext=False` para la ventana (§7.3, paso 6).
-6. Armar el kit (fuera del repo) **desde un commit**, con `build-all.ps1 -FullObsidian`:
+   fusionadas; lo hace TI en el servidor. Ponerle `RunJobsInIISContext=False` para la ventana (§7.3, paso 5).
+6. Reservas dominicales (QREVENT): preguntar a TI si ya se desplegó en prod el paquete de servicios especiales
+   (`docs/qrevent/DESPLIEGUE_RESERVAS_SERVICIOS_ESPECIALES.md`) y si ya se corrió su script. Se comprueba con
+   `SELECT COL_LENGTH('dbo.SundayServiceSlot', 'ShowInApp')`: `NULL` = falta correrlo (§7.3, paso 5b).
+7. Armar el kit (fuera del repo) **desde un commit**, con `build-all.ps1 -FullObsidian`:
    - `Bin\` completo del build (122 DLLs de terceros cambian de versión, §4) + DLLs de los 8 plugins.
    - `Obsidian\` completo, `Plugins\{com_vidareal,EpayVisanetGateway,CybersourceInlineRestGateway}\`.
    - Los archivos versionados de `RockWeb` que cambiaron entre `hotfix-18.1` y la rama del upgrade
@@ -428,6 +440,13 @@ vacía `RockWeb`: tiene carpetas y archivos que solo existen en el servidor (§5
    ```
 4. Copiar el kit **encima** de `RockWeb` (todo en la misma pasada: DLLs, bundles, `App_Code`, temas compilados).
 5. Poner el `web.config` fusionado con `RunJobsInIISContext=False`.
+5b. Reservas dominicales: correr `Dev Tools/Sql/QREVENT_SundayService_SlotSettings.sql` (idempotente) **si no se
+   corrió antes en prod** (§7.1, paso 6). Con el sitio todavía detenido:
+   `sqlcmd -S <servidor> -E -d Rock18 -I -f 65001 -i QREVENT_SundayService_SlotSettings.sql` (segundos; agrega 3
+   columnas NULL a `SundayServiceSlot`, sin cambiar filas). Si ya se había corrido, no cambia nada. La
+   `Rock.Blocks.dll` de la 19 también funciona sin las columnas (usa 15 min / 1 h 20 min / todo visible y la 862
+   avisa que falta el script), pero no se deben dejar sin correr. Detalle, verificación y reversa:
+   `docs/qrevent/DESPLIEGUE_RESERVAS_SERVICIOS_ESPECIALES.md`.
 6. Quitar `app_offline.htm`, arrancar y esperar migraciones. Medido en local: ~1 min de compilación en frío +
    46 s de 67 migraciones core + 5 s de 45 hotfixes; segundo arranque 72 s. Vigilar
    `App_Data\Logs\MigrationLog.csv`, `RockExceptions.csv` y `ExceptionLog`. Anotar el `ExceptionLog.Id` máximo
@@ -711,7 +730,7 @@ versiones lado a lado con la misma BD de origen.
 | | 18.1 (referencia) | 19.8.1 |
 |---|---|---|
 | URL | `http://localhost:6230` | `http://localhost:6229` |
-| Código | `git worktree add --detach ..\Rock18Base-wt hotfix-18.1` (commit `81ed172522`); la rama de prueba no se tocó | `Test_Update_18.1_a_18.8` |
+| Código | `git worktree add --detach ..\Rock18Base-wt hotfix-18.1` (commit `81ed172522`); la rama de prueba no se tocó | `Test_Update_18.1_a_19.8.1` |
 | BD | `Rock18Base`: import del mismo `Rock18_Prod_20261119.bacpac` (8 min 40 s), sin migrar | `Rock19Test` |
 | Aislamiento | `dev-isolation\aislar_dev_Rock18Base.sql` (copia con guarda `Rock18Base`, URLs y frame domain en `localhost:6230`). Corrida 1: mismos conteos que Rock19Test (URLs 3, SMTP 1, kiosco 1, transportes 13, pasarelas 7+1, Odoo 8, Wallet 2, Azure 2, jobs 95, frame domains 1); corrida 2: todo 0. 0 jobs activos; SendGrid/Twilio/WhatsApp/OneSignal `Active=False` | ya aislada (Fase 1) |
 
@@ -758,8 +777,8 @@ cambios en las dos):
 - Horario 35 «Check In - Prueba» activado (L–V, check-in 09:00–21:00; ya asignado a los 3 grupos).
 - Kiosco nuevo «Kiosko Prueba Upgrade» (Id 26 en ambas) = copia del «Kiosko Mostrador» (12) con las salas 133–135
   e impresión **desde el servidor**.
-- Impresora 14 → `127.0.0.1:9100` (18.1) / `:9101` (19). **Antes apuntaba a `192.168.20.88`**, una impresora de la
-  red de la iglesia: si esta máquina está en esa red, cualquier impresión desde el servidor habría salido en papel.
+- Impresora 14 → `127.0.0.1:9100` (18.1) / `:9101` (19). **Antes apuntaba a una impresora de la red interna**:
+  si esta máquina está en esa red, cualquier impresión desde el servidor habría salido en papel.
   La IP original quedó anotada en la descripción del dispositivo.
 - `dev-isolation\impresora_falsa_zpl.ps1`: listener solo en `127.0.0.1` que guarda cada etiqueta en
   `dev-isolation\etiquetas_capturadas\<puerto>_<hora>.zpl`. `ZebraPrint` (envío por socket, acepta `ip:puerto`) es
@@ -910,3 +929,59 @@ aplicó. El `<meta name="viewport">` es idéntico en `RockManager/Layouts/Site.M
 - Si hay que dejarlo igual que en 18.1: volver el sitio 5 al tema `RockManager` (configuración del sitio, sin
   código; reversible) y probar que el Roster Obsidian y el `CheckInContextSetter` nuevos se vean bien con ese tema,
   porque upstream los diseñó para `RockManagerNextGen`. Probarlo en local antes de decidir.
+
+---
+
+## 15. Acceso a 6229 desde la red local (abierto el 2026-11-20)
+
+Con autorización del responsable, otras personas de la red local prueban la 19 en **`http://<IP de la PC de desarrollo>:6229/`**
+(la IP no se anota en el repo; está en los scripts de `dev-isolation`). Solo 6229 (Rock19Test); **6230 (18.1) sigue solo en `localhost`**. Rock19Test es una copia
+de prod con datos de miembros: solo deben entrar personas autorizadas, con sus propios usuarios.
+
+### 15.1 Cómo se abrió
+
+| Capa | Cambio | Quién |
+|---|---|---|
+| Windows (http.sys) | Reserva `netsh http add urlacl url=http://*:6229/ user=Todos` | Responsable (admin) |
+| Firewall | Regla de entrada TCP 6229 solo para `LocalSubnet` | Responsable (admin) |
+| IIS Express | Sitio **`Rock19-6229`** (id 2) en `%USERPROFILE%\Documents\IISExpress\config\applicationhost.config`, con un único binding `*:6229:` (todos los hosts) y el pool `Clr4IntegratedAppPool`. Respaldo previo: `applicationhost.config.antes-binding-6229_2026-11-20.bak` en la misma carpeta | Claude |
+| Rock19Test | `dev-isolation\red_local_6229_abrir.sql` (guarda de máquina y BD, idempotente): `SiteDomain` con la IP de la PC en el sitio «Rock RMS» (Order 3, el último) e `<IP>:6229` en su `AllowedFrameDomains` | Claude |
+
+**Arranque de 6229 desde ahora** (sustituye al comando con `/path` de §0 mientras el acceso siga abierto):
+
+```powershell
+& "C:\Program Files\IIS Express\iisexpress.exe" /site:Rock19-6229
+```
+
+Notas de lo que se encontró al abrirlo:
+- **Binding por host no arranca sin elevar.** El primer intento fue `:6229:localhost` + `:6229:<IP>`: IIS
+  Express dio «Acceso denegado (0x80070005)» en **las dos** URLs (incluida `localhost`, que sin la reserva sí se
+  registraba). http.sys solo permite registrar con una reserva de comodín débil `http://*:6229/` exactamente esa URL.
+  Por eso el binding es `*:6229:`, que registra `http://*:6229/`. La exposición la limita el firewall (`LocalSubnet`).
+  Si se quiere aceptar solo el host de la IP: el responsable crea (como admin) las reservas
+  `http://<IP>:6229/` y `http://localhost:6229/`, borra la de `*`, y se vuelve a los dos bindings por host.
+- **Sin el `SiteDomain`, `/checkin` daba 404 entrando por IP.** `RockRouteHandler.GetSite` busca el sitio por el host y,
+  si no lo encuentra, por la cookie `last_site`; sin ninguno de los dos, `GetPageIdFromDataTokens` no asigna página y
+  las rutas con nombre (`/checkin`, `/checkinmanager`) devuelven «Page Not Found». `/page/N` sí funcionaba (no depende
+  del sitio). Es el mismo motivo por el que prod tiene la IP de su servidor como dominio. El dominio nuevo va al final del
+  orden: `localhost` sigue siendo el primero, que es el que usa `Site.DefaultDomainUri` (CLAUDE.md, trampa 7).
+- **Modales:** Rock arma `frame-ancestors` con el `AllowedFrameDomains` del sitio de la página (`Global.asax.cs`), no
+  del host. Ya incluía `'self'`, que cubre el mismo origen; la IP queda además explícita.
+- **Verificado desde esta PC, sin cookies** (2026-11-20 ~08:40): `http://<IP>:6229/` → 302 a `/page/3`
+  (200, «Log In | Rock RMS», CSP con `<IP>:6229`); `/checkin` → 302 a `/Login`; `/checkinmanager` → 302 a
+  `/page/387`; `localhost:6229` y `localhost:6230` igual que antes. `ExceptionLog` de los reinicios: solo ruido de
+  arranque conocido (base nueva de Rock19Test: **1630439**).
+- **Limitación conocida:** `PublicApplicationRoot`, `InternalApplicationRoot` y `OrganizationWebsite` siguen en
+  `http://localhost:6229/`. Lo que Rock arme con esos valores (correos, enlaces absolutos, algunos redirects) apunta a
+  `localhost`, que en otra PC no abre. No se cambiaron para no afectar esta PC ni las pruebas en curso.
+
+### 15.2 Cómo se cierra
+
+1. Detener 6229 (el proceso `iisexpress.exe ... /site:Rock19-6229`).
+2. Rock19Test: `sqlcmd -S localhost -E -C -d Rock19Test -I -f 65001 -i red_local_6229_cerrar.sql` (en
+   `dev-isolation`; quita el `SiteDomain` y la IP de `AllowedFrameDomains`).
+3. IIS Express: quitar el bloque `<site name="Rock19-6229">` de `applicationhost.config` (o restaurar el `.bak`) y
+   volver a arrancar 6229 con el comando `/path` de §0.
+4. Responsable (como admin): `netsh http delete urlacl url=http://*:6229/` y borrar la regla de firewall del puerto
+   6229. **Hace falta quitar la reserva**: mientras exista, `/path ... /port:6229` tampoco registra `localhost:6229`.
+5. Verificar: `netsh http show urlacl url=http://*:6229/` no muestra nada, y `http://localhost:6229/` abre.

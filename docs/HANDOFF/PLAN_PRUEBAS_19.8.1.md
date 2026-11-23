@@ -111,6 +111,16 @@ marcadas ⏸ y se prueban después de correrlos.
 | 9.3 | Página 862 «Configuracion Domingos» | Ver cupos y Métricas | Carga | | |
 | 9.4 | Página 861 «qrs» (QR Scanner Evento) y 864 «Celebremos QR Check-in» | Abrir y permitir cámara | Carga sin errores, lista eventos | | |
 | 9.5 | Página 847 «Lector QR» (externo) y 848 «Reporteria Eventos» | Abrir | Cargan (WebForms legacy) | | |
+| 9.6 | 862 → pestaña «Servicios especiales» → «+ Nuevo servicio especial» | Crear un especial de prueba para hoy (MANUAL §4.3): nombre sin hora, lugares, puerta, visible | Aparece en «Programados» como «Nombre HH:mm h»; sale en la 860 y se puede reservar | ✅ 23-nov | |
+| 9.7 | 862 → «Editar» del especial (o de un servicio de la semana) | Cambiar «La puerta abre a las» (p. ej. 2 h antes) y guardar; luego «Puerta normal» | La lista muestra «Puerta HH:mm a HH:mm»; la 863 acepta el QR dentro de esa ventana aunque falte más de 15 min para el inicio | ✅ 23-nov | |
+| 9.8 | 862 → «Editar» → desmarcar «Mostrar en la app de reservas» (y en «Semana normal», la casilla «Visible en la app» de un horario) | Ocultar y volver a mostrar | Deja de salir en la 860 y no se puede reservar; quien ya reservó **sigue entrando** por la 863 y ve su QR; «Programados» muestra «Oculto en la app» | ✅ 23-nov | |
+| 9.9 | 863 con un QR de un servicio cuya puerta aún no abre | Escanear antes de la apertura | Aviso ámbar «Esta reserva es del servicio de las HH:mm. La puerta abre a las HH:mm.»; no marca ingreso ni cuenta como intento inválido | ✅ 23-nov | |
+
+> 9.6–9.9: funciones nuevas de reservas de noviembre de 2026 (`docs/qrevent/MANUAL_RESERVAS_DOMINGOS.md`). Requieren
+> `Dev Tools/Sql/QREVENT_SundayService_SlotSettings.sql` en la BD (sin él, la 862 muestra un aviso azul y todo
+> funciona con 15 min / 1 h 20 min / visible). En local: probado en 6229 el 2026-11-23 (antes, matriz completa en
+> la 18.1 de reservas; `ESTADO_TRABAJO_RESERVAS.md`). En prod: crear el especial **oculto** y desactivarlo al
+> terminar (smoke test de `DESPLIEGUE_RESERVAS_SERVICIOS_ESPECIALES.md` §4).
 
 ## 10. Páginas externas de esta semana y sitio público
 
@@ -183,7 +193,7 @@ flujo en dos sitios a la vez, con la misma BD de origen (bacpac de prod del 18-n
 | | 18.1 (referencia = prod hoy) | 19.8.1 (upgrade) |
 |---|---|---|
 | URL | `http://localhost:6230` | `http://localhost:6229` |
-| Código | worktree `Documents\GitHub\Rock18Base-wt` (commit de `hotfix-18.1`, desacoplado) | rama `Test_Update_18.1_a_18.8` |
+| Código | worktree `Documents\GitHub\Rock18Base-wt` (commit de `hotfix-18.1`, desacoplado) | rama `Test_Update_18.1_a_19.8.1` |
 | BD | `Rock18Base` (bacpac, aislada, sin migrar) | `Rock19Test` (bacpac, aislada, migrada) |
 | «Impresora» | `127.0.0.1:9100` | `127.0.0.1:9101` |
 
@@ -198,6 +208,26 @@ flujo en dos sitios a la vez, con la misma BD de origen (bacpac de prod del 18-n
   (`9100_*.zpl` = 18.1, `9101_*.zpl` = 19). **No se imprime nada.** El listener lo arranca Claude.
 
 Para cada paso: hacerlo **primero en 6230 y luego en 6229**, y comparar. Anotar diferencias en la columna.
+
+> **Un navegador (o perfil) por sitio.** Los dos sitios usan la cookie `.ROCK` en el host `localhost` y el navegador
+> no separa cookies por puerto: iniciar sesión en uno cierra o pisa la del otro, y el estado del kiosco también se
+> mezcla. 6230 solo acepta el host `localhost` (con `127.0.0.1` responde 400). Usar, por ejemplo, Chrome para
+> 6230 y Edge (o una ventana InPrivate) para 6229; o, mientras esté abierto a la red local, entrar a 6229 por la IP de
+> la PC de desarrollo (host distinto, cookies separadas; UPGRADE §15).
+>
+> **Recorrido del 2026-11-20.** Sitios levantados a las 08:07 (primera respuesta: 6229 en 57 s, 6230 en 73 s).
+> Aislamiento verificado en las dos BDs: `AzureApiKey` y `AiApiKey` vacías; SendGrid, Twilio, WhatsApp y OneSignal
+> `Active=False` con credenciales vacías; SMTP a `localhost`. Rock19Test tiene los 14 jobs activos que crearon las
+> migraciones (UPGRADE §5b), inertes por `RunJobsInIISContext=False` en los dos `web.config`.
+> Líneas base de `ExceptionLog`:
+>
+> | BD | Antes del arranque | Después del arranque (todo ruido conocido) |
+> |---|---|---|
+> | Rock18Base | 1630286 | **1630305** |
+> | Rock19Test | 1630379 | 1630404 → **1630439** tras los reinicios de ~08:35 para abrirlo a la red local (UPGRADE §15) |
+>
+> En el arranque de la 19 aparecen además `Cms/FileManager.ascx` y `Reporting/ServiceMetricsEntry.ascx`: páginas
+> 433 y 451, que arreglan los jobs 222 y 226 (UPGRADE §11.2); no son regresión del recorrido.
 
 | # | Pantalla / URL | Qué hacer | Qué comparar entre 6230 y 6229 | Diferencias |
 |---|---|---|---|---|
@@ -223,8 +253,8 @@ Para cada paso: hacerlo **primero en 6230 y luego en 6229**, y comparar. Anotar 
 | C20 | PIN de supervisor (UPGRADE §14.8) | Teclear un PIN equivocado 2–3 veces y luego el correcto | Entra con el correcto en las dos. **No** llegar a 10 fallos (bloquearía el PIN 10 min en esa versión) | |
 
 Al terminar: avisar a Claude para comparar las etiquetas y revisar el `ExceptionLog` de **las dos** BDs
-(líneas base: Rock18Base `ExceptionLog.Id` = 1630266 antes del primer arranque; Rock19Test = 1630350 antes del
-reinicio de las 14:20).
+(líneas base: la tabla del recorrido del 2026-11-20, arriba. Las del 2026-11-19 eran Rock18Base 1630266 y
+Rock19Test 1630350).
 
 **Después de la prueba (lo hace Claude):** detener los dos IIS Express y el listener; restaurar
 `checkin-theme.css` con `git checkout`; dejar o borrar el worktree y `Rock18Base` según decida el responsable.
