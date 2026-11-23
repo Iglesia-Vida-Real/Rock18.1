@@ -302,11 +302,28 @@ correr los jobs. Nada más.
 - `Rock.Blocks.dll` de 6229 es del 23-nov (reservas) y `Rock.dll`, `Rock.ViewModels.dll`, `Rock.Rest.dll` del 19-nov.
   Hoy funciona (los cambios de reservas solo tocan `Rock.Blocks`), pero el kit del día **debe** salir de un build
   completo desde un solo commit (`build-all.ps1 -FullObsidian`) y probarse en 6229 antes de llevarlo a prod.
+  **Resuelto el mismo día** (ver «Kit» abajo).
 - ePay en Rock19Test: `Live=False` (modo prueba) y credenciales live vacías. Los cobros de §3.2, §6 y §7.1 los
   hace el responsable con tarjetas de prueba del proveedor.
 - Nuevo `Dev Tools/Upgrade/19.8.1_preflight_bd_prod.sql`: revisión de solo lectura de la BD de prod (versión y nivel
   de compatibilidad de SQL, espacio, respaldos, migraciones y plugins contra la copia probada, script de reservas).
   Probado contra Rock18Base: todo OK.
+
+**Kit (mismo día, 14:20–14:45):**
+- Respaldo previo de `RockWeb\Bin` y `RockWeb\Obsidian` fuera del repo (`respaldos_kit\antes_build_2026-11-23\`).
+- `build-all.ps1 -FullObsidian` + `npm run build` de `Rock.JavaScript.Obsidian.Reporting`: 0 errores de MSBuild, los 8
+  plugins OK, npm con código 0 (solo avisos de sourcemap de rollup). Las DLL del fork y de los plugins quedan del
+  mismo build (19.8.1, 14:22–14:25). Bundles: todos regenerados salvo `obsidian-core.js`/`obsidian-vendor.js`
+  (idénticos a la salida de webpack, que no reescribe si no cambian), los 4 restos de controles que upstream eliminó
+  (sin referencias) y `Reporting` (recompilado, byte a byte igual).
+- `translatorDashboard.obs.js` (versionado en `Plugins`) cambia al compilar con la 19: solo helpers de Babel. Se
+  commiteó (`0c2b04675e`).
+- Prueba rápida en 6229 con línea base `ExceptionLog` **1630511** (lo anterior: arranques durante el build, todo ruido
+  conocido de §14): check-in de Eco y Foxtrot (Foxtrot pide grupo, igual que antes), 4 etiquetas idénticas byte a byte
+  a las de la mañana salvo el código de seguridad, salida desde el kiosco, Roster del Check-in Manager, reservas
+  860–864, 433, 451, 327, 740, QR, Eventos, Wallet, plugins, Data Toolkit. **0 excepciones nuevas.**
+- Kit: `kit_19.8.1_2026-11-23\` fuera del repo, armado con `Dev Tools/Upgrade/New-KitUpgrade.ps1` (3556 archivos,
+  550 MB, commit `c190618011`). Armado dos veces (a mano y con el script): manifiestos idénticos.
 
 **Pendiente (responsable):** §6 Dar; cobros ePay de prueba (§3.2, §7.1); C16–C20 (PIN); comparación visual del tema
 del kiosco y del Check-in Manager (§14.9).

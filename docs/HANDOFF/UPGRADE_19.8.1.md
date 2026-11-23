@@ -68,9 +68,10 @@ Desde ese día el responsable es el único aprobador y fijó el upgrade de prod 
    `checkin-theme.css` del tema del kiosco.
 6. `RunJobsInIISContext` de prod: lo revisa el responsable (§11.5).
 7. ~~Jobs post-actualización de upstream (§11.3)~~ — ensayados en Rock19Test el 2026-11-23 (ver §11.3).
-8. Kit del día: build completo desde un solo commit (`build-all.ps1 -FullObsidian`), publicarlo en 6229 y repetir
-   una prueba rápida (check-in, reservas, 433/451) antes de llevarlo a prod. Hoy `Rock.Blocks.dll` de 6229 es de
-   otro build que `Rock.dll`/`Rock.ViewModels.dll`/`Rock.Rest.dll` (trampa 8).
+8. ~~Kit del día~~ — armado y probado el 2026-11-23 (PLAN_PRUEBAS §16, «Kit»): build completo en 6229, prueba rápida
+   sin errores nuevos, kit fuera del repo en `kit_19.8.1_2026-11-23\` (3556 archivos, commit `c190618011`, hash del
+   manifiesto `CD7C955F…37FA`). Si se cambia código antes de la ventana, **rehacer** build + prueba + kit
+   (`Dev Tools/Upgrade/New-KitUpgrade.ps1`).
 9. En prod, antes de la ventana: correr `Dev Tools/Upgrade/19.8.1_preflight_bd_prod.sql` (solo lectura) y que
    todo salga «OK».
 
@@ -408,7 +409,13 @@ vacía `RockWeb`: tiene carpetas y archivos que solo existen en el servidor (§5
    guardar la salida. Todo debe decir «OK»: SQL Server ≥ 2016, nivel de compatibilidad ≥ 130, espacio para el
    `.bak`, migraciones del core y de plugins iguales a la copia probada. Cualquier «REVISAR» detiene el upgrade
    hasta entenderlo. (El bloque 8 del script responde el paso 6.)
-7. Armar el kit (fuera del repo) **desde un commit**, con `build-all.ps1 -FullObsidian`:
+7. Armar el kit (fuera del repo) **desde un commit**, con `build-all.ps1 -FullObsidian` + `npm run build` en
+   `Rock.JavaScript.Obsidian.Reporting` (build-all no lo recompila completo), prueba rápida en 6229 y luego
+   `Dev Tools/Upgrade/New-KitUpgrade.ps1 -Destino <carpeta fuera del repo>`, que hace todo lo de esta lista y verifica
+   que no viaje nada prohibido. Antes de correrlo: si `Themes/VidAventuracheckin/Styles/checkin-theme.css` aparece
+   modificado (Rock lo recompila al arrancar, §14.3), `git checkout` de ese archivo. **No** lanzar `build-all.ps1`
+   con `*>&1` redirigido en PowerShell 5.1: con `ErrorActionPreference=Stop` el primer aviso de npm corta el script.
+   Contenido:
    - `Bin\` completo del build (122 DLLs de terceros cambian de versión, §4) + DLLs de los 8 plugins.
    - `Obsidian\` completo, `Plugins\{com_vidareal,EpayVisanetGateway,CybersourceInlineRestGateway}\`.
    - Los archivos versionados de `RockWeb` que cambiaron entre `hotfix-18.1` y la rama del upgrade
