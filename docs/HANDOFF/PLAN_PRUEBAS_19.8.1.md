@@ -73,7 +73,7 @@ marcadas ⏸ y se prueban después de correrlos.
 
 | # | URL | Qué hacer | Debe pasar | L | P |
 |---|---|---|---|---|---|
-| 6.1 | `{base}/dar` | Llenar el formulario (local: sin cobrar; prod: donación mínima solo si se acuerda) | Header/Footer propios, montos multi-moneda, reCAPTCHA | | |
+| 6.1 | `{base}/dar` | Llenar el formulario. **Local:** el bloque en modo prueba (`"mode":"test"` en el HTML) y tarjetas de prueba publicadas por Cybersource, nunca una real. **Prod:** donación mínima con tarjeta real del responsable, solo si se acuerda | Header/Footer propios, montos multi-moneda, reCAPTCHA, transacción «Approved» en el batch de su moneda | | |
 | 6.2 | Página 963 «DashBoard Donaciones» | Abrir y exportar | Carga | | |
 | 6.3 | `{base}/finance/transactions` y detalle de una transacción | Abrir | Totales por moneda | | |
 
@@ -303,8 +303,14 @@ correr los jobs. Nada más.
   Hoy funciona (los cambios de reservas solo tocan `Rock.Blocks`), pero el kit del día **debe** salir de un build
   completo desde un solo commit (`build-all.ps1 -FullObsidian`) y probarse en 6229 antes de llevarlo a prod.
   **Resuelto el mismo día** (ver «Kit» abajo).
-- ePay en Rock19Test: `Live=False` (modo prueba) y credenciales live vacías. Los cobros de §3.2, §6 y §7.1 los
+- ePay en Rock19Test: `Live=False` (modo prueba) y credenciales live vacías. Los cobros de §3.2 y §7.1 los
   hace el responsable con tarjetas de prueba del proveedor.
+- **Dar (§6) no usa ePay sino Cybersource, con su configuración en el bloque 1947 (página 962).** Las 4 BDs
+  locales (Rock18, Rock18Base, Rock18Reservas, Rock19Test) lo tenían con `UseLiveMode=True` y credenciales
+  reales: una donación local con tarjeta real habría sido un cobro real. Ningún aislamiento lo cubría. Se
+  revisó que no hubo transacciones de Dar en esas BDs desde la copia (0). Se pasó a modo prueba en las 4
+  (`dev-isolation\aislar_dar_modo_prueba.sql`, fuera del repo) y se agregó como paso 5 de
+  `Dev Tools/Sql/Aislar_BD_Dev.sql`; `/dar` en 6229 inicializa con `"mode":"test"`. **Prod no cambia.**
 - Nuevo `Dev Tools/Upgrade/19.8.1_preflight_bd_prod.sql`: revisión de solo lectura de la BD de prod (versión y nivel
   de compatibilidad de SQL, espacio, respaldos, migraciones y plugins contra la copia probada, script de reservas).
   Probado contra Rock18Base: todo OK.

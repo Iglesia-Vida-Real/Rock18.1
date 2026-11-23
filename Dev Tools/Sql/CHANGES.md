@@ -23,6 +23,12 @@ sistema. Va en una transacción con `XACT_ABORT ON`, es idempotente y se niega a
 
 Verificado el 2026-10-26 sobre una copia de Rock18 (el estado final quedó en 0 / False).
 
+**2026-11-23 — paso 5: Dar en modo prueba.** El bloque Dar (`Rock.Blocks.Dar.CybersourceDonationEntry`,
+página 962) cobra directo a Cybersource con credenciales en atributos del bloque, así que el paso 2 no lo
+cubría: las copias de prod quedaban con `UseLiveMode=True` (cobro real). El paso 5 pone `UseLiveMode=False` y
+el estado final agrega `BloquesDarEnVivo` (debe ser 0). Probado en Rock19Test dentro de una transacción
+revertida (simulando modo real: 1 fila corregida, chequeo final 0).
+
 ---
 
 ## QREVENT_SundayService_Hardening.sql

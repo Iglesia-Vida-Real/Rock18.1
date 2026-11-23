@@ -130,6 +130,10 @@ defined types y tablas `_com_vidareal_*` existentes. Se trabaja sobre una **copi
      prod (los GUID de destinatario coinciden entre bases).
    - Gateways de pago (*Admin → Finance → Financial Gateways*): Epay/Cybersource en modo
      sandbox o inactivos.
+   - **Dar** (`/dar`, bloque «Cybersource Donation Entry»): cobra directo a Cybersource con las
+     credenciales guardadas en la **configuración del bloque**, no en Financial Gateways. La copia de
+     prod lo trae con «Use Live Mode» = sí. `Aislar_BD_Dev.sql` (paso 5) lo pasa a modo prueba; verificar
+     que `/dar` cargue con `"mode":"test"` en el HTML. Sin esto, una donación en dev es un cobro real.
    - Jobs (*Admin → System Settings → Jobs*): desactivar los que envían comunicaciones o
      sincronizan con Odoo.
 5. Al arrancar por primera vez contra una copia de prod, las `[PluginMigration]` que dev tenga

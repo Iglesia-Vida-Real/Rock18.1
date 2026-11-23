@@ -7,6 +7,9 @@
       2. Desactiva las pasarelas de pago (FinancialGateway).
       3. Agrega '.test' a los correos de Person (no los de sistema).
       4. Desactiva los transportes SendGrid, Twilio, WhatsApp y OneSignal (atributo 'Active').
+      5. Pone el bloque DAR (Cybersource Donation Entry) en modo prueba (UseLiveMode = False).
+         DAR cobra directo a Cybersource con credenciales guardadas en atributos del BLOQUE: el paso 2
+         no lo cubre. Sin esto, una donación en dev con tarjeta real es un COBRO REAL (hallazgo 2026-11-23).
 
     Correr DESPUÉS de Enable_LocalhostDevTesting.sql y ANTES de arrancar el sitio:
         sqlcmd -S localhost -d Rock18 -E -I -f 65001 -b -i "Dev Tools\Sql\Aislar_BD_Dev.sql"
@@ -55,13 +58,27 @@ WHERE et.[Name] IN (
 AND av.[Value] <> 'False';
 PRINT CONCAT('4. Transportes desactivados: ', @@ROWCOUNT);
 
+UPDATE av
+SET av.[Value] = 'False', av.[ModifiedDateTime] = GETDATE()
+FROM [AttributeValue] av
+JOIN [Attribute] a ON a.[Id] = av.[AttributeId] AND a.[Key] = 'UseLiveMode' AND a.[EntityTypeQualifierColumn] = 'BlockTypeId'
+JOIN [BlockType] bt ON a.[EntityTypeQualifierValue] = CAST(bt.[Id] AS varchar(20))
+JOIN [EntityType] et ON et.[Id] = bt.[EntityTypeId] AND et.[Name] = 'Rock.Blocks.Dar.CybersourceDonationEntry'
+WHERE ISNULL(av.[Value], '') <> 'False';
+PRINT CONCAT('5. Bloques DAR pasados a modo prueba: ', @@ROWCOUNT);
+
 COMMIT;
 
 PRINT 'Estado final (todo debe ser 0 / False):';
 SELECT
     (SELECT COUNT(*) FROM [ServiceJob] WHERE [IsActive] = 1) AS JobsActivos,
     (SELECT COUNT(*) FROM [FinancialGateway] WHERE [IsActive] = 1) AS PasarelasActivas,
-    (SELECT COUNT(*) FROM [Person] WHERE [Email] <> '' AND [Email] NOT LIKE '%.test' AND [IsSystem] <> 1) AS CorreosSinTest;
+    (SELECT COUNT(*) FROM [Person] WHERE [Email] <> '' AND [Email] NOT LIKE '%.test' AND [IsSystem] <> 1) AS CorreosSinTest,
+    (SELECT COUNT(*) FROM [AttributeValue] av
+        JOIN [Attribute] a ON a.[Id] = av.[AttributeId] AND a.[Key] = 'UseLiveMode' AND a.[EntityTypeQualifierColumn] = 'BlockTypeId'
+        JOIN [BlockType] bt ON a.[EntityTypeQualifierValue] = CAST(bt.[Id] AS varchar(20))
+        JOIN [EntityType] et ON et.[Id] = bt.[EntityTypeId] AND et.[Name] = 'Rock.Blocks.Dar.CybersourceDonationEntry'
+        WHERE av.[Value] = 'True') AS BloquesDarEnVivo;
 SELECT et.[Name] AS Transporte, av.[Value] AS Active
 FROM [EntityType] et
 JOIN [Attribute] a ON a.[EntityTypeId] = et.[Id] AND a.[Key] = 'Active'
