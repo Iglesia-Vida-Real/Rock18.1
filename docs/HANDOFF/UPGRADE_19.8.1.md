@@ -58,8 +58,11 @@ idénticas); los 12 jobs de actualización ensayados en Rock19Test sin errores (
 Desde ese día el responsable es el único aprobador y fijó el upgrade de prod para el 2026-11-24.
 
 **Qué falta**
-1. C16–C20 de §15 (necesitan el PIN de supervisor: lo teclea el responsable). El horario de prueba solo abre
-   check-in **lunes a viernes de 09:00 a 21:00**.
+1. ~~C16–C20 de §15~~ — hechos el 2026-11-23 en 18.1 y 19, iguales (PLAN_PRUEBAS §15 y §16). **Falta solo C20 en la
+   19** (el responsable teclea 2 PIN errados y luego el correcto en el kiosco de 6229, engrane → «Iniciar sesión como
+   administrador»). El horario de prueba (Schedule 35) abre check-in **lunes a viernes de 09:00 a 15:00** (cierra al
+   terminar el evento, no a las 21:00 como se anotó antes). Para C16–C19 hace falta «Registration Mode» en el
+   dispositivo 26 (se activó y se quitó al terminar; el kiosco real «Kiosko Mostrador» lo tiene activado).
 2. ~~Comparar etiquetas y `ExceptionLog`~~ — hecho el 2026-11-23 para C1–C15.
 3. ~~Abrir 327 y 740 con sesión~~ — hecho el 2026-11-23: cargan sin error.
 4. Según la comparación visual: aplicar la propuesta B de CSS del kiosco (§14.9a, probar con dotless) y decidir el

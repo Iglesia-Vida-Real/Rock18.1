@@ -246,11 +246,11 @@ Para cada paso: hacerlo **primero en 6230 y luego en 6229**, y comparar. Anotar 
 | C13 | Checkout desde el kiosco | `/checkin` → buscar `99001919` → acción «Check Out» → Eco | Pantallas de check-out (Action Select, Check Out Person Select, Check Out Success) | ✅ 19: Action Select → «Registrar Salida» → «Eco PruebaUpgrade fue retirado de Exploradores…» |
 | C14 | Checkout desde el Manager | Roster → check-out de Foxtrot | Funciona; modal con título «Confirmar» y botón «Registrar Salida» en las dos; el nombre del niño se ve completo | ✅ 19: «Check Out» (en el filtro «Presente») sale **sin modal** cuando hay un solo horario; el modal «Confirmar / Registrar Salida» aparece solo con varios horarios. La 18.1 hace lo mismo (`Roster.ascx.cs`: modal solo si `scheduleIds.Count > 1`) |
 | C15 | Página 852 «Checkin Pendientes» (interno) | Abrir | Lista de presentes (CheckInOutView, bloque nuestro) igual en ambas | ✅ igual en las dos: «No se pudo determinar el Check-in Configuration actual» (no es del upgrade) |
-| C16 | Alta de familia desde el kiosco (validación nueva de textos de la 19, UPGRADE §14.5) | Modo supervisor (PIN) → buscar `PruebaTildes` (sin resultados) → «Agregar familia». Adulta: nombre **Begoña**, apellido **Peña O'Connor**, móvil `99002020`. Niños: **Iñaki** (nacido hace ~5 años) y **Zoë María-José** (~9 años), mismo apellido | Se guarda en las dos; los nombres se ven igual (tildes, ñ, ü, apóstrofo y guion) en la familia, en la selección de personas y en el Roster | |
-| C17 | Editar esa familia desde el kiosco | Cambiar el apellido a **D'Ávila Ñúñez** y guardar | Se guarda en las dos | |
-| C18 | Check-in de Iñaki y Zoë | Flujo C3–C7 con `99002020` | Etiqueta capturada con los nombres bien escritos (comparar `9100_*` vs `9101_*`: acentos en UTF-8) | |
-| C19 | (Negativo, opcional) Alta con nombre **Prueba&lt;b&gt;** o **{{ Prueba }}** | Intentar guardar | **Esperado distinto:** la 18.1 lo acepta; la 19 lo rechaza (validación nueva, por diseño). Anotar el mensaje que muestra la 19 | |
-| C20 | PIN de supervisor (UPGRADE §14.8) | Teclear un PIN equivocado 2–3 veces y luego el correcto | Entra con el correcto en las dos. **No** llegar a 10 fallos (bloquearía el PIN 10 min en esa versión) | |
+| C16 | Alta de familia desde el kiosco (validación nueva de textos de la 19, UPGRADE §14.5) | Modo supervisor (PIN) → buscar `PruebaTildes` (sin resultados) → «Agregar familia». Adulta: nombre **Begoña**, apellido **Peña O'Connor**, móvil `99002020`. Niños: **Iñaki** (nacido hace ~5 años) y **Zoë María-José** (~9 años), mismo apellido | Se guarda en las dos; los nombres se ven igual (tildes, ñ, ü, apóstrofo y guion) en la familia, en la selección de personas y en el Roster | ✅ igual en las dos (lista, familia y selección con tildes, ñ, ë, apóstrofo y guion). Requiere «Registration Mode» en el dispositivo (el kiosco de prueba no lo tenía; el Mostrador de prod sí). En la 18.1 saltó un NullReference en `EditFamily.ascx.cs:632` porque se entró directo a `/checkin/search` sin pasar por la bienvenida (estado sin SearchType; artefacto de la prueba, por el flujo normal no pasa). Guardar tarda ~10 s (correo contra SMTP local) |
+| C17 | Editar esa familia desde el kiosco | Cambiar el apellido a **D'Ávila Ñúñez** y guardar | Se guarda en las dos | ✅ igual en las dos (los 3 miembros; el grupo sigue llamándose «Peña O'Connor Family»: Rock no lo renombra) |
+| C18 | Check-in de Iñaki y Zoë | Flujo C3–C7 con `99002020` | Etiqueta capturada con los nombres bien escritos (comparar `9100_*` vs `9101_*`: acentos en UTF-8) | ✅ idénticas byte a byte salvo código de seguridad y QR del ticket de padre; `^CI28` (UTF-8) en las dos. La plantilla imprime «Iñaki D'Ávila» / «Zoë D'Ávila» (corta el apellido en el primer espacio, igual en las dos) |
+| C19 | (Negativo, opcional) Alta con nombre **Prueba&lt;b&gt;** o **{{ Prueba }}** | Intentar guardar | **Esperado distinto:** la 18.1 lo acepta; la 19 lo rechaza (validación nueva, por diseño). Anotar el mensaje que muestra la 19 | ✅ igual en las dos: **ambas rechazan** «Prueba&lt;b&gt;» en el kiosco (validadores `SpecialCharRE` que ya existían en la 18.1), sin mensaje visible y sin crear la persona. La expectativa «la 18.1 lo acepta» era incorrecta para el kiosco |
+| C20 | PIN de supervisor (UPGRADE §14.8) | Teclear un PIN equivocado 2–3 veces y luego el correcto | Entra con el correcto en las dos. **No** llegar a 10 fallos (bloquearía el PIN 10 min en esa versión) | 18.1 ✅ (2 PIN errados y luego el correcto; lo hizo el responsable). **19: pendiente** (necesita su PIN) |
 
 Al terminar: avisar a Claude para comparar las etiquetas y revisar el `ExceptionLog` de **las dos** BDs
 (líneas base: la tabla del recorrido del 2026-11-20, arriba. Las del 2026-11-19 eran Rock18Base 1630266 y
@@ -341,6 +341,11 @@ correr los jobs. Nada más.
   - Auditoría del núcleo (agente): sin cambios en `GatewayComponent`, lotes ni SaveHooks; cifrado compatible; nuevo
     formato V2 al escribir. Revisión de los 83 valores cifrados de la copia: 0 en riesgo (preflight bloque 12).
   - Todo en `upgrade-19.8.1/GUIA_FALLAS_PAGOS_19.8.1.md`.
+- **C16–C20 (Claude con el responsable, 2026-11-23 15:50–16:15):** resultados en la tabla de §15; 18.1 y 19 iguales.
+  Para poder probar se cambió temporalmente, en las dos BDs locales, el fin del Schedule 35 a 21:00 y se activó
+  «Registration Mode» en el dispositivo 26; ambos se devolvieron al terminar. Quedan en las dos BDs la familia de
+  prueba «Peña O'Connor Family» (apellido D'Ávila Ñúñez, móvil ficticio 99002020) y su check-in. `ExceptionLog` de la 19
+  sin entradas nuevas fuera del ruido conocido. Pendiente: C20 en la 19 (PIN del responsable).
 - Nuevo `Dev Tools/Upgrade/19.8.1_preflight_bd_prod.sql`: revisión de solo lectura de la BD de prod (versión y nivel
   de compatibilidad de SQL, espacio, respaldos, migraciones y plugins contra la copia probada, script de reservas).
   Probado contra Rock18Base: todo OK.
@@ -361,5 +366,6 @@ correr los jobs. Nada más.
 - Kit: `kit_19.8.1_2026-11-23\` fuera del repo, armado con `Dev Tools/Upgrade/New-KitUpgrade.ps1` (3556 archivos,
   550 MB, commit `c190618011`). Armado dos veces (a mano y con el script): manifiestos idénticos.
 
-**Pendiente (responsable):** §6 Dar; cobros ePay de prueba (§3.2, §7.1); C16–C20 (PIN); comparación visual del tema
+**Pendiente (responsable), actualizado 2026-11-23 16:15:** cobro de Dar con Q1 en prod tras el upgrade (UPGRADE §7.3
+paso 8); C20 en la 19 (PIN); preflight de la BD de prod (UPGRADE §7.1 pasos 6b y 6c); comparación visual del tema
 del kiosco y del Check-in Manager (§14.9).
