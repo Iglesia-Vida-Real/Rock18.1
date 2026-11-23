@@ -39,7 +39,8 @@ $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Push-Location $repo
 try {
     if (git status --porcelain) { throw 'El repo tiene cambios sin commitear: el kit debe salir de un commit (ver la ayuda: checkin-theme.css).' }
-    $Destino = [IO.Path]::GetFullPath((Join-Path (Get-Location) $Destino))
+    if (-not [IO.Path]::IsPathRooted($Destino)) { $Destino = Join-Path (Get-Location) $Destino }
+    $Destino = [IO.Path]::GetFullPath($Destino)
     if ($Destino.StartsWith($repo + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'El destino debe quedar fuera del repo.' }
     if (Test-Path $Destino) { throw "Ya existe $Destino" }
 
