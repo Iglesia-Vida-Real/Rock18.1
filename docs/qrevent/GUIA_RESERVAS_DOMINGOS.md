@@ -1,5 +1,8 @@
 # Guía de reservas dominicales (para quien configura)
 
+Resumen de una página. El manual completo, con el funcionamiento y todos los procedimientos paso a paso, es
+**`MANUAL_RESERVAS_DOMINGOS.md`**.
+
 Pantallas (sitio interno):
 
 | Página | Nombre | Para qué |
