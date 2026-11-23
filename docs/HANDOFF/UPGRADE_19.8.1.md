@@ -476,6 +476,14 @@ vacía `RockWeb`: tiene carpetas y archivos que solo existen en el servidor (§5
    lista es la señal de éxito. Verificar el resultado en las páginas (File Manager 433, Weekly Metrics 451, System
    Phone Numbers 327, Experience Administration 740). Si uno falla, queda en la lista con el error.
 8. Pruebas: `PLAN_PRUEBAS_19.8.1.md`, columna P.
+   **Dar (decidido el 2026-11-23):** el cobro contra Cybersource no se pudo probar en local (secretos cifrados con la
+   llave de prod; PLAN_PRUEBAS §16). Se verifica aquí con una donación de **Q1.00** con la tarjeta del responsable
+   (la teclea él) en `https://personas.vidareal.tv/dar`. Ojo: el monto se escribe desde la derecha («100» = Q1.00).
+   Debe pasar: mensaje de éxito; en la BD, la `FinancialTransaction` nueva con `Status='Approved'`, `BatchId` no
+   nulo (lote «… (GTQ)»), sin fila `Pending` sobrante; el correo de confirmación llega; el workflow de donación (si
+   está configurado) se lanza; `ExceptionLog` sin entradas nuevas de `CybersourceDonationEntry`. Si falla: anotar el
+   mensaje exacto y la hora; **no** reintentar con otra tarjeta sin revisar primero (la idempotencia evita doble
+   cobro con la misma solicitud, no entre intentos distintos).
    Avisar a los supervisores de check-in de cada sede, antes del primer domingo, del límite nuevo de la 19: tras
    **10 PIN fallidos en 10 min desde la misma red**, el PIN de supervisor queda bloqueado hasta 10 min, incluso el
    correcto (§14.8). Que cada supervisor confirme su PIN antes del servicio.

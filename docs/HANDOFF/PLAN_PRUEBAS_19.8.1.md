@@ -326,7 +326,10 @@ correr los jobs. Nada más.
   local porque la API key cifrada no se descifra.
   **No probado en local:** el cobro contra Cybersource y el registro «Approved» (lote, workflows). Requiere el
   secreto de sandbox en el bloque de 6229 (lo ingresa el responsable) o se verifica en prod con la donación
-  mínima de §6.1. Lo mismo aplica probablemente a ePay en local (`TestMerchantPasswd` también va cifrado).
+  mínima de §6.1. **Decisión del responsable: donación de Q1 en prod tras el upgrade (UPGRADE §7.3 paso 8).**
+  ePay en local tiene el mismo problema: `TestMerchantPasswd` es «Encrypted Text» y `EpayVisanetGateway.Decrypt` no
+  lo puede descifrar con la llave local (devuelve vacío o el texto cifrado), así que el cobro de prueba de §3.2/§7.1
+  no llega a autenticarse en `epaytestvisanet.com.gt`.
 - Nuevo `Dev Tools/Upgrade/19.8.1_preflight_bd_prod.sql`: revisión de solo lectura de la BD de prod (versión y nivel
   de compatibilidad de SQL, espacio, respaldos, migraciones y plugins contra la copia probada, script de reservas).
   Probado contra Rock18Base: todo OK.
