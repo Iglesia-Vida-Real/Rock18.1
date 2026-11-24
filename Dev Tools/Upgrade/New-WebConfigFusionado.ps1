@@ -43,10 +43,13 @@ param(
     [Parameter(Mandatory = $true)][string]$WebConfigProd,
     [Parameter(Mandatory = $true)][string]$WebConfig19,
     [string]$WebConfig181,
-    [string]$Salida = (Join-Path $PSScriptRoot 'web.config.19-fusionado')
+    [string]$Salida
 )
 
 $ErrorActionPreference = 'Stop'
+# En Windows PowerShell 5.1 $PSScriptRoot llega vacío en los valores por defecto de param() con -File (falló en prod
+# el 2026-11-24); se resuelve aquí.
+if (-not $Salida) { $Salida = Join-Path $PSScriptRoot 'web.config.19-fusionado' }
 if (-not [IO.Path]::IsPathRooted($Salida)) { $Salida = Join-Path (Get-Location).ProviderPath $Salida }
 $Salida = [IO.Path]::GetFullPath($Salida)
 
