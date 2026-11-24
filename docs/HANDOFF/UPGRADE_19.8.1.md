@@ -1,16 +1,22 @@
 # Upgrade de Rock 18.1 → 19.8.1 (prueba local y runbook del cambio real)
 
-> **Estado:** en prueba **local** (PC de desarrollo, BD `Rock19Test`). Nada de esto se ha
-> aplicado en producción. Este documento se actualiza al cerrar cada fase.
+> **Responsable y aprobador del upgrade:** Fredy Ramirez (desde el 2026-11-23; antes, TI/Rodolfo).
+>
+> **Estado (2026-11-24):** pruebas **locales completas** (PC de desarrollo, BD `Rock19Test`). Nada se ha aplicado en
+> producción. **El orden de trabajo del día en prod está en
+> [`upgrade-19.8.1/CHECKLIST_PRODUCCION_19.8.1.md`](upgrade-19.8.1/CHECKLIST_PRODUCCION_19.8.1.md)** (análisis previo
+> con el sitio arriba, ir/no ir, ventana con comandos, verificación, reversa); este documento queda como referencia.
 >
 > | Fase | Estado |
 > |---|---|
 > | 1. BD nueva aislada | ✅ 2026-11-19 |
 > | 2. Merge de código + build | ✅ commiteado; rama `Test_Update_18.1_a_19.8.1` en GitHub desde el 2026-11-23; core + 8 plugins compilan; precompilación completa de `RockWeb` sin errores (§14.2) |
-> | 3. Arranque y migraciones | ✅ migraciones aplicadas y sitio arriba (§5b). Respaldo `.bak` de Rock19Test migrada **antes de jobs** (§11.1). Jobs post-actualización de upstream: analizados, **sin correr** (§11); job propio 234 (bloques huérfanos) corrido el 2026-11-19 (§11.4) |
+> | 3. Arranque y migraciones | ✅ migraciones aplicadas y sitio arriba (§5b); jobs post-actualización ensayados el 2026-11-23 (§11.3) |
 > | 3b. Análisis previo a las pruebas | ✅ 2026-11-19: diagnósticos locales (§5c), inventario (`INVENTARIO_DESARROLLOS_VR.md`), jobs (§11), check-in (§12), comparación servidor vs repo preparada (§13) |
-> | 3c. Prueba comparativa de check-in 18.1 vs 19 | ⏳ entorno listo (§14); Roster en español aplicado (§14.6); **falta el recorrido** |
-> | 4. Pruebas de humo | ⏳ checklist lista: `PLAN_PRUEBAS_19.8.1.md` |
+> | 3c. Prueba comparativa de check-in 18.1 vs 19 | ✅ C1–C20 iguales (PLAN_PRUEBAS §15) |
+> | 4. Pruebas de humo | ✅ local (PLAN_PRUEBAS §16); en prod: CHECKLIST fase D |
+> | 5. Kit | ✅ `kit_19.8.1_2026-11-23\` + `herramientas\` (CHECKLIST, «Qué hay en herramientas») |
+> | 6. Producción | ⏳ CHECKLIST fase A (análisis previo) |
 
 ---
 
@@ -391,6 +397,12 @@ encima** de esa carpeta (igual que cualquier deploy, `DEPLOY_PRODUCCION.md` §3)
 vacía `RockWeb`: tiene carpetas y archivos que solo existen en el servidor (§5c).
 
 ### 7.1 Días antes
+
+> Desde el 2026-11-24 los pasos 2, 4, 5, 6, 6b y 6c tienen herramienta y orden en
+> `upgrade-19.8.1/CHECKLIST_PRODUCCION_19.8.1.md` fase A: `Get-DiagnosticoServidor.ps1` (diagnóstico de solo lectura +
+> inventario + hash de llaves) y `New-WebConfigFusionado.ps1` (web.config de la 19 con los valores de prod; falla si
+> las llaves no quedan idénticas). **Hallazgo:** el `RockWeb/web.config` versionado (repo público) trae llaves de
+> **dev** con valor; la checklist exige comprobar que las de prod son otras (criterio 3).
 
 1. Confirmar que la 19.8.1 es **estable** (notas de versión de Rock; en git el tag es el mismo commit que `-alpha`).
 2. Correr en el servidor `Dev Tools\Upgrade\Get-RockWebInventario.ps1` (solo lectura) y comparar contra el repo

@@ -18,30 +18,64 @@
       - Los archivos versionados de RockWeb que cambiaron entre hotfix-18.1 y HEAD, menos web.config.
     Deja además quitar_del_servidor.txt, MANIFIESTO_SHA256.csv (rutas relativas a RockWeb\) y LEEME.txt.
     No copia web.config, web.ConnectionStrings.config, Content\, Cache\ ni secretos; lo verifica al final.
+    Y la carpeta herramientas\ (scripts de análisis y fusión del web.config, SQL del día, plantillas de web.config del
+    repo y los documentos de la checklist), para usarla en el servidor (CHECKLIST_PRODUCCION_19.8.1.md).
 
 .PARAMETER Destino
-    Carpeta nueva FUERA del repo (no debe existir).
+    Carpeta nueva FUERA del repo (no debe existir). Con -SoloHerramientas: un kit ya armado.
 
 .PARAMETER Base
     Rama o commit de referencia para los archivos versionados cambiados. Default: hotfix-18.1.
 
+.PARAMETER SoloHerramientas
+    No arma RockWeb\: solo agrega herramientas\ a un kit existente (no toca RockWeb\ ni el manifiesto).
+
 .EXAMPLE
     .\"Dev Tools\Upgrade\New-KitUpgrade.ps1" -Destino ..\kit_19.8.1_2026-11-24
+.EXAMPLE
+    .\"Dev Tools\Upgrade\New-KitUpgrade.ps1" -Destino ..\kit_19.8.1_2026-11-23 -SoloHerramientas
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$Destino,
-    [string]$Base = 'hotfix-18.1'
+    [string]$Base = 'hotfix-18.1',
+    [switch]$SoloHerramientas
 )
 
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+
+# Carpeta herramientas\ del kit: lo que se usa en el servidor el día del upgrade.
+function New-Herramientas([string]$kit) {
+    $h = Join-Path $kit 'herramientas'
+    if (Test-Path -LiteralPath $h) { throw "Ya existe $h (borrarla a mano si se quiere regenerar)." }
+    New-Item -ItemType Directory $h | Out-Null
+    foreach ($f in 'Dev Tools\Upgrade\Get-DiagnosticoServidor.ps1', 'Dev Tools\Upgrade\Get-RockWebInventario.ps1',
+                   'Dev Tools\Upgrade\New-WebConfigFusionado.ps1', 'Dev Tools\Upgrade\19.8.1_preflight_bd_prod.sql',
+                   'Dev Tools\Upgrade\19.8.1_job_reemplazo_bloques_huerfanos.sql', 'Dev Tools\Sql\QREVENT_SundayService_SlotSettings.sql',
+                   'docs\HANDOFF\upgrade-19.8.1\CHECKLIST_PRODUCCION_19.8.1.md', 'docs\HANDOFF\upgrade-19.8.1\GUIA_FALLAS_PAGOS_19.8.1.md') {
+        Copy-Item -LiteralPath (Join-Path $repo $f) -Destination $h
+    }
+    # Plantillas de web.config tal como están en git (bytes exactos): la de la 19 (HEAD) y la de la 18.1 ($Base).
+    foreach ($par in @(@('HEAD', 'web.config.19-plantilla'), @($Base, 'web.config.18.1-plantilla'))) {
+        $destino = Join-Path $h $par[1]
+        cmd /c "git show $($par[0]):RockWeb/web.config > `"$destino`""
+        if ($LASTEXITCODE -ne 0 -or (Get-Item -LiteralPath $destino).Length -eq 0) { throw "No se pudo extraer $($par[0]):RockWeb/web.config" }
+    }
+    Write-Host "herramientas\: $((Get-ChildItem -LiteralPath $h -File).Count) archivos -> $h" -ForegroundColor Green
+}
+
 Push-Location $repo
 try {
     if (git status --porcelain) { throw 'El repo tiene cambios sin commitear: el kit debe salir de un commit (ver la ayuda: checkin-theme.css).' }
     if (-not [IO.Path]::IsPathRooted($Destino)) { $Destino = Join-Path (Get-Location) $Destino }
     $Destino = [IO.Path]::GetFullPath($Destino)
     if ($Destino.StartsWith($repo + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'El destino debe quedar fuera del repo.' }
+    if ($SoloHerramientas) {
+        if (-not (Test-Path -LiteralPath (Join-Path $Destino 'MANIFIESTO_SHA256.csv'))) { throw "$Destino no parece un kit (falta MANIFIESTO_SHA256.csv)." }
+        New-Herramientas $Destino
+        return
+    }
     if (Test-Path $Destino) { throw "Ya existe $Destino" }
 
     $rw = Join-Path $repo 'RockWeb'
@@ -94,6 +128,7 @@ try {
         'No trae (§7.2): web.config, web.ConnectionStrings.config, Content\, App_Data\ (salvo archivos de upstream'
         'versionados), Cache\, DLLs del Rock Shop, Plugins de terceros.'
     ) | Out-File (Join-Path $Destino 'LEEME.txt') -Encoding utf8
+    New-Herramientas $Destino
     Write-Host "KIT OK: $($man.Count) archivos, $([math]::Round($bytes / 1MB)) MB -> $Destino" -ForegroundColor Green
 }
 finally { Pop-Location }
