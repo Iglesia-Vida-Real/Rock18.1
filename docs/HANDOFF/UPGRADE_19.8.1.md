@@ -467,7 +467,7 @@ vacía `RockWeb`: tiene carpetas y archivos que solo existen en el servidor (§5
    (+ `.pdb`) y `Webhooks\SignNow.ashx`; si se quedan, el arranque falla (§5b). El resto: `.ascx/.cs` de bloques
    que upstream reemplazó por Obsidian, `Styles\styles-v2\*` viejos, 3 bundles `.obs.js` de controles eliminados.
    ```powershell
-   $rw = '<ruta>\RockWeb'; $dst = 'D:\deploy-backup\<fecha>\retirados'
+   $rw = '<ruta>\RockWeb'; $dst = 'C:\deploy-backup\<fecha>\retirados'
    Get-Content quitar_del_servidor.txt | Where-Object { $_ -and -not $_.StartsWith('#') } | ForEach-Object {
        $rel = $_ -replace '/', '\'; $src = Join-Path $rw $rel
        if (Test-Path -LiteralPath $src) {

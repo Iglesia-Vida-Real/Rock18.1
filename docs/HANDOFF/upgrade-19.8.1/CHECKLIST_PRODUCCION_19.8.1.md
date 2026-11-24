@@ -23,10 +23,16 @@ con SQL Server (BD `Rock18`). Los accesos (Escritorio remoto, cuentas) **no est�
     como `\\tsclient\C` y se pueden copiar el kit y las herramientas sin USB ni carpetas compartidas.
   - *Conectar* y escribir usuario y contraseña (los teclea Fredy).
 - [ ] **Servidor SQL:** igual, con la dirección del servidor SQL (o con SSMS desde el servidor web si así se trabaja).
-- [ ] En el servidor web, crear una carpeta de trabajo **fuera de RockWeb**, p. ej. `D:\upgrade-19.8.1\` (si no hay D:,
-      `C:\upgrade-19.8.1\`), y copiar ahí desde `\\tsclient\C\Users\Servr local Rock RMS\Documents\GitHub\`:
-  - la carpeta `kit_19.8.1_2026-11-23\` completa (≈ 550 MB);
-  - la carpeta `herramientas\` del kit (scripts y plantillas; ver «Qué hay en herramientas»).
+- [ ] En el servidor web, crear la carpeta de trabajo `C:\upgrade-19.8.1\` (**fuera de RockWeb**) y copiar ahí, desde
+      `\\tsclient\C\Users\Servr local Rock RMS\Documents\GitHub\`, la carpeta `kit_19.8.1_2026-11-23\` completa
+      (≈ 550 MB; ya trae dentro `herramientas\`, ver «Qué hay en herramientas»).
+  > **No usar la unidad «Temporary Storage» (D:) del servidor web.** Es el disco temporal de la VM de Azure: se borra
+  > al reiniciar por mantenimiento, redimensionar o mover la VM. Ni el kit ni los respaldos van ahí. Todo en `C:`
+  > (verificado en el servidor el 2026-11-24: solo tiene `C:` y el disco temporal). Ojo con el espacio de `C:`:
+  > criterio 6.
+  >
+  > Prod tiene RockWeb en `C:\inetpub\wwwroot` (visto el 2026-11-24; A1 lo confirma con la ruta física del sitio de
+  > IIS). Junto a él existe `C:\inetpub\wwwroot_15` (aparentemente una copia vieja de la época de Rock 15): no tocarla.
 
 ---
 
@@ -36,14 +42,25 @@ Todo es **solo lectura**. Se puede hacer horas antes de la ventana.
 
 - [ ] **A1. Diagnóstico del servidor web** (2–5 min):
   ```powershell
-  powershell -NoProfile -ExecutionPolicy Bypass -File "D:\upgrade-19.8.1\herramientas\Get-DiagnosticoServidor.ps1" -ConInventario
+  powershell -NoProfile -ExecutionPolicy Bypass -File "C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\herramientas\Get-DiagnosticoServidor.ps1" -ConInventario
   ```
-  Si no encuentra el sitio solo, agregar `-RockWeb "<ruta física de RockWeb>"` (IIS → Sitios → sitio de
+  En prod el sitio se llama **`Default Web Site`** (pool `DefaultAppPool`, ruta `C:\inetpub\wwwroot`, bindings comodín
+  `*:80` y `*:443`; visto el 2026-11-24), así que hay que agregar `-Sitio "Default Web Site"` (las versiones del script
+  posteriores al 2026-11-24 toman solas el único sitio). Si no encuentra el sitio, agregar `-RockWeb "<ruta física de RockWeb>"` (IIS → Sitios → sitio de
   personas.vidareal.tv → *Configuración básica* → *Ruta de acceso física*). Deja en el Escritorio
   `Diagnostico_Rock_<equipo>_<fecha>.zip` con: versión de .NET, IIS y app pool, versiones/hashes de las DLL,
   `RunJobsInIISContext`, hash corto de las llaves, nombres de `appSettings`, espacio en disco, archivos del tema del
   kiosco y el inventario de `RockWeb` (§13 del runbook). **Traer ese .zip a esta PC** (copiarlo a `\\tsclient\C\...`)
   y pasárselo a Claude. No subirlo al repo (trae el nombre del servidor SQL).
+- [ ] **A1b. Muestras de lo que el inventario marcó** (1 min; agregado el 2026-11-24 tras analizar A1). Copiar
+      `Get-MuestrasProd.ps1` a la carpeta `herramientas\` del servidor y correr:
+  ```powershell
+  powershell -NoProfile -ExecutionPolicy Bypass -File "C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\herramientas\Get-MuestrasProd.ps1"
+  ```
+  Copia (solo lectura) los ~45 archivos de código y DLLs que prod tiene distintos al repo o que solo existen en prod,
+  y deja `muestras_prod_<fecha>.zip` en el Escritorio. Traerlo a la PC (fuera del repo). Con eso Claude los prueba en
+  la 19 local (App_Code compilando, DLLs viejas cargadas) y compara qué cambios de prod pisaría el kit.
+  Resultado del análisis de A1: ver «Resultados de la fase A» al final.
 - [ ] **A2. Preflight de la BD** (1 min), en el servidor SQL:
   - Con SSMS: abrir `herramientas\19.8.1_preflight_bd_prod.sql`, elegir la BD `Rock18`, *Consulta → Resultados a texto*
     (`Ctrl+T`), ejecutar (`F5`) y guardar el resultado como `preflight_resultado.txt`.
@@ -54,7 +71,7 @@ Todo es **solo lectura**. Se puede hacer horas antes de la ventana.
       cada plugin (BEMA MailChimp/Workflow Extensions, Blue Box Moon ACME/Data Toolkit, MinePass, MinistryPass).
 - [ ] **A4. web.config de la 19** (5 min, en el servidor web; genera un archivo **secreto**: no sacarlo del servidor):
   ```powershell
-  cd D:\upgrade-19.8.1\herramientas
+  cd C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\herramientas
   powershell -NoProfile -ExecutionPolicy Bypass -File .\New-WebConfigFusionado.ps1 -WebConfigProd "<RockWeb>\web.config" -WebConfig19 .\web.config.19-plantilla -WebConfig181 .\web.config.18.1-plantilla
   ```
   Debe terminar en «OK: llaves idénticas a prod». Pasar a Claude **solo la salida de la pantalla** (no el archivo):
@@ -91,7 +108,7 @@ Si falta cualquiera: **no ir**; se reprograma sin costo (nada se tocó).
 ## Fase C — Ventana (≈ 1.5–2 h). Anotar la hora de inicio y fin de cada paso.
 
 > Comandos de IIS en PowerShell **como administrador** en el servidor web. Sustituir `<RockWeb>`, `<sitio>` y
-> `<pool>` con lo que dio A1 §2. Carpeta de respaldo del día: `D:\deploy-backup\2026-11-24\` (fuera de RockWeb).
+> `<pool>` con lo que dio A1 §2. Carpeta de respaldo del día: `C:\deploy-backup\2026-11-24\` (fuera de RockWeb).
 
 - [ ] **C1. Mantenimiento:** copiar `<RockWeb>\app_offline-template.htm` como `<RockWeb>\app_offline.htm`. Comprobar en
       el navegador que el sitio muestra la página de mantenimiento.
@@ -109,28 +126,28 @@ Si falta cualquiera: **no ir**; se reprograma sin costo (nada se tocó).
   Debe decir «The backup set on file 1 is valid». **Sin respaldo verificado no se sigue.**
 - [ ] **C4. Respaldo completo de RockWeb** (incluye `Content`, `App_Data`, `Bin`, `Plugins`, `web.config`):
   ```powershell
-  robocopy "<RockWeb>" "D:\deploy-backup\2026-11-24\RockWeb" /E /COPY:DAT /R:1 /W:1 /NP /LOG:"D:\deploy-backup\2026-11-24\respaldo_rockweb.log"
+  robocopy "<RockWeb>" "C:\deploy-backup\2026-11-24\RockWeb" /E /COPY:DAT /R:1 /W:1 /NP /LOG:"C:\deploy-backup\2026-11-24\respaldo_rockweb.log"
   ```
   Códigos de salida 0–7 = bien; 8 o más = revisar el log antes de seguir.
 - [ ] **C5. Retirar lo que la 19 eliminó** (mover, no borrar), con la lista del kit (runbook §7.3 paso 3):
   ```powershell
-  $rw = '<RockWeb>'; $dst = 'D:\deploy-backup\2026-11-24\retirados'
-  Get-Content 'D:\upgrade-19.8.1\kit_19.8.1_2026-11-23\quitar_del_servidor.txt' | Where-Object { $_ -and -not $_.StartsWith('#') } | ForEach-Object {
+  $rw = '<RockWeb>'; $dst = 'C:\deploy-backup\2026-11-24\retirados'
+  Get-Content 'C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\quitar_del_servidor.txt' | Where-Object { $_ -and -not $_.StartsWith('#') } | ForEach-Object {
       $rel = $_ -replace '/', '\'; $src = Join-Path $rw $rel
       if (Test-Path -LiteralPath $src) { $d = Join-Path $dst $rel; New-Item -ItemType Directory -Force (Split-Path $d) | Out-Null; Move-Item -LiteralPath $src -Destination $d } }
   ```
   Obligatorio que salgan `Bin\Rock.SignNow.dll`, `Bin\SignNowSDK.dll` (+ `.pdb`) y `Webhooks\SignNow.ashx`.
 - [ ] **C6. Copiar el kit encima** (sin `/MIR` ni `/PURGE`: no se borra nada de prod):
   ```powershell
-  robocopy "D:\upgrade-19.8.1\kit_19.8.1_2026-11-23\RockWeb" "<RockWeb>" /E /R:1 /W:1 /NP /LOG:"D:\deploy-backup\2026-11-24\copia_kit.log"
+  robocopy "C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\RockWeb" "<RockWeb>" /E /R:1 /W:1 /NP /LOG:"C:\deploy-backup\2026-11-24\copia_kit.log"
   ```
   Verificar que lo copiado es idéntico al kit (debe decir `distintos: 0`):
   ```powershell
-  $k='D:\upgrade-19.8.1\kit_19.8.1_2026-11-23'; $m = Import-Csv "$k\MANIFIESTO_SHA256.csv"
+  $k='C:\upgrade-19.8.1\kit_19.8.1_2026-11-23'; $m = Import-Csv "$k\MANIFIESTO_SHA256.csv"
   $mal = $m | Where-Object { (Get-FileHash -LiteralPath (Join-Path '<RockWeb>' $_.Ruta) -Algorithm SHA256).Hash -ne $_.SHA256 }
   "archivos: $($m.Count)  distintos: $(@($mal).Count)"; $mal | Select-Object -First 20 Ruta
   ```
-- [ ] **C7. web.config de la 19:** copiar `D:\upgrade-19.8.1\herramientas\web.config.19-fusionado` (de A4) como
+- [ ] **C7. web.config de la 19:** copiar `C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\herramientas\web.config.19-fusionado` (de A4) como
       `<RockWeb>\web.config` (el original ya está en el respaldo C4). Agregar a mano lo «solo en prod» que A5 haya
       decidido conservar. Comprobar las llaves:
       `powershell -NoProfile -ExecutionPolicy Bypass -File .\Get-DiagnosticoServidor.ps1 -SoloLlaves -WebConfig "<RockWeb>\web.config"`
@@ -199,7 +216,7 @@ La 19 migra la BD y **no tiene vuelta atrás**: la reversa es **siempre BD + arc
       original:
   ```powershell
   Rename-Item '<RockWeb>' 'RockWeb_19_fallido'
-  robocopy "D:\deploy-backup\2026-11-24\RockWeb" "<RockWeb>" /E /COPY:DAT /R:1 /W:1 /NP /LOG:"D:\deploy-backup\2026-11-24\reversa.log"
+  robocopy "C:\deploy-backup\2026-11-24\RockWeb" "<RockWeb>" /E /COPY:DAT /R:1 /W:1 /NP /LOG:"C:\deploy-backup\2026-11-24\reversa.log"
   ```
 - [ ] E4. Arrancar (C9) y comprobar que el sitio y el check-in funcionan como antes.
 - [ ] E5. Anotar qué falló (hora, mensaje, pantalla) para analizarlo con calma. No reintentar el mismo día.
@@ -238,4 +255,71 @@ la restauración de la BD vuelven los originales.
 | `19.8.1_preflight_bd_prod.sql` | A2 | No (solo SELECT) |
 | `QREVENT_SundayService_SlotSettings.sql` | C8 (si aplica) | Sí: agrega 3 columnas NULL |
 | `19.8.1_job_reemplazo_bloques_huerfanos.sql` | C12 (si se aprueba) | Sí: crea un job |
+| `Get-MuestrasProd.ps1` | A1b: copia los archivos que el inventario marcó, para probarlos en local | No (escribe en el Escritorio) |
 | `CHECKLIST_PRODUCCION_19.8.1.md`, `GUIA_FALLAS_PAGOS_19.8.1.md` | Para leer en el servidor | — |
+
+---
+
+## Resultados de la fase A
+
+### A1 — diagnóstico del servidor web (2026-11-24 14:27, Fredy Ramirez)
+
+| Tema | Resultado | Criterio |
+|---|---|---|
+| Equipo | Windows Server 2022 Datacenter Azure, PowerShell 5.1, IIS 10, zona horaria Central America; encendido desde 2026-11-11 | — |
+| .NET | release 528449 (4.8) | ✅ 1 |
+| Sitio de IIS | Único sitio `Default Web Site`, pool `DefaultAppPool` (CLR v4.0, Integrated, **LocalSystem**, AlwaysRunning, reciclado cada 29 h), ruta `C:\inetpub\wwwroot`, bindings comodín | — |
+| DLL del fork | Todas 18.1 pero de **fechas distintas** (Rock.dll 09-29, Rock.Blocks/ViewModels 10-06, Rock.Rest 08-28): prod hoy tiene DLLs de builds distintos (trampa 8). El kit las reemplaza todas juntas | — |
+| Llaves | Hashes de prod (`PasswordKey` cec1209c4e45, `DataEncryptionKey` cb63f3c4d33c, `validationKey` dd0af68ee74f, `decryptionKey` 84704e808a4e) **distintos** de los de dev del repo. Sin `OldDataEncryptionKey` | ✅ 3 |
+| web.config | `RunJobsInIISContext=True` (devolverlo así en F1); `customErrors=On`; `compilation debug=true` (prod corre en modo debug; se conserva, revisar después); 12 appSettings | — |
+| BD | `Rock18` en el servidor SQL de la red interna, autenticación SQL; no hay `sqlcmd` en el servidor web (A2 con SSMS) | — |
+| Discos | `C:` 50.3 GB libres de 255 GB; RockWeb ocupa 3.0 GB (App_Data 1.5 GB, LMS 0.8 GB de video). Respaldo de RockWeb + kit ≈ 3.6 GB | ✅ 6 (parte web) |
+| Tema del kiosco | `_css-overrides.less` existe pero **vacío (0 B)**: no hay CSS propio que conservar. `_variable-overrides.less` de prod difiere del repo y se queda como está (el kit no lo trae) | — |
+| Visor de eventos | 29 eventos 1309 (excepciones ASP.NET) en 7 días: línea base para comparar después | — |
+
+### A1 — inventario contra `hotfix-18.1` (6,411 archivos de prod)
+
+- 3,002 idénticos; 97 solo cambian saltos de línea (LF/CRLF, inofensivo); 3,238 generados (Bin, Obsidian, temas).
+- **Contenido distinto que el kit sobrescribe** (se pierde lo de prod, queda la versión 19 probada en local):
+  `Blocks\CheckIn\TimeSelect.ascx.cs`, `Blocks\Crm\PersonMerge.ascx(.cs)`, `Blocks\Event\RegistrationDetail.ascx.cs`,
+  `Blocks\Event\RegistrationInstanceRegistrationList.ascx.cs`, `Plugins\CybersourceInlineRestGateway\...Control.obs(.js)`
+  (Dar), `Themes\RockNextGen\Layouts\Site.Master`. Ninguno coincide con una versión de git salvo Site.Master (= upstream
+  de 2025-08-21: el cambio propio del 2026-05-08 nunca se desplegó). **Pendiente A1b**: comparar contra prod.
+- **Contenido distinto que se queda** (el kit no los trae): `App_Code\WhatsAppSms.ashx.cs` (**riesgo alto**: App_Code
+  se compila entero), `Scripts\Rock\Controls\datePicker.js`, los 4 `Blank.aspx`, `_variable-overrides.less`, 8
+  archivos de `Plugins\tech_triumph\MinistryPass` (versión más nueva que la del repo).
+- **Solo en prod**: `App_Code\GetMinePass.cs` y `App_Code\GetMinistryPass.cs` (**riesgo alto**, Rock Shop),
+  `GetMinePass.ashx`, `GetMinistryPass.ashx`, `Blocks\QREVENT\TestCybersource.ascx(.cs)` (bloque de prueba de pagos en
+  prod: no se copia por posible llave en el código; revisar después), `Plugins\apollosproject` (2021),
+  `Plugins\Asistencia`, mapas `.js.map` de Monaco, videos de LMS, `.DS_Store`.
+- **Bin**: 136 archivos solo en prod. 10 son del Rock Shop (se conservan, ya contemplado); 8 se retiran en C5 (SignNow
+  y `.refresh`); el resto son `.xml`/`.pdb` inofensivos y **11 DLLs que la prueba local nunca tuvo** (restos de
+  instalaciones anteriores: `Rock.MyWell`, `Rock.Lava.DotLiquid`, `Rock.Tests.Shared`, TestFramework, Apollos,
+  `ICSharpCode.SharpZipLib`, `Microsoft.AspNetCore.WebUtilities` y fachadas `System.*`). **Pendiente A1b**: cargarlas
+  en la 19 local.
+
+### A1b — muestras de prod probadas en la 19 local (2026-11-24 14:53–15:10)
+
+50 archivos traídos con `Get-MuestrasProd.ps1`; ninguno con llaves escritas en el código.
+
+- **Lo que el kit sobrescribe no pierde nada:** los 7 archivos de pantallas (TimeSelect, PersonMerge, RegistrationDetail,
+  RegistrationInstanceRegistrationList, control de Cybersource `.obs`/`.obs.js`) y `datePicker.js` / los 4 `Blank.aspx`
+  son **idénticos a `hotfix-18.1`** salvo saltos de línea. No hay cambios hechos a mano en el servidor.
+- **`App_Code\WhatsAppSms.ashx.cs` de prod** = versión anterior a `0c44380057` (2026-08-12): no tiene
+  `ResolveFromPerson` (atribución del remitente por wamid / número compartido) y usa
+  `GetPersonFromMobilePhoneNumber`, que existe en la 19. **Compila con la 19.** Se queda como está: tras el upgrade
+  WhatsApp entrante se comporta igual que hoy. Desplegar la versión del repo es un cambio aparte (decisión de Fredy).
+- **Prueba en la 19 local** (6229, BD Rock19Test) con App_Code de prod (`WhatsAppSms`, `GetMinePass.cs`,
+  `GetMinistryPass.cs`), los `.ashx` de la raíz, `Plugins\apollosproject`, `Plugins\Asistencia`, los `.ascx` de
+  MinistryPass de prod y las **11 DLLs viejas** en `Bin`: el sitio **arrancó** (App_Code compiló), `/page/1` = 200,
+  los handlers responden («No Pass Template Provided.», como se espera sin parámetros), el panel de Apollos y la lista
+  de plantillas de MinistryPass cargan. Excepciones al arrancar: solo las conocidas (AIAgentSessionAnchor, `.ascx`
+  inexistentes, OpenID sin https). Las DLLs viejas no generaron ninguna excepción. Después se restauró el local
+  (`git status` limpio, `/page/1` = 200, 0 excepciones nuevas).
+- **Pendiente (próxima sesión):** `TemplateDetail.ascx.cs` de MinistryPass de prod no compiló en local porque usa
+  `MinistryPassApple.RelevantCampusCount`, que está en la DLL **más nueva** de prod (2026-04-08) y no en la de dev. Es un
+  artefacto de la prueba (prod tiene DLL y `.ascx` a juego; el kit no los toca), pero para cerrar el riesgo de
+  `App_Code\GetMinistryPass.cs` (si no compilara, se cae el sitio entero) hay que repetir la prueba con las 4 DLLs del
+  Rock Shop de prod: correr de nuevo `Get-MuestrasProd.ps1` (ya las incluye) y probar en local.
+- No se probó `Blocks\QREVENT\TestCybersource.ascx` (no se copió a propósito). Si no compila con la 19 solo falla su
+  propia página (Rock registra el error al arrancar, como con los `.ascx` inexistentes).

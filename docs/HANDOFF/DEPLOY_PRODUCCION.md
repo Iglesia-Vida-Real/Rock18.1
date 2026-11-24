@@ -69,7 +69,7 @@ dominical de QREVENT); evitar días de venta de un evento grande (checkout de Ev
 
 1. En prod: respaldo
    a. Respaldo de BD (o confirmar con TI el respaldo automático del día).
-   b. Copiar a una carpeta con fecha (p. ej. D:\deploy-backup\2026-10-20\) cada archivo de prod
+   b. Copiar a una carpeta con fecha (p. ej. C:\deploy-backup\2026-10-20\) cada archivo de prod
       que se va a reemplazar, con su ruta.
 
 2. SQL (si aplica) -> contra Rock18, en el orden del runbook del módulo. Si aborta, parar.

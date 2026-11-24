@@ -3,7 +3,7 @@
 #   git diff --name-status --no-renames hotfix-18.1 Test_Update_18.1_a_19.8.1 -- RockWeb   (filtro D)
 #   menos los que el build vuelve a generar (temas compilados, ver regenerados_por_el_build.txt),
 #   + DLLs de Bin que ningún build 19 produce (no están en git) + bundles .obs.js de fuentes borradas.
-# NO borrar: MOVER a una carpeta de respaldo fuera de RockWeb (p. ej. D:\deploy-backup\2026-xx-xx\retirados\).
+# NO borrar: MOVER a una carpeta de respaldo fuera de RockWeb (p. ej. C:\deploy-backup\2026-xx-xx\retirados\).
 # Ver docs/HANDOFF/UPGRADE_19.8.1.md §7 y §5c.
 #
 # --- OBLIGATORIO: si se quedan, el sitio no arranca (TypeLoadException, §5b) ---

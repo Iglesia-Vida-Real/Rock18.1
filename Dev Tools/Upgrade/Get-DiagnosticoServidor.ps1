@@ -124,6 +124,10 @@ try {
         Add-Linea ("       bindings: {0}" -f $binds)
         if (-not $sitioRock -and ($s.Name -like "*$Sitio*" -or $binds -like "*$Sitio*")) { $sitioRock = $s }
     }
+    # Prod (2026-11-24) sirve personas.vidareal.tv desde «Default Web Site» con bindings comodín (*:80, *:443):
+    # si hay un solo sitio, es ese.
+    $todos = @(Get-ChildItem IIS:\Sites)
+    if (-not $sitioRock -and $todos.Count -eq 1) { $sitioRock = $todos[0]; Add-Linea "Único sitio de IIS: se toma '$($sitioRock.Name)'." }
     if ($sitioRock) {
         $pool = Get-Item ("IIS:\AppPools\" + $sitioRock.applicationPool)
         Add-Linea "Sitio de Rock: $($sitioRock.Name)"
