@@ -58,9 +58,8 @@ idénticas); los 12 jobs de actualización ensayados en Rock19Test sin errores (
 Desde ese día el responsable es el único aprobador y fijó el upgrade de prod para el 2026-11-24.
 
 **Qué falta**
-1. ~~C16–C20 de §15~~ — hechos el 2026-11-23 en 18.1 y 19, iguales (PLAN_PRUEBAS §15 y §16). **Falta solo C20 en la
-   19** (el responsable teclea 2 PIN errados y luego el correcto en el kiosco de 6229, engrane → «Iniciar sesión como
-   administrador»). El horario de prueba (Schedule 35) abre check-in **lunes a viernes de 09:00 a 15:00** (cierra al
+1. ~~C16–C20 de §15~~ — hechos en 18.1 y 19, iguales (PLAN_PRUEBAS §15 y §16); C20 en la 19 el 2026-11-24 07:50.
+   **Pruebas locales completas.** El horario de prueba (Schedule 35) abre check-in **lunes a viernes de 09:00 a 15:00** (cierra al
    terminar el evento, no a las 21:00 como se anotó antes). Para C16–C19 hace falta «Registration Mode» en el
    dispositivo 26 (se activó y se quitó al terminar; el kiosco real «Kiosko Mostrador» lo tiene activado).
 2. ~~Comparar etiquetas y `ExceptionLog`~~ — hecho el 2026-11-23 para C1–C15.
