@@ -328,5 +328,21 @@ la restauración de la BD vuelven los originales.
   de plantillas de MinistryPass cargan (el error anterior era solo de la DLL de dev), **0 excepciones nuevas**.
   Local restaurado (DLLs de dev devueltas, `git status` limpio, `/page/1` = 200). **El servidor web no tiene nada que
   impida el upgrade.**
+- A3 (captura del Rock Shop): cubierto por A1 §3 (versiones de las DLLs) + la prueba anterior con las DLLs reales.
+
+### A4 — web.config de la 19 (2026-11-24 15:27)
+
+- Primera corrida: falló al arrancar sin tocar nada (`$PSScriptRoot` vacío en `param()` con PowerShell 5.1; corregido
+  en `c3ad1576f6`). Segunda, con `-Salida` explícito: **llaves idénticas a prod**; 12 appSettings copiados;
+  `RunJobsInIISContext` era **True** (devolverlo así en F1); machineKey, `customErrors=On` (`/Error.aspx`) y
+  `debug=true` copiados.
+- **Lo propio de prod que la plantilla no trae** (3 líneas): `<globalization culture="es-GT" uiCulture="es" …utf-8>`
+  (formato de fechas, números y moneda en español de Guatemala; sin él la 19 usaría la cultura del servidor),
+  `httpRuntime maxRequestLength=512000` y `requestLimits maxAllowedContentLength=524288000` (subidas de hasta 500 MB; la
+  plantilla trae 100 MB, y hay videos de LMS de ese tamaño). Esa primera versión del fusionado **no los tenía**.
+- El script ahora los aplica solo (atributos que prod cambió respecto de la 18.1 y elementos únicos que faltan) y
+  verifica al final «OK: toda la configuración propia de prod quedó en el fusionado». **Pendiente: regenerar el
+  fusionado en el servidor** con el script nuevo (borrar antes el `web.config.19-fusionado` incompleto; el script no
+  sobrescribe).
 - No se probó `Blocks\QREVENT\TestCybersource.ascx` (no se copió a propósito). Si no compila con la 19 solo falla su
   propia página (Rock registra el error al arrancar, como con los `.ascx` inexistentes).

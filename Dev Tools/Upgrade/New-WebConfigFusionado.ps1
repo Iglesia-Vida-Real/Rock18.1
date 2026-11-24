@@ -11,10 +11,11 @@
       - customErrors (mode, defaultRedirect) y compilation/@debug.
     Luego pone RunJobsInIISContext=False para la ventana (anota el valor original para devolverlo al final).
 
-    Además, si se indica la plantilla de la 18.1 (-WebConfig181), compara prod contra ella y LISTA todo lo que prod
-    tiene distinto fuera de appSettings/machineKey/assemblyBinding (reglas, cabeceras, handlers, location…): eso no se
-    copia solo y hay que revisarlo a mano. Los valores con nombre sensible (key, pass, secret, token, connection)
-    se muestran enmascarados.
+    Además, si se indica la plantilla de la 18.1 (-WebConfig181, recomendado), compara prod contra ella, LISTA todo lo
+    que prod tiene distinto fuera de appSettings/machineKey/assemblyBinding y lo APLICA al fusionado cuando el elemento
+    es único (globalization, httpRuntime, requestLimits…). Al final verifica que todo lo propio de prod quedó y marca
+    PENDIENTE lo que no (listas repetidas como handlers: a mano). Los valores con nombre sensible (key, pass, secret,
+    token, connection) se muestran enmascarados.
 
     Verificación final obligatoria: los hashes de las llaves del archivo generado deben ser IDÉNTICOS a los de prod;
     si no, el script falla y no deja el archivo.
@@ -141,9 +142,47 @@ if ($WebConfig181) {
     $soloRef = @($fr | Where-Object { -not $fp.Contains($_) } | Sort-Object)
     Write-Host ''
     Write-Host "== Prod vs plantilla 18.1 (fuera de appSettings, machineKey y assemblyBinding): $($soloProd.Count) líneas solo en prod, $($soloRef.Count) solo en la plantilla"
-    Write-Host '   Lo que está SOLO EN PROD es configuración propia del servidor: decidir si se agrega a mano al fusionado.'
+    Write-Host '   Lo que está SOLO EN PROD es configuración propia del servidor (se aplica al fusionado abajo).'
     $soloProd | ForEach-Object { Write-Host "   + prod : $_" }
     $soloRef | ForEach-Object { Write-Host "   - plant: $_" }
+
+    # 4b. Aplicar al fusionado lo propio de prod (agregado 2026-11-24: prod tiene globalization es-GT y límites de
+    #     subida de 500 MB que la plantilla no trae). Solo elementos que aparecen UNA vez en prod y a lo sumo una en
+    #     la plantilla 19 (globalization, httpRuntime, requestLimits…); listas repetidas (handlers, add…) se dejan
+    #     para revisión a mano.
+    function Get-Ruta($e) { $r = @(); $p = $e; while ($p -and $p.NodeType -eq 'Element') { $r = ,$p.LocalName + $r; $p = $p.ParentNode }; return ($r -join '/') }
+    $setSoloProd = New-Object System.Collections.Generic.HashSet[string]; $soloProd | ForEach-Object { [void]$setSoloProd.Add($_) }
+    $aMano = @()
+    foreach ($e in @($prod.SelectNodes('//*'))) {
+        $rs = Get-Ruta $e
+        $attrs = @($e.Attributes | Sort-Object Name | ForEach-Object { if ($_.Name -match $sensible) { "$($_.Name)=***" } else { "$($_.Name)=$($_.Value)" } }) -join ' '
+        if (-not $setSoloProd.Contains("$rs [$attrs]")) { continue }
+        $xp = '/' + $rs
+        $enProd = @($prod.SelectNodes($xp)).Count; $enNuevo = @($nuevo.SelectNodes($xp))
+        if ($enProd -ne 1 -or $enNuevo.Count -gt 1) { $aMano += $rs; continue }
+        if ($enNuevo.Count -eq 1) {
+            # Solo los atributos que prod cambió respecto de la 18.1; los demás quedan con el valor de la 19.
+            $r181 = @($ref.SelectNodes($xp)); $cambiados = @()
+            foreach ($a in @($e.Attributes)) {
+                if ($r181.Count -eq 1 -and $r181[0].HasAttribute($a.Name) -and $r181[0].GetAttribute($a.Name) -eq $a.Value) { continue }
+                $enNuevo[0].SetAttribute($a.Name, $a.Value); $cambiados += $a.Name
+            }
+            Write-Host "   aplicado: $rs ($($cambiados -join ', ') de prod)"
+        } else {
+            $padre = $nuevo.SelectSingleNode('/' + ((($rs -split '/') | Select-Object -SkipLast 1) -join '/'))
+            if (-not $padre) { $aMano += $rs; continue }
+            $padre.AppendChild($nuevo.CreateWhitespace("  ")) | Out-Null
+            $padre.AppendChild($nuevo.ImportNode($e, $true)) | Out-Null
+            $padre.AppendChild($nuevo.CreateWhitespace("`r`n  ")) | Out-Null
+            Write-Host "   aplicado: elemento de prod agregado en $rs"
+        }
+    }
+    # Verificación: todo lo propio de prod debe estar ahora en el fusionado.
+    $fn = Get-Firmas $nuevo
+    $pendiente = @($soloProd | Where-Object { -not $fn.Contains($_) })
+    if ($pendiente.Count -eq 0) { Write-Host '   OK: toda la configuración propia de prod quedó en el fusionado.' }
+    else { $pendiente | ForEach-Object { Write-Host "   PENDIENTE (agregar a mano): $_" -ForegroundColor Yellow } }
+    if ($aMano) { Write-Host "   Elementos repetidos no aplicados solos (revisar): $(($aMano | Select-Object -Unique) -join ', ')" -ForegroundColor Yellow }
 }
 
 # 5. Verificación de llaves y guardado ---------------------------------------------------------------
