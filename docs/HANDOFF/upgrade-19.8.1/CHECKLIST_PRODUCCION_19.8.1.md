@@ -341,8 +341,9 @@ la restauración de la BD vuelven los originales.
   `httpRuntime maxRequestLength=512000` y `requestLimits maxAllowedContentLength=524288000` (subidas de hasta 500 MB; la
   plantilla trae 100 MB, y hay videos de LMS de ese tamaño). Esa primera versión del fusionado **no los tenía**.
 - El script ahora los aplica solo (atributos que prod cambió respecto de la 18.1 y elementos únicos que faltan) y
-  verifica al final «OK: toda la configuración propia de prod quedó en el fusionado». **Pendiente: regenerar el
-  fusionado en el servidor** con el script nuevo (borrar antes el `web.config.19-fusionado` incompleto; el script no
-  sobrescribe).
+  verifica al final «OK: toda la configuración propia de prod quedó en el fusionado».
+- **Regenerado en el servidor a las 15:40** (se borró el incompleto y se copió el script nuevo): los 3 «aplicado»,
+  «OK: toda la configuración propia de prod quedó en el fusionado» y llaves idénticas. ✅ **Criterio 4 cumplido.**
+  El archivo bueno es `herramientas\web.config.19-fusionado` de las **3:40 PM** (40 KB aprox.); es el que se usa en C7.
 - No se probó `Blocks\QREVENT\TestCybersource.ascx` (no se copió a propósito). Si no compila con la 19 solo falla su
   propia página (Rock registra el error al arrancar, como con los `.ascx` inexistentes).
