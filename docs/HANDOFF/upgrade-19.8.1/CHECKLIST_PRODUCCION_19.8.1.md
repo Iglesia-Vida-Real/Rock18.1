@@ -321,5 +321,12 @@ la restauración de la BD vuelven los originales.
   artefacto de la prueba (prod tiene DLL y `.ascx` a juego; el kit no los toca), pero para cerrar el riesgo de
   `App_Code\GetMinistryPass.cs` (si no compilara, se cae el sitio entero) hay que repetir la prueba con las 4 DLLs del
   Rock Shop de prod: correr de nuevo `Get-MuestrasProd.ps1` (ya las incluye) y probar en local.
+- **Cerrado 2026-11-24 15:13–15:25:** segunda corrida de `Get-MuestrasProd.ps1` (54 archivos, ahora con las 4 DLLs del
+  Rock Shop de prod; la de MinistryPass de prod es más nueva que la de dev: 65,536 B vs 64,512 B). Con **todo** lo de
+  prod junto en la 19 local (App_Code, plugins, `.ascx` y DLLs de MinistryPass/MinePass, las 11 DLLs viejas): el sitio
+  arranca, `/page/1` = 200, `GetMinistryPass.ashx` y `GetMinePass.ashx` compilan y responden, la lista **y el detalle**
+  de plantillas de MinistryPass cargan (el error anterior era solo de la DLL de dev), **0 excepciones nuevas**.
+  Local restaurado (DLLs de dev devueltas, `git status` limpio, `/page/1` = 200). **El servidor web no tiene nada que
+  impida el upgrade.**
 - No se probó `Blocks\QREVENT\TestCybersource.ascx` (no se copió a propósito). Si no compila con la 19 solo falla su
   propia página (Rock registra el error al arrancar, como con los `.ascx` inexistentes).
