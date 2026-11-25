@@ -61,7 +61,11 @@ Todo es **solo lectura**. Se puede hacer horas antes de la ventana.
   y deja `muestras_prod_<fecha>.zip` en el Escritorio. Traerlo a la PC (fuera del repo). Con eso Claude los prueba en
   la 19 local (App_Code compilando, DLLs viejas cargadas) y compara qué cambios de prod pisaría el kit.
   Resultado del análisis de A1: ver «Resultados de la fase A» al final.
-- [ ] **A2. Preflight de la BD** (1 min), en el servidor SQL:
+- [ ] **A2. Preflight de la BD** (1 min), en el servidor SQL. **Usar el `19.8.1_preflight_bd_prod.sql` del repo del
+      2026-11-25 o posterior** (trae el bloque 13: bloques sobre `.ascx` que la 19 retira; la copia que quedó en el
+      servidor web el 24-nov es anterior). Para llegar al servidor SQL: Escritorio remoto con su dirección (de
+      `ACCESOS_Y_SECRETOS.md`) y la unidad C: de esta PC compartida, igual que en la fase 0; si solo es accesible desde
+      la red interna, abrir `mstsc` **desde el servidor web** hacia la dirección interna que A1 §5 mostró. Ahí:
   - Con SSMS: abrir `herramientas\19.8.1_preflight_bd_prod.sql`, elegir la BD `Rock18`, *Consulta → Resultados a texto*
     (`Ctrl+T`), ejecutar (`F5`) y guardar el resultado como `preflight_resultado.txt`.
   - O con sqlcmd (si A1 dice que hay `sqlcmd`):
@@ -72,7 +76,7 @@ Todo es **solo lectura**. Se puede hacer horas antes de la ventana.
 - [ ] **A4. web.config de la 19** (5 min, en el servidor web; genera un archivo **secreto**: no sacarlo del servidor):
   ```powershell
   cd C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\herramientas
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\New-WebConfigFusionado.ps1 -WebConfigProd "<RockWeb>\web.config" -WebConfig19 .\web.config.19-plantilla -WebConfig181 .\web.config.18.1-plantilla
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\New-WebConfigFusionado.ps1 -WebConfigProd "C:\inetpub\wwwroot\web.config" -WebConfig19 .\web.config.19-plantilla -WebConfig181 .\web.config.18.1-plantilla
   ```
   Debe terminar en «OK: llaves idénticas a prod». Pasar a Claude **solo la salida de la pantalla** (no el archivo):
   trae el valor original de `RunJobsInIISContext` y la lista «solo en prod» (configuración propia del servidor que
@@ -107,31 +111,32 @@ Si falta cualquiera: **no ir**; se reprograma sin costo (nada se tocó).
 
 ## Fase C — Ventana (≈ 1.5–2 h). Anotar la hora de inicio y fin de cada paso.
 
-> Comandos de IIS en PowerShell **como administrador** en el servidor web. Sustituir `<RockWeb>`, `<sitio>` y
-> `<pool>` con lo que dio A1 §2. Carpeta de respaldo del día: `C:\deploy-backup\2026-11-24\` (fuera de RockWeb).
+> Comandos de IIS en PowerShell **como administrador** en el servidor web. Datos reales del servidor (A1 §2,
+> 2026-11-24): RockWeb = `C:\inetpub\wwwroot`, sitio `Default Web Site`, pool `DefaultAppPool`. Carpeta de respaldo:
+> `C:\deploy-backup\upgrade-19.8.1\` (en `C:`, fuera de RockWeb; nunca en el disco temporal D:).
 
-- [ ] **C1. Mantenimiento:** copiar `<RockWeb>\app_offline-template.htm` como `<RockWeb>\app_offline.htm`. Comprobar en
+- [ ] **C1. Mantenimiento:** copiar `C:\inetpub\wwwroot\app_offline-template.htm` como `C:\inetpub\wwwroot\app_offline.htm`. Comprobar en
       el navegador que el sitio muestra la página de mantenimiento.
 - [ ] **C2. Detener el sitio:**
   ```powershell
   Import-Module WebAdministration
-  Stop-Website '<sitio>'; Stop-WebAppPool '<pool>'
+  Stop-Website 'Default Web Site'; Stop-WebAppPool 'DefaultAppPool'
   ```
 - [ ] **C3. Respaldo de la BD** (servidor SQL, SSMS; 5–15 min con ~7 GB):
   ```sql
-  BACKUP DATABASE [Rock18] TO DISK = N'<carpeta de respaldos>\Rock18_antes_19.8.1_20261124.bak'
+  BACKUP DATABASE [Rock18] TO DISK = N'<carpeta de respaldos>\Rock18_antes_19.8.1.bak'
       WITH COPY_ONLY, CHECKSUM, COMPRESSION, STATS = 10;   -- si da error de COMPRESSION (edición Express), quitarla
-  RESTORE VERIFYONLY FROM DISK = N'<carpeta de respaldos>\Rock18_antes_19.8.1_20261124.bak' WITH CHECKSUM;
+  RESTORE VERIFYONLY FROM DISK = N'<carpeta de respaldos>\Rock18_antes_19.8.1.bak' WITH CHECKSUM;
   ```
   Debe decir «The backup set on file 1 is valid». **Sin respaldo verificado no se sigue.**
 - [ ] **C4. Respaldo completo de RockWeb** (incluye `Content`, `App_Data`, `Bin`, `Plugins`, `web.config`):
   ```powershell
-  robocopy "<RockWeb>" "C:\deploy-backup\2026-11-24\RockWeb" /E /COPY:DAT /R:1 /W:1 /NP /LOG:"C:\deploy-backup\2026-11-24\respaldo_rockweb.log"
+  robocopy "C:\inetpub\wwwroot" "C:\deploy-backup\upgrade-19.8.1\RockWeb" /E /COPY:DAT /R:1 /W:1 /NP /LOG:"C:\deploy-backup\upgrade-19.8.1\respaldo_rockweb.log"
   ```
   Códigos de salida 0–7 = bien; 8 o más = revisar el log antes de seguir.
 - [ ] **C5. Retirar lo que la 19 eliminó** (mover, no borrar), con la lista del kit (runbook §7.3 paso 3):
   ```powershell
-  $rw = '<RockWeb>'; $dst = 'C:\deploy-backup\2026-11-24\retirados'
+  $rw = 'C:\inetpub\wwwroot'; $dst = 'C:\deploy-backup\upgrade-19.8.1\retirados'
   Get-Content 'C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\quitar_del_servidor.txt' | Where-Object { $_ -and -not $_.StartsWith('#') } | ForEach-Object {
       $rel = $_ -replace '/', '\'; $src = Join-Path $rw $rel
       if (Test-Path -LiteralPath $src) { $d = Join-Path $dst $rel; New-Item -ItemType Directory -Force (Split-Path $d) | Out-Null; Move-Item -LiteralPath $src -Destination $d } }
@@ -139,28 +144,28 @@ Si falta cualquiera: **no ir**; se reprograma sin costo (nada se tocó).
   Obligatorio que salgan `Bin\Rock.SignNow.dll`, `Bin\SignNowSDK.dll` (+ `.pdb`) y `Webhooks\SignNow.ashx`.
 - [ ] **C6. Copiar el kit encima** (sin `/MIR` ni `/PURGE`: no se borra nada de prod):
   ```powershell
-  robocopy "C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\RockWeb" "<RockWeb>" /E /R:1 /W:1 /NP /LOG:"C:\deploy-backup\2026-11-24\copia_kit.log"
+  robocopy "C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\RockWeb" "C:\inetpub\wwwroot" /E /R:1 /W:1 /NP /LOG:"C:\deploy-backup\upgrade-19.8.1\copia_kit.log"
   ```
   Verificar que lo copiado es idéntico al kit (debe decir `distintos: 0`):
   ```powershell
   $k='C:\upgrade-19.8.1\kit_19.8.1_2026-11-23'; $m = Import-Csv "$k\MANIFIESTO_SHA256.csv"
-  $mal = $m | Where-Object { (Get-FileHash -LiteralPath (Join-Path '<RockWeb>' $_.Ruta) -Algorithm SHA256).Hash -ne $_.SHA256 }
+  $mal = $m | Where-Object { (Get-FileHash -LiteralPath (Join-Path 'C:\inetpub\wwwroot' $_.Ruta) -Algorithm SHA256).Hash -ne $_.SHA256 }
   "archivos: $($m.Count)  distintos: $(@($mal).Count)"; $mal | Select-Object -First 20 Ruta
   ```
 - [ ] **C7. web.config de la 19:** copiar `C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\herramientas\web.config.19-fusionado` (de A4) como
-      `<RockWeb>\web.config` (el original ya está en el respaldo C4). Agregar a mano lo «solo en prod» que A5 haya
-      decidido conservar. Comprobar las llaves:
-      `powershell -NoProfile -ExecutionPolicy Bypass -File .\Get-DiagnosticoServidor.ps1 -SoloLlaves -WebConfig "<RockWeb>\web.config"`
+      `C:\inetpub\wwwroot\web.config` (el original ya está en el respaldo C4). Lo «solo en prod» ya viene aplicado
+      (A4, 2026-11-24). Comprobar las llaves:
+      `powershell -NoProfile -ExecutionPolicy Bypass -File C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\herramientas\Get-DiagnosticoServidor.ps1 -SoloLlaves -WebConfig "C:\inetpub\wwwroot\web.config"`
       → los hashes deben ser **los mismos** que A1 §4.
 - [ ] **C8. Reservas dominicales** (solo si el preflight, bloque 8, dio `NULL`): correr
       `herramientas\QREVENT_SundayService_SlotSettings.sql` en el servidor SQL (segundos; idempotente).
-- [ ] **C9. Arrancar:** borrar `<RockWeb>\app_offline.htm`, luego
+- [ ] **C9. Arrancar:** borrar `C:\inetpub\wwwroot\app_offline.htm`, luego
   ```powershell
-  Start-WebAppPool '<pool>'; Start-Website '<sitio>'
+  Start-WebAppPool 'DefaultAppPool'; Start-Website 'Default Web Site'
   ```
   Abrir el sitio **desde el propio servidor** (`http://localhost/` o la URL interna): la primera carga compila y corre
   las migraciones (en local: ~1 min de compilación + ~1 min de migraciones; en prod puede ser más). Vigilar
-  `<RockWeb>\App_Data\Logs\MigrationLog.csv` y `RockExceptions.csv`. Si no levanta: runbook `DEPLOY_PRODUCCION.md` §4
+  `C:\inetpub\wwwroot\App_Data\Logs\MigrationLog.csv` y `RockExceptions.csv`. Si no levanta: runbook `DEPLOY_PRODUCCION.md` §4
   (`customErrors` oculta el error: verlo desde el servidor o en *Visor de eventos → Aplicación*); si en 30 min no se
   resuelve → **Fase E (reversa)**.
 - [ ] **C10. Línea base:** en SQL, anotar `SELECT MAX(Id) FROM ExceptionLog` y las líneas base de pagos (guía de
@@ -204,19 +209,19 @@ Recorrido de `../PLAN_PRUEBAS_19.8.1.md` columna **P** (prod). Lo mínimo para d
 
 La 19 migra la BD y **no tiene vuelta atrás**: la reversa es **siempre BD + archivos juntos**.
 
-- [ ] E1. `app_offline.htm` en `<RockWeb>` y detener sitio y pool (C2).
+- [ ] E1. `app_offline.htm` en `C:\inetpub\wwwroot` y detener sitio y pool (C2).
 - [ ] E2. Restaurar la BD (servidor SQL):
   ```sql
   USE master;
   ALTER DATABASE [Rock18] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
-  RESTORE DATABASE [Rock18] FROM DISK = N'<carpeta de respaldos>\Rock18_antes_19.8.1_20261124.bak' WITH REPLACE, CHECKSUM, STATS = 10;
+  RESTORE DATABASE [Rock18] FROM DISK = N'<carpeta de respaldos>\Rock18_antes_19.8.1.bak' WITH REPLACE, CHECKSUM, STATS = 10;
   ALTER DATABASE [Rock18] SET MULTI_USER;
   ```
-- [ ] E3. Restaurar `RockWeb`: renombrar la carpeta actual a `RockWeb_19_fallido` y copiar el respaldo C4 a la ruta
+- [ ] E3. Restaurar `RockWeb`: renombrar la carpeta actual a `wwwroot_19_fallido` y copiar el respaldo C4 a la ruta
       original:
   ```powershell
-  Rename-Item '<RockWeb>' 'RockWeb_19_fallido'
-  robocopy "C:\deploy-backup\2026-11-24\RockWeb" "<RockWeb>" /E /COPY:DAT /R:1 /W:1 /NP /LOG:"C:\deploy-backup\2026-11-24\reversa.log"
+  Rename-Item 'C:\inetpub\wwwroot' 'wwwroot_19_fallido'
+  robocopy "C:\deploy-backup\upgrade-19.8.1\RockWeb" "C:\inetpub\wwwroot" /E /COPY:DAT /R:1 /W:1 /NP /LOG:"C:\deploy-backup\upgrade-19.8.1\reversa.log"
   ```
 - [ ] E4. Arrancar (C9) y comprobar que el sitio y el check-in funcionan como antes.
 - [ ] E5. Anotar qué falló (hora, mensaje, pantalla) para analizarlo con calma. No reintentar el mismo día.
@@ -229,7 +234,7 @@ la restauración de la BD vuelven los originales.
 
 ## Fase F — Después
 
-- [ ] F1. Devolver `RunJobsInIISContext` a su valor original (el que mostró A4) en `<RockWeb>\web.config` (reinicia el
+- [ ] F1. Devolver `RunJobsInIISContext` a su valor original (el que mostró A4) en `C:\inetpub\wwwroot\web.config` (reinicia el
       sitio). Hasta entonces los jobs programados no corren.
 - [ ] F2. Avisar a los supervisores de check-in del límite nuevo de PIN (10 fallos en 10 min bloquean el PIN 10 min;
       runbook §14.8) y que confirmen su PIN antes del domingo.
@@ -347,3 +352,20 @@ la restauración de la BD vuelven los originales.
   El archivo bueno es `herramientas\web.config.19-fusionado` de las **3:40 PM** (40 KB aprox.); es el que se usa en C7.
 - No se probó `Blocks\QREVENT\TestCybersource.ascx` (no se copió a propósito). Si no compila con la 19 solo falla su
   propia página (Rock registra el error al arrancar, como con los `.ascx` inexistentes).
+
+### A5 — comprobaciones extra contra el servidor (2026-11-25, antes del A2)
+
+- **El kit sigue siendo el código actual:** entre c190618011 (commit del kit) y la rama hoy solo cambiaron documentos,
+  herramientas y Dev Tools/Sql/Aislar_BD_Dev.sql (de dev). Kit íntegro: 3,556 archivos, 0 con tamaño distinto al
+  manifiesto.
+- **Lista de retiro (C5):** las 383 entradas de quitar_del_servidor.txt existen en prod. Ninguna sobra.
+- **DLLs de terceros (269 en prod):** 230 son idénticas al build 18.1 y la 19 las reemplaza; las 16 que el kit pisa y
+  no estaban en el build 18.1 local tienen **el mismo tamaño** en prod y en el kit; 8 del Rock Shop se quedan (la 19
+  local corrió con ellas). Del kit, 146 DLLs **suben** de versión respecto de la 18.1, 121 quedan igual y solo 2
+  "bajan" en número de archivo: Microsoft.Win32.Registry (4.6.26515 → 4.6.25519, mismo paquete con otra
+  compilación) y Slingshot.Core (1.0.7531 → 1.0.0.0, upstream lo compila sin número). Ambas son las que trae Rock
+  19.8.1 y con las que pasaron todas las pruebas locales: sin riesgo.
+- **Bloques sobre .ascx que la 19 retira:** en la copia probada (19-nov) eran 88 tipos / 204 bloques (69 de
+  PageMenu); tras migraciones y jobs en la 19 local quedaron **0**. El preflight ahora lo compara en prod (bloque 13).
+- La checklist ya trae los datos reales (C:\inetpub\wwwroot, Default Web Site, DefaultAppPool) y la carpeta de
+  respaldo C:\deploy-backup\upgrade-19.8.1\: el día de la ventana no hay que sustituir nada.

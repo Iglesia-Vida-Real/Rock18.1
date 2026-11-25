@@ -108,4 +108,79 @@ FROM dbo.AttributeValue av
 CROSS APPLY (SELECT CAST(N'' AS xml).value('xs:base64Binary(sql:column("av.Value"))', 'varbinary(max)') AS Bytes) b
 WHERE LEFT(av.Value, 5) = 'EAAAA';
 
+PRINT '== 13. Bloques que usan un .ascx que la 19 retira (quitar_del_servidor.txt). En la copia probada del 19-nov: 88 tipos, 204 bloques; tras migraciones y jobs en la 19 local quedaron 0)';
+SELECT COUNT(DISTINCT bt.Path) AS Tipos, COUNT(b.Id) AS Bloques,
+       CASE WHEN COUNT(DISTINCT bt.Path) <= 88 AND COUNT(b.Id) <= 204 THEN 'OK (igual o menos que la copia probada)'
+            ELSE 'REVISAR: hay bloques nuevos sobre .ascx retirados desde el 19-nov (ver la lista de abajo)' END AS Resultado
+FROM dbo.BlockType bt JOIN dbo.Block b ON b.BlockTypeId = bt.Id
+WHERE bt.Path IN (
+    '~/Blocks/Administration/ExternalApplicationList.ascx', '~/Blocks/Administration/NotificationList.ascx', '~/Blocks/BulkImport/CsvImport.ascx',
+    '~/Blocks/Bus/BusStatus.ascx', '~/Blocks/CheckIn/Manager/Roster.ascx', '~/Blocks/Cms/ContentChannelDetail.ascx',
+    '~/Blocks/Cms/ContentChannelItemList.ascx', '~/Blocks/Cms/ContentChannelList.ascx', '~/Blocks/Cms/ContentCollectionList.ascx',
+    '~/Blocks/Cms/FileEditor.ascx', '~/Blocks/Cms/FileManager.ascx', '~/Blocks/Cms/MediaAccountDetail.ascx',
+    '~/Blocks/Cms/MediaAccountList.ascx', '~/Blocks/Cms/MediaElementList.ascx', '~/Blocks/Cms/MediaFolderDetail.ascx',
+    '~/Blocks/Cms/MediaFolderList.ascx', '~/Blocks/Cms/PageMap.ascx', '~/Blocks/Cms/PageMenu.ascx',
+    '~/Blocks/Cms/PersonalizationSegmentDetail.ascx', '~/Blocks/Cms/PersonalizationSegmentResults.ascx', '~/Blocks/Cms/Redirect.ascx',
+    '~/Blocks/Cms/RequestFilterDetails.ascx', '~/Blocks/Cms/RequestFilterList.ascx', '~/Blocks/Communication/CommunicationListSubscribe.ascx',
+    '~/Blocks/Communication/SnippetList.ascx', '~/Blocks/Communication/SnippetTypeList.ascx', '~/Blocks/Communication/SystemCommunicationDetail.ascx',
+    '~/Blocks/Communication/SystemCommunicationList.ascx', '~/Blocks/Communication/SystemEmailDetail.ascx', '~/Blocks/Communication/SystemEmailList.ascx',
+    '~/Blocks/Communication/SystemPhoneNumberList.ascx', '~/Blocks/Communication/TemplateList.ascx', '~/Blocks/Connection/CampaignConfiguration.ascx',
+    '~/Blocks/Connection/CampaignList.ascx', '~/Blocks/Connection/ConnectionOpportunityDetail.ascx', '~/Blocks/Connection/ConnectionOpportunityList.ascx',
+    '~/Blocks/Connection/ConnectionOpportunitySelect.ascx', '~/Blocks/Connection/ConnectionTypeDetail.ascx', '~/Blocks/Connection/ConnectionTypeList.ascx',
+    '~/Blocks/Core/AttributeCategories.ascx', '~/Blocks/Core/Attributes.ascx', '~/Blocks/Core/CampusContextSetter.ascx',
+    '~/Blocks/Core/CategoryDetail.ascx', '~/Blocks/Core/Components.ascx', '~/Blocks/Core/ExceptionDetail.ascx',
+    '~/Blocks/Core/ExceptionOccurrences.ascx', '~/Blocks/Core/PluginManager.ascx', '~/Blocks/Core/SmartSearch.ascx',
+    '~/Blocks/Crm/PersonDetail/GivingConfiguration.ascx', '~/Blocks/Crm/PersonDuplicateDetail.ascx', '~/Blocks/Crm/PersonDuplicateList.ascx',
+    '~/Blocks/Crm/PersonMergeRequestList.ascx', '~/Blocks/Crm/PersonalDeviceInteractions.ascx', '~/Blocks/Crm/PersonalDevices.ascx',
+    '~/Blocks/Event/CalendarDetail.ascx', '~/Blocks/Event/EventItemDetail.ascx', '~/Blocks/Event/EventItemList.ascx',
+    '~/Blocks/Event/EventItemOccurrenceList.ascx', '~/Blocks/Event/InteractiveExperiences/InteractiveExperienceList.ascx', '~/Blocks/Event/RegistrationEntry.ascx',
+    '~/Blocks/Event/RegistrationInstanceLinkageDetail.ascx', '~/Blocks/Examples/DevelopEnvironmentInfo.ascx', '~/Blocks/Examples/ModelMap.ascx',
+    '~/Blocks/Examples/SampleData.ascx', '~/Blocks/Finance/BenevolenceRequestDetail.ascx', '~/Blocks/Finance/BusinessContactList.ascx',
+    '~/Blocks/Finance/BusinessDetail.ascx', '~/Blocks/Finance/BusinessList.ascx', '~/Blocks/Finance/ConvertBusiness.ascx',
+    '~/Blocks/Finance/PledgeAnalytics.ascx', '~/Blocks/Groups/GroupTypeDetail.ascx', '~/Blocks/Groups/GroupTypeList.ascx',
+    '~/Blocks/Mobile/MobileDeepLinkDetail.ascx', '~/Blocks/Prayer/PrayerRequestList.ascx', '~/Blocks/Reporting/DynamicHeatMap.ascx',
+    '~/Blocks/Reporting/Insights.ascx', '~/Blocks/Reporting/InteractionChannelDetail.ascx', '~/Blocks/Reporting/InteractionComponentDetail.ascx',
+    '~/Blocks/Reporting/PersistedDataViewList.ascx', '~/Blocks/Reporting/ReportList.ascx', '~/Blocks/Reporting/ReportSearch.ascx',
+    '~/Blocks/Reporting/ServiceMetricsEntry.ascx', '~/Blocks/Security/BackgroundCheck/CheckrRequestList.ascx', '~/Blocks/Security/BackgroundCheck/CheckrSettings.ascx',
+    '~/Blocks/Security/BackgroundCheck/RequestList.ascx', '~/Blocks/Security/ChangePassword.ascx', '~/Blocks/Security/Logout.ascx',
+    '~/Blocks/Security/Oidc/AuthClaims.ascx', '~/Blocks/Security/Oidc/AuthScopeDetail.ascx', '~/Blocks/Security/Oidc/AuthScopeList.ascx',
+    '~/Blocks/Security/PersonViewedDetail.ascx', '~/Blocks/Security/PersonViewedSummary.ascx', '~/Blocks/Store/PackageDetail.ascx',
+    '~/Blocks/Utility/CacheReader.ascx', '~/Blocks/WorkFlow/FormBuilder/FormList.ascx'
+);
+SELECT bt.Path, COUNT(b.Id) AS Bloques FROM dbo.BlockType bt JOIN dbo.Block b ON b.BlockTypeId = bt.Id
+WHERE bt.Path IN (
+    '~/Blocks/Administration/ExternalApplicationList.ascx', '~/Blocks/Administration/NotificationList.ascx', '~/Blocks/BulkImport/CsvImport.ascx',
+    '~/Blocks/Bus/BusStatus.ascx', '~/Blocks/CheckIn/Manager/Roster.ascx', '~/Blocks/Cms/ContentChannelDetail.ascx',
+    '~/Blocks/Cms/ContentChannelItemList.ascx', '~/Blocks/Cms/ContentChannelList.ascx', '~/Blocks/Cms/ContentCollectionList.ascx',
+    '~/Blocks/Cms/FileEditor.ascx', '~/Blocks/Cms/FileManager.ascx', '~/Blocks/Cms/MediaAccountDetail.ascx',
+    '~/Blocks/Cms/MediaAccountList.ascx', '~/Blocks/Cms/MediaElementList.ascx', '~/Blocks/Cms/MediaFolderDetail.ascx',
+    '~/Blocks/Cms/MediaFolderList.ascx', '~/Blocks/Cms/PageMap.ascx', '~/Blocks/Cms/PageMenu.ascx',
+    '~/Blocks/Cms/PersonalizationSegmentDetail.ascx', '~/Blocks/Cms/PersonalizationSegmentResults.ascx', '~/Blocks/Cms/Redirect.ascx',
+    '~/Blocks/Cms/RequestFilterDetails.ascx', '~/Blocks/Cms/RequestFilterList.ascx', '~/Blocks/Communication/CommunicationListSubscribe.ascx',
+    '~/Blocks/Communication/SnippetList.ascx', '~/Blocks/Communication/SnippetTypeList.ascx', '~/Blocks/Communication/SystemCommunicationDetail.ascx',
+    '~/Blocks/Communication/SystemCommunicationList.ascx', '~/Blocks/Communication/SystemEmailDetail.ascx', '~/Blocks/Communication/SystemEmailList.ascx',
+    '~/Blocks/Communication/SystemPhoneNumberList.ascx', '~/Blocks/Communication/TemplateList.ascx', '~/Blocks/Connection/CampaignConfiguration.ascx',
+    '~/Blocks/Connection/CampaignList.ascx', '~/Blocks/Connection/ConnectionOpportunityDetail.ascx', '~/Blocks/Connection/ConnectionOpportunityList.ascx',
+    '~/Blocks/Connection/ConnectionOpportunitySelect.ascx', '~/Blocks/Connection/ConnectionTypeDetail.ascx', '~/Blocks/Connection/ConnectionTypeList.ascx',
+    '~/Blocks/Core/AttributeCategories.ascx', '~/Blocks/Core/Attributes.ascx', '~/Blocks/Core/CampusContextSetter.ascx',
+    '~/Blocks/Core/CategoryDetail.ascx', '~/Blocks/Core/Components.ascx', '~/Blocks/Core/ExceptionDetail.ascx',
+    '~/Blocks/Core/ExceptionOccurrences.ascx', '~/Blocks/Core/PluginManager.ascx', '~/Blocks/Core/SmartSearch.ascx',
+    '~/Blocks/Crm/PersonDetail/GivingConfiguration.ascx', '~/Blocks/Crm/PersonDuplicateDetail.ascx', '~/Blocks/Crm/PersonDuplicateList.ascx',
+    '~/Blocks/Crm/PersonMergeRequestList.ascx', '~/Blocks/Crm/PersonalDeviceInteractions.ascx', '~/Blocks/Crm/PersonalDevices.ascx',
+    '~/Blocks/Event/CalendarDetail.ascx', '~/Blocks/Event/EventItemDetail.ascx', '~/Blocks/Event/EventItemList.ascx',
+    '~/Blocks/Event/EventItemOccurrenceList.ascx', '~/Blocks/Event/InteractiveExperiences/InteractiveExperienceList.ascx', '~/Blocks/Event/RegistrationEntry.ascx',
+    '~/Blocks/Event/RegistrationInstanceLinkageDetail.ascx', '~/Blocks/Examples/DevelopEnvironmentInfo.ascx', '~/Blocks/Examples/ModelMap.ascx',
+    '~/Blocks/Examples/SampleData.ascx', '~/Blocks/Finance/BenevolenceRequestDetail.ascx', '~/Blocks/Finance/BusinessContactList.ascx',
+    '~/Blocks/Finance/BusinessDetail.ascx', '~/Blocks/Finance/BusinessList.ascx', '~/Blocks/Finance/ConvertBusiness.ascx',
+    '~/Blocks/Finance/PledgeAnalytics.ascx', '~/Blocks/Groups/GroupTypeDetail.ascx', '~/Blocks/Groups/GroupTypeList.ascx',
+    '~/Blocks/Mobile/MobileDeepLinkDetail.ascx', '~/Blocks/Prayer/PrayerRequestList.ascx', '~/Blocks/Reporting/DynamicHeatMap.ascx',
+    '~/Blocks/Reporting/Insights.ascx', '~/Blocks/Reporting/InteractionChannelDetail.ascx', '~/Blocks/Reporting/InteractionComponentDetail.ascx',
+    '~/Blocks/Reporting/PersistedDataViewList.ascx', '~/Blocks/Reporting/ReportList.ascx', '~/Blocks/Reporting/ReportSearch.ascx',
+    '~/Blocks/Reporting/ServiceMetricsEntry.ascx', '~/Blocks/Security/BackgroundCheck/CheckrRequestList.ascx', '~/Blocks/Security/BackgroundCheck/CheckrSettings.ascx',
+    '~/Blocks/Security/BackgroundCheck/RequestList.ascx', '~/Blocks/Security/ChangePassword.ascx', '~/Blocks/Security/Logout.ascx',
+    '~/Blocks/Security/Oidc/AuthClaims.ascx', '~/Blocks/Security/Oidc/AuthScopeDetail.ascx', '~/Blocks/Security/Oidc/AuthScopeList.ascx',
+    '~/Blocks/Security/PersonViewedDetail.ascx', '~/Blocks/Security/PersonViewedSummary.ascx', '~/Blocks/Store/PackageDetail.ascx',
+    '~/Blocks/Utility/CacheReader.ascx', '~/Blocks/WorkFlow/FormBuilder/FormList.ascx'
+) GROUP BY bt.Path HAVING COUNT(b.Id) > 0 ORDER BY bt.Path;
+
 PRINT '== Fin. Nada se modificó.';
