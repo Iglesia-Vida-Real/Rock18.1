@@ -131,13 +131,15 @@ Si falta cualquiera: **no ir**; se reprograma sin costo (nada se tocó).
   Import-Module WebAdministration
   Stop-Website 'Default Web Site'; Stop-WebAppPool 'DefaultAppPool'
   ```
-- [ ] **C3. Respaldo de la BD** (servidor SQL, SSMS; 5–15 min con ~7 GB):
-  ```sql
-  BACKUP DATABASE [Rock18] TO DISK = N'<carpeta de respaldos>\Rock18_antes_19.8.1.bak'
-      WITH COPY_ONLY, CHECKSUM, COMPRESSION, STATS = 10;   -- si da error de COMPRESSION (edición Express), quitarla
-  RESTORE VERIFYONLY FROM DISK = N'<carpeta de respaldos>\Rock18_antes_19.8.1.bak' WITH CHECKSUM;
+- [ ] **C3. Respaldo de la BD** (desde el servidor web; minutos con ~7.9 GB de datos):
+  ```powershell
+  cd C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\herramientas
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\Invoke-SqlDesdeWeb.ps1 -Archivo .\19.8.1_respaldo_bd.sql
   ```
-  Debe decir «The backup set on file 1 is valid». **Sin respaldo verificado no se sigue.**
+  Respaldo COPY_ONLY con CHECKSUM y compresión en la carpeta de respaldos por defecto del servidor SQL
+  (`…\MSSQL16.MSSQLSERVER\MSSQL\Backup\Rock18_antes_19.8.1.bak`). Debe terminar en **«OK: respaldo de esta corrida,
+  con checksum»**. `VERIFYONLY` probablemente diga que no se pudo correr (la cuenta del sitio no tiene CREATE DATABASE):
+  es esperado. **Sin ese OK no se sigue.** Anotar el tamaño y los segundos.
 - [ ] **C4. Respaldo completo de RockWeb** (incluye `Content`, `App_Data`, `Bin`, `Plugins`, `web.config`):
   ```powershell
   robocopy "C:\inetpub\wwwroot" "C:\deploy-backup\upgrade-19.8.1\RockWeb" /E /COPY:DAT /R:1 /W:1 /NP /LOG:"C:\deploy-backup\upgrade-19.8.1\respaldo_rockweb.log"
@@ -166,8 +168,10 @@ Si falta cualquiera: **no ir**; se reprograma sin costo (nada se tocó).
       (A4, 2026-11-24). Comprobar las llaves:
       `powershell -NoProfile -ExecutionPolicy Bypass -File C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\herramientas\Get-DiagnosticoServidor.ps1 -SoloLlaves -WebConfig "C:\inetpub\wwwroot\web.config"`
       → los hashes deben ser **los mismos** que A1 §4.
-- [ ] **C8. Reservas dominicales** (solo si el preflight, bloque 8, dio `NULL`): correr
-      `herramientas\QREVENT_SundayService_SlotSettings.sql` en el servidor SQL (segundos; idempotente).
+- [ ] **C8. Reservas dominicales** (el preflight del 2026-11-25, bloque 8, dio `NULL`: **sí hace falta**). Segundos,
+      idempotente; probado con el ejecutor en una BD de prueba:
+      `powershell -NoProfile -ExecutionPolicy Bypass -File .\Invoke-SqlDesdeWeb.ps1 -Archivo .\QREVENT_SundayService_SlotSettings.sql`
+      → «Columna … agregada» ×3, «Restricción … agregada» ×2 y la fila `1|1|1|2`.
 - [ ] **C9. Arrancar:** borrar `C:\inetpub\wwwroot\app_offline.htm`, luego
   ```powershell
   Start-WebAppPool 'DefaultAppPool'; Start-Website 'Default Web Site'
@@ -177,8 +181,9 @@ Si falta cualquiera: **no ir**; se reprograma sin costo (nada se tocó).
   `C:\inetpub\wwwroot\App_Data\Logs\MigrationLog.csv` y `RockExceptions.csv`. Si no levanta: runbook `DEPLOY_PRODUCCION.md` §4
   (`customErrors` oculta el error: verlo desde el servidor o en *Visor de eventos → Aplicación*); si en 30 min no se
   resuelve → **Fase E (reversa)**.
-- [ ] **C10. Línea base:** en SQL, anotar `SELECT MAX(Id) FROM ExceptionLog` y las líneas base de pagos (guía de
-      pagos, consulta 6.0).
+- [ ] **C10. Línea base** (guía de pagos, consulta 6.0): conviene correrla **antes de C9** (con el sitio detenido) y
+      anotar `MaxTx`, `MaxExc`, `MaxOrden`:
+      `powershell -NoProfile -ExecutionPolicy Bypass -File .\Invoke-SqlDesdeWeb.ps1 -Archivo .\19.8.1_linea_base.sql`
 - [ ] **C11. Jobs post-actualización** (*Admin → System Settings → Jobs Administration*, botón «Run Now» de cada uno, en
       este orden; los Id de la copia local eran 220–233 y pueden variar: identificarlos por nombre):
   1. Los que corrigen MIME de imágenes (transacción y persona) y el de limpieza de redes sociales.
@@ -189,8 +194,8 @@ Si falta cualquiera: **no ir**; se reprograma sin costo (nada se tocó).
   Los «Replace WebForms Blocks» **desaparecen de la lista al terminar bien** (esa es la señal de éxito). Si uno se queda
   con error, anotar el mensaje. Los jobs nuevos normales (Outreach Toolbox, Analytics PostalCode) **no** se corren a mano.
 - [ ] **C12. (Decisión de Fredy) Bloques huérfanos** de las páginas 327 «System Phone Numbers» y 740 «Experience
-      Administration»: correr `herramientas\19.8.1_job_reemplazo_bloques_huerfanos.sql` en SQL y luego «Run Now» del job
-      que crea. Probado en local (Rock19Test): las dos páginas quedaron bien. Si no se aprueba, esas dos páginas de
+      Administration»: correr `19.8.1_job_reemplazo_bloques_huerfanos.sql` con `Invoke-SqlDesdeWeb.ps1` (igual que C8)
+      y luego «Run Now» del job que crea. Probado en local (Rock19Test): las dos páginas quedaron bien. Si no se aprueba, esas dos páginas de
       administración quedan con error hasta arreglarlas.
 
 ---
@@ -219,13 +224,16 @@ Recorrido de `../PLAN_PRUEBAS_19.8.1.md` columna **P** (prod). Lo mínimo para d
 La 19 migra la BD y **no tiene vuelta atrás**: la reversa es **siempre BD + archivos juntos**.
 
 - [ ] E1. `app_offline.htm` en `C:\inetpub\wwwroot` y detener sitio y pool (C2).
-- [ ] E2. Restaurar la BD (servidor SQL):
-  ```sql
-  USE master;
-  ALTER DATABASE [Rock18] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
-  RESTORE DATABASE [Rock18] FROM DISK = N'<carpeta de respaldos>\Rock18_antes_19.8.1.bak' WITH REPLACE, CHECKSUM, STATS = 10;
-  ALTER DATABASE [Rock18] SET MULTI_USER;
+- [ ] E2. Restaurar la BD (desde el servidor web, **con `-BaseMaster`**; sobrescribe Rock18 con el respaldo de C3):
+  ```powershell
+  cd C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\herramientas
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\Invoke-SqlDesdeWeb.ps1 -Archivo .\19.8.1_reversa_restaurar_bd.sql -BaseMaster
   ```
+  Debe terminar en **«OK: Rock18 restaurada al estado de 18.1»** (ONLINE, MULTI_USER, última migración de 18.1).
+  Probado el 2026-11-25 en local con una cuenta con los mismos permisos que la del sitio (dueña de la BD, sin
+  sysadmin ni dbcreator): respaldó y restauró bien. Hacer E2 **antes** de E3 (el script lee la conexión de
+  `C:\inetpub\wwwroot\web.ConnectionStrings.config`; si la carpeta ya se renombró, agregar
+  `-RockWeb C:\inetpub\wwwroot_19_fallido`).
 - [ ] E3. Restaurar `RockWeb`: renombrar la carpeta actual a `wwwroot_19_fallido` y copiar el respaldo C4 a la ruta
       original:
   ```powershell
@@ -270,6 +278,10 @@ la restauración de la BD vuelven los originales.
 | `QREVENT_SundayService_SlotSettings.sql` | C8 (si aplica) | Sí: agrega 3 columnas NULL |
 | `19.8.1_job_reemplazo_bloques_huerfanos.sql` | C12 (si se aprueba) | Sí: crea un job |
 | `Get-MuestrasProd.ps1` | A1b: copia los archivos que el inventario marcó, para probarlos en local | No (escribe en el Escritorio) |
+| `Invoke-SqlDesdeWeb.ps1` | A2, C3, C8, C10, C12, E2: corre un `.sql` con la conexión del sitio, sin mostrarla | Depende del `.sql` |
+| `19.8.1_respaldo_bd.sql` | C3 (y el ensayo previo) | Escribe el `.bak` |
+| `19.8.1_linea_base.sql` | C10 | No |
+| `19.8.1_reversa_restaurar_bd.sql` | E2 (solo en reversa, con `-BaseMaster`) | **Sí: sobrescribe Rock18** |
 | `CHECKLIST_PRODUCCION_19.8.1.md`, `GUIA_FALLAS_PAGOS_19.8.1.md` | Para leer en el servidor | — |
 
 ---
@@ -378,3 +390,32 @@ la restauración de la BD vuelven los originales.
   PageMenu); tras migraciones y jobs en la 19 local quedaron **0**. El preflight ahora lo compara en prod (bloque 13).
 - La checklist ya trae los datos reales (C:\inetpub\wwwroot, Default Web Site, DefaultAppPool) y la carpeta de
   respaldo C:\deploy-backup\upgrade-19.8.1\: el día de la ventana no hay que sustituir nada.
+
+### A2 — preflight de la BD de prod (2026-11-25 09:17, desde el servidor web con `Invoke-SqlDesdeWeb.ps1`)
+
+| Bloque | Resultado |
+|---|---|
+| 1. SQL Server | 16.0.4230.2 (SQL Server 2022) Standard: ✅ (la 19 pide 2016+) |
+| 2. BD | Compatibilidad 160, recuperación SIMPLE, ONLINE: ✅ |
+| 3. Tamaño | Datos 7,852 MB usados de 20,680 MB reservados; log 88 de 1,032 MB (disco C: del servidor SQL) |
+| 4. Espacio libre del disco SQL | **No se pudo ver**: la cuenta del sitio no tiene VIEW SERVER STATE. Se resuelve con el ensayo de respaldo (abajo) |
+| 5. Respaldos | Hay un **respaldo completo diario a las ~12:39** (nombres GUID: lo hace un servicio externo, probablemente Azure Backup). Es una red de seguridad extra, pero restaurarlo requiere el acceso a Azure que no se transfirió |
+| 6–7. Migraciones core y plugins | **Idénticas a la copia probada** (707 del core; 16 plugins): ✅ |
+| 8. Reservas dominicales | `NULL`: C8 **sí** se corre en la ventana |
+| 9 y 13. Bloques WebForms | 1,030 bloques; sobre `.ascx` que la 19 retira: **88 tipos / 204 bloques = copia probada** ✅ |
+| 10. Actividad | `SesionesALaBD = 0` **no es real** (sin VIEW SERVER STATE solo se ve la propia sesión). **119 check-ins abiertos hoy** (miércoles 09:17): hay uso entre semana; la ventana debe ir en un horario sin check-in |
+| 11. Tablas grandes | Como la copia (History 3.8 M, AttributeValue 590 mil) |
+| 12. Cifrados V2 | 92 valores cifrados, **0** con el pie V2: ✅ |
+| 14. Permisos | sysadmin 0, dbcreator 0, **db_owner 1, dueña de la BD 1, puede respaldar 1**: «OK: puede respaldar y restaurar». Carpeta de respaldos por defecto: `…\MSSQL16.MSSQLSERVER\MSSQL\Backup` |
+
+**Respaldo y reversa sin acceso a la VM SQL (probado 2026-11-25):** `19.8.1_respaldo_bd.sql` (C3) y
+`19.8.1_reversa_restaurar_bd.sql` (E2) se corrieron en local, con `Invoke-SqlDesdeWeb.ps1`, como una cuenta con los
+mismos permisos que la del sitio (`0|0|1|1|1|0`): el respaldo salió con checksum (VERIFYONLY se niega por permisos,
+como se esperaba), un cambio posterior se deshizo al restaurar y las guardas (BD equivocada, sin `-BaseMaster`) no
+dejaron hacer nada. También se probó `QREVENT_SundayService_SlotSettings.sql` (C8) con el ejecutor (lotes `GO`,
+idempotente) y `19.8.1_linea_base.sql` (C10).
+
+**Pendiente antes de fijar la fecha — ensayo del respaldo en prod** (decisión de Fredy): correr C3 una vez, en un
+horario tranquilo y lejos de las 12:39. Deja `Rock18_antes_19.8.1.bak` en el servidor SQL (el de la ventana lo
+reemplaza, no se acumulan). Confirma en prod que el permiso funciona y da el tiempo y el tamaño; si el disco no
+alcanzara, SQL falla sin dañar nada y lo sabríamos antes de la ventana (cubre el bloque 4).
