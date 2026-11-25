@@ -444,6 +444,13 @@ reemplaza). Con esto:
 | 7 | Horario sin uso (sin check-in, sin venta de boletos, no sábado noche ni domingo) | ⏳ **falta la hora autorizada** |
 | 8 | Fredy ~3 h seguidas con acceso al servidor web | ⏳ el día |
 
-**Decisión técnica: IR.** Solo falta fijar la fecha y hora (criterio 7). Riesgo residual conocido: la reversa (E2) se
+**Decisión técnica: IR.** Solo falta fijar la fecha y hora (criterio 7).
+**Horario (criterio 7), con datos:** promedio de check-ins por franja en las 8 semanas anteriores al 23-nov (copia de
+prod, solo conteos): lunes, miércoles y jueves hay ~27 entre 07:00 y 10:00 y **casi 0 el resto del día**; martes ~26 en
+la mañana y ~109 de 16:00 a 22:00; viernes ~10 de 19:00 a 22:00; sábado ~92 de 16:00 a 22:00; domingo es el día fuerte.
+**Mejor ventana: miércoles o jueves de 13:00 a 17:00** (después del respaldo automático de las 12:39) **o de 19:00 a
+23:00**. Anunciar 4 horas fuera de línea: cubre la ventana (~2 h), la verificación (~45 min) y una reversa si hiciera
+falta. Si igual hubiera check-ins: el kiosco muestra mantenimiento; el ministerio debe tener su respaldo en papel para
+entradas y salidas, y al terminar se recargan los kioscos. Riesgo residual conocido: la reversa (E2) se
 probó en local con permisos idénticos, no en prod (no se puede ensayar sin sobrescribir prod); el respaldo diario
 externo de las 12:39 es una segunda red, pero requiere el acceso a Azure que no se transfirió.
