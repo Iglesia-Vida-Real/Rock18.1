@@ -51,7 +51,7 @@ function New-Herramientas([string]$kit) {
     if (Test-Path -LiteralPath $h) { throw "Ya existe $h (borrarla a mano si se quiere regenerar)." }
     New-Item -ItemType Directory $h | Out-Null
     foreach ($f in 'Dev Tools\Upgrade\Get-DiagnosticoServidor.ps1', 'Dev Tools\Upgrade\Get-RockWebInventario.ps1',
-                   'Dev Tools\Upgrade\New-WebConfigFusionado.ps1', 'Dev Tools\Upgrade\Get-MuestrasProd.ps1',
+                   'Dev Tools\Upgrade\New-WebConfigFusionado.ps1', 'Dev Tools\Upgrade\Get-MuestrasProd.ps1', 'Dev Tools\Upgrade\Invoke-SqlDesdeWeb.ps1',
                    'Dev Tools\Upgrade\19.8.1_preflight_bd_prod.sql',
                    'Dev Tools\Upgrade\19.8.1_job_reemplazo_bloques_huerfanos.sql', 'Dev Tools\Sql\QREVENT_SundayService_SlotSettings.sql',
                    'docs\HANDOFF\upgrade-19.8.1\CHECKLIST_PRODUCCION_19.8.1.md', 'docs\HANDOFF\upgrade-19.8.1\GUIA_FALLAS_PAGOS_19.8.1.md') {

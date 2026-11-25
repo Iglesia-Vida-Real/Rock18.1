@@ -61,16 +61,25 @@ Todo es **solo lectura**. Se puede hacer horas antes de la ventana.
   y deja `muestras_prod_<fecha>.zip` en el Escritorio. Traerlo a la PC (fuera del repo). Con eso Claude los prueba en
   la 19 local (App_Code compilando, DLLs viejas cargadas) y compara qué cambios de prod pisaría el kit.
   Resultado del análisis de A1: ver «Resultados de la fase A» al final.
-- [ ] **A2. Preflight de la BD** (1 min), en el servidor SQL. **Usar el `19.8.1_preflight_bd_prod.sql` del repo del
-      2026-11-25 o posterior** (trae el bloque 13: bloques sobre `.ascx` que la 19 retira; la copia que quedó en el
-      servidor web el 24-nov es anterior). Para llegar al servidor SQL: Escritorio remoto con su dirección (de
-      `ACCESOS_Y_SECRETOS.md`) y la unidad C: de esta PC compartida, igual que en la fase 0; si solo es accesible desde
-      la red interna, abrir `mstsc` **desde el servidor web** hacia la dirección interna que A1 §5 mostró. Ahí:
-  - Con SSMS: abrir `herramientas\19.8.1_preflight_bd_prod.sql`, elegir la BD `Rock18`, *Consulta → Resultados a texto*
-    (`Ctrl+T`), ejecutar (`F5`) y guardar el resultado como `preflight_resultado.txt`.
-  - O con sqlcmd (si A1 dice que hay `sqlcmd`):
-    `sqlcmd -S <servidor> -E -d Rock18 -I -f 65001 -W -s "|" -i 19.8.1_preflight_bd_prod.sql -o preflight_resultado.txt`
-  - Traer `preflight_resultado.txt` a Claude.
+- [ ] **A2. Preflight de la BD** (1 min). **Usar el `19.8.1_preflight_bd_prod.sql` del repo del 2026-11-25 o
+      posterior** (trae el bloque 13, bloques sobre `.ascx` que la 19 retira, y el 14, permisos para respaldar y
+      restaurar; la copia que quedó en el servidor web el 24-nov es anterior).
+  - **Cómo se corre (decidido 2026-11-25):** el acceso a la VM SQL (Escritorio remoto, login sysadmin) **no se
+    transfirió** en el traspaso (`ACCESOS_Y_SECRETOS.md` §2 sin marcar). Se corre **desde el servidor web** con
+    `Invoke-SqlDesdeWeb.ps1`, que usa la conexión del propio sitio (`web.ConnectionStrings.config`) sin mostrarla.
+    Copiar a `herramientas\` del servidor `Invoke-SqlDesdeWeb.ps1` y el preflight nuevo (reemplazar), y en
+    PowerShell de administrador:
+    ```powershell
+    cd C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\herramientas
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\Invoke-SqlDesdeWeb.ps1 -Archivo .\19.8.1_preflight_bd_prod.sql
+    ```
+    Deja `19.8.1_preflight_bd_prod_resultado_<fecha>.txt` en el Escritorio. Traerlo a la PC (fuera del repo: trae
+    rutas del servidor SQL). Si algún bloque da «ERROR SQL» por permisos (p. ej. el 5, historial de respaldos en
+    `msdb`), no es grave: se anota.
+  - Si más adelante se consigue el acceso a la VM SQL, también vale con SSMS (*Resultados a texto*, `Ctrl+T`, `F5`).
+  - **El bloque 14 decide cómo se hará el respaldo (C3) y la reversa (E2):** si la cuenta del sitio puede respaldar y
+    restaurar, se harán con el mismo `Invoke-SqlDesdeWeb.ps1`; si no, **no hay ventana** hasta conseguir una cuenta
+    con esos permisos (o el acceso a la VM SQL / a Azure).
 - [ ] **A3. Rock Shop:** en prod, *Admin → Rock Shop → Installed Plugins*: captura de pantalla con nombre y versión de
       cada plugin (BEMA MailChimp/Workflow Extensions, Blue Box Moon ACME/Data Toolkit, MinePass, MinistryPass).
 - [ ] **A4. web.config de la 19** (5 min, en el servidor web; genera un archivo **secreto**: no sacarlo del servidor):

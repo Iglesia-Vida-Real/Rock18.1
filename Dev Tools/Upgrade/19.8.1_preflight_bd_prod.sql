@@ -183,4 +183,19 @@ WHERE bt.Path IN (
     '~/Blocks/Utility/CacheReader.ascx', '~/Blocks/WorkFlow/FormBuilder/FormList.ascx'
 ) GROUP BY bt.Path HAVING COUNT(b.Id) > 0 ORDER BY bt.Path;
 
+PRINT '== 14. Permisos de la cuenta con que se corre (la ventana necesita RESPALDAR la BD y, si algo falla, RESTAURARLA)';
+-- RESTORE sobre una BD existente: sysadmin, dbcreator o el dueño (dbo) de la BD. BACKUP: db_owner o db_backupoperator.
+SELECT IS_SRVROLEMEMBER('sysadmin') AS EsSysadmin, IS_SRVROLEMEMBER('dbcreator') AS EsDbcreator,
+       IS_MEMBER('db_owner') AS EsDbOwner,
+       CASE WHEN SUSER_SID() = (SELECT owner_sid FROM sys.databases WHERE name = DB_NAME()) THEN 1 ELSE 0 END AS EsDuenoBD,
+       HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'BACKUP DATABASE') AS PuedeRespaldar,
+       HAS_PERMS_BY_NAME(NULL, NULL, 'VIEW SERVER STATE') AS VeEstadoServidor,
+       CAST(SERVERPROPERTY('InstanceDefaultBackupPath') AS nvarchar(260)) AS CarpetaRespaldosPorDefecto,
+       CASE WHEN HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'BACKUP DATABASE') = 1
+                 AND (IS_SRVROLEMEMBER('sysadmin') = 1 OR IS_SRVROLEMEMBER('dbcreator') = 1
+                      OR SUSER_SID() = (SELECT owner_sid FROM sys.databases WHERE name = DB_NAME()))
+            THEN 'OK: puede respaldar y restaurar'
+            WHEN HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'BACKUP DATABASE') = 1
+            THEN 'REVISAR: puede respaldar pero NO restaurar (la reversa necesita otra cuenta)'
+            ELSE 'REVISAR: no puede respaldar con esta cuenta' END AS Resultado;
 PRINT '== Fin. Nada se modificó.';
