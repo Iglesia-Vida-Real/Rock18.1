@@ -415,7 +415,35 @@ como se esperaba), un cambio posterior se deshizo al restaurar y las guardas (BD
 dejaron hacer nada. También se probó `QREVENT_SundayService_SlotSettings.sql` (C8) con el ejecutor (lotes `GO`,
 idempotente) y `19.8.1_linea_base.sql` (C10).
 
-**Pendiente antes de fijar la fecha — ensayo del respaldo en prod** (decisión de Fredy): correr C3 una vez, en un
+**Ensayo del respaldo en prod — HECHO (ver abajo)** (decisión de Fredy): correr C3 una vez, en un
 horario tranquilo y lejos de las 12:39. Deja `Rock18_antes_19.8.1.bak` en el servidor SQL (el de la ventana lo
 reemplaza, no se acumulan). Confirma en prod que el permiso funciona y da el tiempo y el tamaño; si el disco no
 alcanzara, SQL falla sin dañar nada y lo sabríamos antes de la ventana (cubre el bloque 4).
+
+### Ensayo del respaldo en prod (2026-11-25 09:38, Fredy Ramirez)
+
+`19.8.1_respaldo_bd.sql` con `Invoke-SqlDesdeWeb.ps1` desde el servidor web, con el sitio funcionando:
+**52 segundos**, 7,871 MB de datos → **1,831 MB comprimido**, con checksum, sin daño; `RESTORE VERIFYONLY`: «The backup
+set on file 1 is valid» (en prod sí se pudo correr). Resultado: **«OK: respaldo de esta corrida, con checksum»**.
+Archivo: `…\MSSQL16.MSSQLSERVER\MSSQL\Backup\Rock18_antes_19.8.1.bak` en el servidor SQL (el de la ventana lo
+reemplaza). Con esto:
+- El permiso de respaldo funciona en prod con la cuenta del sitio, y el disco del servidor SQL tuvo espacio.
+- Las migraciones no necesitan más disco: en la prueba local los datos crecieron ~20 MB y el log no creció; en prod el
+  archivo de datos tiene ~12.8 GB libres por dentro y el log ~0.9 GB.
+
+## Ir / no ir (2026-11-25, después de la fase A)
+
+| # | Criterio | Estado |
+|---|---|---|
+| 1 | .NET ≥ 4.7.2 | ✅ 4.8 |
+| 2 | Preflight todo OK | ✅ (bloque 4 sin permiso: cubierto por el ensayo de respaldo) |
+| 3 | Llaves de prod ≠ llaves de dev del repo | ✅ |
+| 4 | web.config fusionado con llaves idénticas y lo propio de prod | ✅ (A4, 15:40 del 24-nov) |
+| 5 | Inventario sin diferencias sin decidir | ✅ (A1b y A5: nada de prod se pierde; App_Code y DLLs viejas probadas) |
+| 6 | Espacio en el servidor web y en el SQL | ✅ (web: 50 GB libres; SQL: ensayo OK) |
+| 7 | Horario sin uso (sin check-in, sin venta de boletos, no sábado noche ni domingo) | ⏳ **falta la hora autorizada** |
+| 8 | Fredy ~3 h seguidas con acceso al servidor web | ⏳ el día |
+
+**Decisión técnica: IR.** Solo falta fijar la fecha y hora (criterio 7). Riesgo residual conocido: la reversa (E2) se
+probó en local con permisos idénticos, no en prod (no se puede ensayar sin sobrescribir prod); el respaldo diario
+externo de las 12:39 es una segunda red, pero requiere el acceso a Azure que no se transfirió.

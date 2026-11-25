@@ -16,7 +16,7 @@
 > | 3c. Prueba comparativa de check-in 18.1 vs 19 | ✅ C1–C20 iguales (PLAN_PRUEBAS §15) |
 > | 4. Pruebas de humo | ✅ local (PLAN_PRUEBAS §16); en prod: CHECKLIST fase D |
 > | 5. Kit | ✅ `kit_19.8.1_2026-11-23\` + `herramientas\` (CHECKLIST, «Qué hay en herramientas») |
-> | 6. Producción | ⏳ CHECKLIST fase A (análisis previo) |
+> | 6. Producción | ✅ fase A completa (24–25 nov) y ensayo de respaldo OK; **decisión técnica: IR**. ⏳ Falta la fecha/hora autorizada para la ventana (CHECKLIST «Ir / no ir») |
 
 ---
 
