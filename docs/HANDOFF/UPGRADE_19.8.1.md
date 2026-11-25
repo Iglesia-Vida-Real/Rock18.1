@@ -2,6 +2,8 @@
 
 > **Responsable y aprobador del upgrade:** Fredy Ramirez (desde el 2026-11-23; antes, TI/Rodolfo).
 >
+> **Para el próximo upgrade:** lo aprendido en este está resumido en [`GUIA_PROXIMO_UPGRADE.md`](GUIA_PROXIMO_UPGRADE.md).
+>
 > **Estado (2026-11-24):** pruebas **locales completas** (PC de desarrollo, BD `Rock19Test`). Nada se ha aplicado en
 > producción. **El orden de trabajo del día en prod está en
 > [`upgrade-19.8.1/CHECKLIST_PRODUCCION_19.8.1.md`](upgrade-19.8.1/CHECKLIST_PRODUCCION_19.8.1.md)** (análisis previo

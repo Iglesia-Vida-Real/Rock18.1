@@ -399,6 +399,10 @@ ninguna migración de Rock.
 
 ## Cómo actualizar a una nueva versión de Rock
 
+> **Leer primero [`GUIA_PROXIMO_UPGRADE.md`](GUIA_PROXIMO_UPGRADE.md)**: el upgrade 18.1 → 19.8.1 (nov-2026) se hizo con
+> la alternativa de merge sobre este repo, directo a 19.8.1, y deja herramientas, datos del servidor de prod y trampas
+> que aplican a cualquier camino.
+
 > **Procedimiento recomendado por Rodolfo (dueño saliente, 2026-10-15): NO actualizar este repo.**
 > Se baja una copia de la BD de prod, se clona Rock limpio en otra carpeta, se sube la BD **de
 > versión mayor en versión mayor** con Rock sin modificar (aplicando en cada salto las migraciones y

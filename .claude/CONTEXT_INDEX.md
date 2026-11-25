@@ -27,6 +27,7 @@
 | `C:\repos\Rock15.5\CHANGES.md` | Historia de commits VidaReal, lista de archivos nuevos vs modificados del upstream, instrucciones de build | Cuando necesitas saber que cambio, cuando se hizo, o que archivos son de VidaReal vs upstream. |
 | `docs/HANDOFF/INVENTARIO_DESARROLLOS_VR.md` | Inventario de todo lo propio (código + BD): dónde vive, en qué páginas/rutas está, cómo se prueba; plugins de terceros, workflows, jobs, almacenamiento (2026-11-19) | Antes de un upgrade de Rock o para ubicar un desarrollo propio. |
 | `docs/HANDOFF/UPGRADE_19.8.1.md` + `PLAN_PRUEBAS_19.8.1.md` + `upgrade-19.8.1/` | Prueba local del upgrade 18.1 → 19.8.1, runbook de prod, jobs post-actualización, check-in, listas de archivos a quitar/conservar, checklist de pruebas | Al preparar o ejecutar el upgrade. Scripts en `Dev Tools/Upgrade/`. |
+| `docs/HANDOFF/GUIA_PROXIMO_UPGRADE.md` | Lecciones del 18.1 → 19.8.1: cómo se hizo, datos fijos del servidor de prod (sin secretos), herramientas reutilizables y qué ajustar, trampas, checklist corta y pendientes (2026-11-25) | **Antes de empezar cualquier upgrade de Rock.** |
 
 ---
 

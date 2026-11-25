@@ -22,6 +22,7 @@ menores sí procede); cero secretos en el repo.
 | Entender el proyecto (colaborador nuevo) | `docs/HANDOFF/GUIA_COLABORADORES.md` |
 | Montar el ambiente / compilar / correr | `docs/HANDOFF/SETUP_DESARROLLO.md` |
 | Desplegar a prod | `docs/HANDOFF/DEPLOY_PRODUCCION.md` (+ runbook del módulo) |
+| Actualizar Rock a otra versión | `docs/HANDOFF/GUIA_PROXIMO_UPGRADE.md` (lecciones del 18.1 → 19.8.1) |
 | Estado git, ramas, pendientes | `docs/HANDOFF/ESTADO_REPO.md` |
 | Mapa de toda la documentación por módulo | `.claude/CONTEXT_INDEX.md` |
 | Contexto técnico transversal (stack, convenciones, zonas delicadas) | `.claude/PROJECT_CONTEXT.md` |
@@ -153,6 +154,11 @@ versión mayor en versión mayor (`18.7.0 → 19.1.8 → 19.7.0`, parando en la 
 cada mayor) con Rock sin modificar (migraciones y jobs post-actualización en
 cada salto) y solo al final meter el desarrollo propio, idealmente movido a plugins. Detalle en
 `docs/HANDOFF/CAMBIOS_VS_UPSTREAM.md` § «Cómo actualizar a una nueva versión de Rock».
+
+**Antes de empezar cualquier upgrade, leer `docs/HANDOFF/GUIA_PROXIMO_UPGRADE.md`**: cómo se hizo el 18.1 → 19.8.1
+(merge en la rama `Test_Update_18.1_a_19.8.1`, pruebas lado a lado, kit, fase A en prod), datos fijos del servidor de
+prod (RockWeb en `C:\inetpub\wwwroot`, sitio `Default Web Site`, `D:` temporal de Azure, sin acceso a la VM SQL), las
+herramientas de `Dev Tools/Upgrade/` y las trampas que costaron tiempo.
 
 ## Lo que nunca va al repo
 
