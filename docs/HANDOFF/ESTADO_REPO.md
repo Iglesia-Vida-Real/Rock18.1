@@ -1,5 +1,10 @@
 # Estado del repositorio al 2026-10-15
 
+> **Actualización 2026-11-27 — producción corre Rock 19.8.1.** Desde la ventana del 2026-11-27 (Fredy Ramirez), lo
+> desplegado en prod sale de la rama **`Test_Update_18.1_a_19.8.1`** (kit `c190618011` + ajustes de la noche
+> documentados en `upgrade-19.8.1/CHECKLIST_PRODUCCION_19.8.1.md`). **`hotfix-18.1` quedó atrás**: no desplegar desde
+> ella ni hacer cambios ahí que vayan a prod hasta unir la rama del upgrade (paso F5 de la checklist, con aprobación).
+
 > Foto tomada el día del traspaso. Se generó con comandos de solo lectura (`git status`,
 > `git log`, `git for-each-ref`) en `C:\repos\Rock15.5` del dev saliente. **No se ejecutó ninguna
 > limpieza**; las recomendaciones de §6 quedan para el dev entrante.

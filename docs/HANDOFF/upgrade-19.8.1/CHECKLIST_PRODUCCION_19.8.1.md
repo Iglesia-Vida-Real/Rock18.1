@@ -515,3 +515,48 @@ falta. Si igual hubiera check-ins: el kiosco muestra mantenimiento; el ministeri
 entradas y salidas, y al terminar se recargan los kioscos. Riesgo residual conocido: la reversa (E2) se
 probó en local con permisos idénticos, no en prod (no se puede ensayar sin sobrescribir prod); el respaldo diario
 externo de las 12:39 es una segunda red, pero requiere el acceso a Azure que no se transfirió.
+
+## Resultado de la ventana (2026-11-27, Fredy Ramirez; Claude revisó cada paso)
+
+| Hora | Paso | Resultado |
+|---|---|---|
+| 21:39–21:51 | R1–R3 | Sitio igual al 24-nov (DLLs y llaves), BD igual al 25-nov, kit íntegro (3556 / 0) |
+| ~21:52 | C1–C2 | Mantenimiento y sitio/pool detenidos |
+| 21:59–22:00 | C3 | Respaldo BD: 53 s, 7,874 MB → 1,837 MB, checksum y VERIFYONLY OK |
+| 22:02–22:03 | C4 | Respaldo de wwwroot: 10,120 archivos, 2.934 GB, 0 fallidos |
+| ~22:05 | C5 | 383 movidos, 0 faltantes, SignNow 0 |
+| 22:07 | C6 | Kit copiado (robocopy 3), verificación 3556 / 0 distintos |
+| ~22:10 | C7 | web.config de la 19, 4 llaves idénticas |
+| 22:12 | C8 + C10 | Columnas de reservas agregadas; línea base MaxTx 3564, MaxExc 1721843, MaxOrden 112 |
+| 22:15 → 22:20 | C9 | Arranque y migraciones en ~5 min; 774 migraciones del core y «Rock» 338/296, iguales a la prueba local (19.8.1_verificar_migracion.sql) |
+| 22:31–22:45 | C11 | 12 jobs de actualización, todos se borraron solos (Ids en prod 222–235: corridos +2 respecto de la copia local; ver 19.8.1_jobs_postupdate.sql) |
+| 22:47–22:49 | C12 | Job de huérfanos (Id 236) creado y corrido; 327 y 740 con bloques nuevos |
+| 22:50–23:30 | D | 14 páginas revisadas sin error; check-in completo (búsqueda, familia, persona, grupo, registro, salida) en el Kiosko Mostrador; Check-in Manager abre; errores nuevos solo el ruido conocido |
+| 23:35–23:38 | F1 | RunJobsInIISContext=True (llaves verificadas); los jobs programados volvieron a correr a las 23:37 |
+
+**Hallazgos de la noche:**
+- **Dar comprobado con un pago real**: a las 22:19 alguien donó Q1,200 por Cybersource («AUTHORIZED», misma forma que
+  las de la 18.1). La donación de prueba de Q1 ya no hizo falta. El error «Nullable object must have a value»
+  (FinancialPaymentDetail.SaveHook) acompaña a cada donación de Dar también en la 18.1: defecto previo.
+- **CSS del kiosco**: al arrancar, Rock recompiló Themes\VidAventuracheckin\Styles\checkin-theme.css porque el kit
+  trajo Styles\ más nuevos; con los LESS de la 19 faltan ~1,400 clases utilitarias (.d-flex, .mt-3…; §14.9a del
+  runbook) y el botón «Aceptar» quedaba tapado. **Arreglo aplicado**: se volvió a poner el checkin-theme.css de la
+  18.1 desde el respaldo C4 y se creó Styles\.nocompile (Rock ya no lo recompila). La versión recompilada quedó en
+  C:\deploy-backup\upgrade-19.8.1\css_kiosco_19\. Arreglo definitivo (propuesta B de §14.9a) queda pendiente.
+- **Impresión**: el Kiosko Mostrador imprime desde el dispositivo (PrintFrom = Client); desde un navegador no
+  imprime. La impresión real se prueba en el iPad.
+- Aviso nuevo de la 19: SendGrid sin «Event Webhook Verification Key» (los webhooks siguen llegando sin verificar).
+- 2 registros «Apple PassKit log … Web service error» a las 23:06: iPhones reportando un intento fallido de
+  actualizar un pase (probablemente durante el mantenimiento). También había en la 18.1.
+- TestCybersource.ascx (bloque de prueba que solo existía en prod) no compila con la 19: solo afecta a su página.
+- El horario «Mega Sport Camp» se usó para la prueba de check-in; Fredy lo dejó configurado como corresponde.
+
+**Pendiente después de la ventana:**
+1. Probar la impresión de etiquetas en el iPad del Mostrador **antes del primer check-in** (sábado 28 a las 16:00) y
+   **recargar todos los kioscos** para que tomen el CSS corregido.
+2. Avisar al equipo que el sistema volvió; avisar a los supervisores del límite de PIN (F2).
+3. Monitoreo diario de la primera semana (F3): 19.8.1_verificacion_d.sql (errores) y transacciones nuevas.
+4. Decisiones (F4): CSS definitivo del kiosco (propuesta B), tema del Check-in Manager, llave de webhook de SendGrid,
+   quitar TestCybersource.ascx y otros restos de prod, workflows 77/83, token de Odoo.
+5. F5: unir la rama Test_Update_18.1_a_19.8.1 a la de producción (aprobación de Fredy) y conservar los respaldos
+   del día (Rock18_antes_19.8.1.bak en el servidor SQL y C:\deploy-backup\upgrade-19.8.1\) al menos un mes.

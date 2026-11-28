@@ -122,6 +122,18 @@ van dentro del kit, en `herramientas\`.
     PC? `Windows (C:)` = servidor, `C on DESKTOP-…` / `\\tsclient\C` = PC).
 21. Cualquier rojo se manda en captura antes de reintentar: un script que falla al inicio no alcanzó a hacer nada.
 
+### De la noche de la ventana (2026-11-27)
+22. **Rock recompila los temas LESS al arrancar si los `Styles` de RockWeb son más nuevos que el `.css`.** El kiosco
+    VidAventura perdió ~1,400 clases y se desacomodó. Se arregló con el `.css` de la 18.1 + `Styles/.nocompile`.
+    Antes del próximo upgrade: decidir el tema (propuesta B) y probar el kiosco **en tamaño iPad** en la prueba local.
+23. **Los Id de los jobs de actualización cambian entre la copia y prod** (aquí +2). Identificarlos por nombre
+    (`19.8.1_jobs_postupdate.sql`) y respetar el orden: el «Swap» del File Manager antes del «Chop».
+24. **Un pago real puede llegar en cuanto el sitio vuelve** (Q1,200 a las 22:19, 4 minutos después de arrancar). Sirvió
+    como prueba de Dar, pero también significa que después de C9 una reversa perdería datos reales: decidirla pronto.
+25. Herramientas de la noche, todas solo lectura y probadas antes contra la copia: `19.8.1_verificar_migracion.sql`,
+    `19.8.1_jobs_postupdate.sql`, `19.8.1_verificacion_d.sql`, `19.8.1_transacciones_nuevas.sql`,
+    `checkins_recientes.sql`. Cuando un archivo nuevo hace falta en el servidor:
+    `Copy-Item '\\tsclient\C\…\herramientas\<archivo>' . -Force` desde la carpeta `herramientas` del servidor.
 ---
 
 ## 5. Checklist corta para el próximo upgrade

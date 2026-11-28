@@ -9,7 +9,9 @@ menores sí procede); cero secretos en el repo.
 
 - **Rock RMS 18.1** (ASP.NET WebForms + bloques Obsidian Vue 3, .NET Framework 4.7.2, SQL Server)
   con módulos propios. La carpeta se llama `Rock15.5` por historia.
-- Rama de trabajo: **`hotfix-18.1`** (es lo que corre en producción). `develop` es un espejo
+- **Desde el 2026-11-27 producción corre Rock 19.8.1**, desplegado desde la rama
+  **`Test_Update_18.1_a_19.8.1`** (ver `docs/HANDOFF/UPGRADE_19.8.1.md`). `hotfix-18.1` era la de producción hasta
+  esa fecha y queda atrás hasta que se una la rama del upgrade: no desplegar desde ella. `develop` es un espejo
   viejo de upstream: no usarla. Estado git y ramas: `docs/HANDOFF/ESTADO_REPO.md`.
 - Producción: `personas.vidareal.tv` (IIS en VM Windows) + BD `Rock18`. Dev local:
   `http://localhost:6229` (IIS Express) + copia de `Rock18`.

@@ -4,8 +4,11 @@
 >
 > **Para el próximo upgrade:** lo aprendido en este está resumido en [`GUIA_PROXIMO_UPGRADE.md`](GUIA_PROXIMO_UPGRADE.md).
 >
-> **Estado (2026-11-24):** pruebas **locales completas** (PC de desarrollo, BD `Rock19Test`). Nada se ha aplicado en
-> producción. **El orden de trabajo del día en prod está en
+> **✅ EN PRODUCCIÓN DESDE EL 2026-11-27** (ventana 21:52–23:38, ejecutada por Fredy Ramirez): prod corre Rock
+> 19.8.1 con el kit `c190618011` de la rama `Test_Update_18.1_a_19.8.1`. **`hotfix-18.1` ya NO es lo que corre en
+> prod** hasta que se una la rama del upgrade. Resultado completo en la CHECKLIST, § «Resultado de la ventana».
+>
+> **Estado (2026-11-24):** pruebas **locales completas** (PC de desarrollo, BD `Rock19Test`). **El orden de trabajo del día en prod está en
 > [`upgrade-19.8.1/CHECKLIST_PRODUCCION_19.8.1.md`](upgrade-19.8.1/CHECKLIST_PRODUCCION_19.8.1.md)** (análisis previo
 > con el sitio arriba, ir/no ir, ventana con comandos, verificación, reversa); este documento queda como referencia.
 >
@@ -18,7 +21,7 @@
 > | 3c. Prueba comparativa de check-in 18.1 vs 19 | ✅ C1–C20 iguales (PLAN_PRUEBAS §15) |
 > | 4. Pruebas de humo | ✅ local (PLAN_PRUEBAS §16); en prod: CHECKLIST fase D |
 > | 5. Kit | ✅ `kit_19.8.1_2026-11-23\` + `herramientas\` (CHECKLIST, «Qué hay en herramientas») |
-> | 6. Producción | ✅ fase A completa (24–25 nov) y ensayo de respaldo OK; **decisión técnica: IR**. ⏳ Falta la fecha/hora autorizada para la ventana (CHECKLIST «Ir / no ir») |
+> | 6. Producción | ✅ **Upgrade hecho el 2026-11-27** (fase A 24–25 nov, ensayo de respaldo, ventana 21:52–23:38). Pendiente: prueba de impresión en el iPad del Mostrador, recargar kioscos, monitoreo de la primera semana, unir la rama a la de producción (CHECKLIST § «Resultado de la ventana») |
 
 ---
 

@@ -165,3 +165,13 @@ El tema `VidAventuracheckin` es completamente nuevo y propio de VidaReal. Sus ca
 | `Rock/Layouts/Blank.aspx` | Patron comun |
 | `RockManager/Layouts/Blank.aspx` | Patron comun |
 | `Stark/Layouts/Blank.aspx` | Patron comun |
+
+---
+
+## VidAventuracheckin: `Styles/.nocompile` (2026-11-27, upgrade a Rock 19.8.1)
+
+Al arrancar la 19 en prod, Rock recompiló `checkin-theme.css` (el kit trajo `RockWeb/Styles` más nuevos) y con los
+LESS de la 19 perdió ~1,400 clases utilitarias que la 18.1 tenía (`.d-flex`, `.mt-3`…): el botón «Aceptar» del
+kiosco quedaba tapado. Se volvió a poner el `checkin-theme.css` de la 18.1 (el que está en este repo) y se agregó
+`Styles/.nocompile` para que Rock no lo recompile (`RockTheme.AllowsCompile`). Para cambiar el tema en el futuro:
+quitar `.nocompile`, aplicar la propuesta B de `docs/HANDOFF/UPGRADE_19.8.1.md` §14.9a y compilar.
