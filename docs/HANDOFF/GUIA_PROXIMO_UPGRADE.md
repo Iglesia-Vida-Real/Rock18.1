@@ -158,8 +158,11 @@ van dentro del kit, en `herramientas\`.
   más corto.
 - **`App_Code\WhatsAppSms.ashx.cs`**: prod tiene una versión anterior a la del repo (sin la atribución del remitente
   por wamid). Decidir si se despliega la del repo, en una ventana propia.
-- **Archivos solo de prod**: `Blocks\QREVENT\TestCybersource.ascx` (bloque de prueba de pagos), plugins Apollos y
-  `Asistencia`, DLLs viejas en `Bin`: decidir si se retiran.
+- **Archivos solo de prod**: `Blocks\QREVENT\TestCybersource.ascx` (bloque de prueba de pagos en las páginas 850/851;
+  no compila desde la 19; se dejó así a propósito el 2026-11-27), plugins Apollos y `Asistencia`, DLLs viejas en
+  `Bin`: decidir si se retiran. Ver CHECKLIST § «Resultado de la ventana», punto 4 de los pendientes.
+- **Llave de verificación de los webhooks de SendGrid** (aviso nuevo de la 19; sin ella todo funciona como en la 18.1;
+  se dejó así a propósito el 2026-11-27).
 - **Higiene del servidor web**: hay software y archivos personales que no tienen que ver con Rock en el escritorio del
   administrador; revisarlos con TI.
 - Versiones de los plugins del Rock Shop compatibles con la siguiente versión de Rock.
