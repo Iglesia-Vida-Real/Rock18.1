@@ -21,7 +21,7 @@ procedimiento «ideal» de largo plazo (Rock limpio + mover lo propio a plugins)
 | 4. Pruebas | `PLAN_PRUEBAS_19.8.1.md` C1–C20 comparando 18.1 (sitio 6230) y 19 (6229) lado a lado; jobs post-actualización ensayados; pagos con gateway de prueba | local | 19 al 24-nov |
 | 5. Kit | `New-KitUpgrade.ps1`: copia lo que va a prod + manifiesto SHA256 + lista de retiro + `herramientas\` | fuera del repo | 23-nov |
 | 6. Fase A en prod | Diagnóstico, inventario, muestras, preflight de BD, `web.config` fusionado, ensayo de respaldo — **todo sin cortar el servicio** | servidor web de prod | 24 y 25-nov |
-| 7. Ventana | Respaldo BD + RockWeb, retirar lo que la 19 quitó, copiar kit, `web.config`, arrancar, jobs, verificación | prod | pendiente de fecha (~2 h + 45 min) |
+| 7. Ventana | Revisión final (R1–R3), respaldo BD + RockWeb, retirar lo que la 19 quitó, copiar kit, `web.config`, arrancar (migraciones), jobs, verificación (páginas, check-in, Dar), reactivar jobs | prod | **27-nov, 21:52–23:38** (resultado completo en la CHECKLIST, § «Resultado de la ventana») |
 
 Lo que más tiempo ahorró: **probar 18.1 y 19 lado a lado** con la misma copia de BD (cada diferencia es de la 19, no
 de los datos) y hacer **todo el análisis de prod antes de la ventana**, con el sitio arriba.
@@ -45,6 +45,20 @@ Comprobados el 2026-11-24/25. Verificarlos de nuevo con `Get-DiagnosticoServidor
 | Cuenta SQL del sitio | Dueña (dbo) de `Rock18`, `db_owner`, **sin** sysadmin/dbcreator/VIEW SERVER STATE. Alcanza para respaldar y restaurar `Rock18` |
 | `web.config` de prod | Propio de prod y **distinto** de la plantilla del repo en: llaves (`PasswordKey`, `DataEncryptionKey`, `machineKey`), `RunJobsInIISContext=True`, `customErrors=On`, `compilation debug=true`, **`<globalization culture="es-GT" uiCulture="es">`** y **límites de subida de 500 MB** (`maxRequestLength=512000`, `maxAllowedContentLength=524288000`) |
 | Uso | Hay check-ins **también entre semana** (119 abiertos un miércoles a las 9 h): la ventana se elige con quien conoce los horarios |
+
+### 2b. Dónde quedó cada cosa en el servidor (resumen público)
+
+El **mapa detallado** (rutas de respaldos, ubicación de los archivos secretos, usuario del servidor, qué se puede borrar
+y cuándo) está en el paquete privado de handoff: **`MAPA_SERVIDOR_PROD.md`**, junto a `ACCESOS_Y_SECRETOS.md`. No va
+aquí porque este repo es público. En resumen:
+
+- **Sitio en vivo:** `C:\inetpub\wwwroot` (Rock 19.8.1 desde el 27-nov). Al lado hay carpetas y un `.zip` de versiones
+  anteriores que IIS no usa.
+- **Kit y herramientas del upgrade:** en una carpeta de trabajo en `C:` del servidor web (fuera del sitio).
+- **Respaldos del 27-nov** (conservar al menos un mes): la BD 18.1 en la carpeta de respaldos del servidor SQL y el
+  sitio 18.1 completo en `C:` del servidor web, junto con los archivos retirados y el CSS recompilado del kiosco.
+- **Resultados de cada consulta de la noche:** en el Escritorio del administrador del servidor web y, los importantes,
+  en la PC de desarrollo (fuera del repo).
 
 ---
 
