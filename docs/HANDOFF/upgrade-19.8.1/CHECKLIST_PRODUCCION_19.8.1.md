@@ -113,8 +113,38 @@ Si falta cualquiera: **no ir**; se reprograma sin costo (nada se tocó).
 
 ## Fase B — Avisar (5 min, antes de la ventana)
 
-- [ ] Avisar al equipo que `personas.vidareal.tv` estará en mantenimiento (página de `app_offline.htm`) durante ~2 h.
+- [ ] Avisar al equipo que `personas.vidareal.tv` estará **fuera de línea 4 horas** (cubre ventana, verificación y una
+      reversa si hiciera falta): no funcionarán check-in, Dar, compra de boletos ni inscripciones. El ministerio de
+      check-in debe tener su respaldo en papel para entradas y salidas si hubiera actividad.
 - [ ] Confirmar que ningún kiosco de check-in esté en uso.
+
+---
+
+## Fase R — Revisión final (el mismo día, justo antes de C1; solo lectura, ~5 min)
+
+Desde la fase A pudo cambiar algo en el servidor. Las tres revisiones se hacen **con el sitio arriba**; si alguna sale
+distinta, **no se empieza** hasta entenderla.
+
+- [ ] **R1. ¿El sitio sigue igual?** Diagnóstico rápido (sin inventario):
+  ```powershell
+  powershell -NoProfile -ExecutionPolicy Bypass -File "C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\herramientas\Get-DiagnosticoServidor.ps1" -Sitio "Default Web Site"
+  ```
+  Traer el `.zip` a la PC. Claude compara contra el del 2026-11-24: hashes de las DLLs del fork y de los plugins,
+  hashes de las llaves, `RunJobsInIISContext`, espacio en disco. Cualquier DLL distinta = alguien desplegó algo: parar.
+- [ ] **R2. ¿La BD sigue igual?**
+  ```powershell
+  cd C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\herramientas
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\Invoke-SqlDesdeWeb.ps1 -Archivo .\19.8.1_preflight_bd_prod.sql
+  ```
+  Debe dar lo mismo que el 2026-11-25 (bloques 6, 7, 12, 13, 14 en OK). El bloque 10 dice cuántos check-ins hay
+  abiertos hoy: si hay actividad en este momento, esperar o avisar al ministerio.
+- [ ] **R3. ¿El kit del servidor está íntegro?** (1–2 min; compara cada archivo del kit contra su manifiesto):
+  ```powershell
+  $k='C:\upgrade-19.8.1\kit_19.8.1_2026-11-23'; $m = Import-Csv "$k\MANIFIESTO_SHA256.csv"
+  $mal = $m | Where-Object { (Get-FileHash -LiteralPath (Join-Path "$k\RockWeb" $_.Ruta) -Algorithm SHA256).Hash -ne $_.SHA256 }
+  "archivos: $($m.Count)  distintos: $(@($mal).Count)"; $mal | Select-Object -First 20 Ruta
+  ```
+  Debe decir `archivos: 3556  distintos: 0`.
 
 ---
 
@@ -124,8 +154,11 @@ Si falta cualquiera: **no ir**; se reprograma sin costo (nada se tocó).
 > 2026-11-24): RockWeb = `C:\inetpub\wwwroot`, sitio `Default Web Site`, pool `DefaultAppPool`. Carpeta de respaldo:
 > `C:\deploy-backup\upgrade-19.8.1\` (en `C:`, fuera de RockWeb; nunca en el disco temporal D:).
 
-- [ ] **C1. Mantenimiento:** copiar `C:\inetpub\wwwroot\app_offline-template.htm` como `C:\inetpub\wwwroot\app_offline.htm`. Comprobar en
-      el navegador que el sitio muestra la página de mantenimiento.
+- [ ] **C1. Mantenimiento** (desde aquí el sitio queda fuera de línea):
+  ```powershell
+  Copy-Item 'C:\inetpub\wwwroot\app_offline-template.htm' 'C:\inetpub\wwwroot\app_offline.htm'
+  ```
+  Comprobar en el navegador (desde la PC) que `personas.vidareal.tv` muestra la página de mantenimiento.
 - [ ] **C2. Detener el sitio:**
   ```powershell
   Import-Module WebAdministration
@@ -147,12 +180,17 @@ Si falta cualquiera: **no ir**; se reprograma sin costo (nada se tocó).
   Códigos de salida 0–7 = bien; 8 o más = revisar el log antes de seguir.
 - [ ] **C5. Retirar lo que la 19 eliminó** (mover, no borrar), con la lista del kit (runbook §7.3 paso 3):
   ```powershell
-  $rw = 'C:\inetpub\wwwroot'; $dst = 'C:\deploy-backup\upgrade-19.8.1\retirados'
-  Get-Content 'C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\quitar_del_servidor.txt' | Where-Object { $_ -and -not $_.StartsWith('#') } | ForEach-Object {
-      $rel = $_ -replace '/', '\'; $src = Join-Path $rw $rel
-      if (Test-Path -LiteralPath $src) { $d = Join-Path $dst $rel; New-Item -ItemType Directory -Force (Split-Path $d) | Out-Null; Move-Item -LiteralPath $src -Destination $d } }
+  $rw = 'C:\inetpub\wwwroot'; $dst = 'C:\deploy-backup\upgrade-19.8.1\retirados'; $movidos = 0; $faltan = @()
+  Get-Content 'C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\quitar_del_servidor.txt' | Where-Object { $_.Trim() -and -not $_.Trim().StartsWith('#') } | ForEach-Object {
+      $rel = $_.Trim() -replace '/', '\'; $src = Join-Path $rw $rel
+      if (Test-Path -LiteralPath $src) { $d = Join-Path $dst $rel; New-Item -ItemType Directory -Force (Split-Path $d) | Out-Null; Move-Item -LiteralPath $src -Destination $d; $movidos++ } else { $faltan += $rel } }
+  "movidos: $movidos  no estaban: $($faltan.Count)"; $faltan | Select-Object -First 10
+  "SignNow que quedan (debe ser 0): " + @(Get-ChildItem 'C:\inetpub\wwwroot\Bin\*SignNow*', 'C:\inetpub\wwwroot\Webhooks\SignNow.ashx' -ErrorAction SilentlyContinue).Count
   ```
-  Obligatorio que salgan `Bin\Rock.SignNow.dll`, `Bin\SignNowSDK.dll` (+ `.pdb`) y `Webhooks\SignNow.ashx`.
+  Esperado: **`movidos: 383  no estaban: 0`** (el inventario del 24-nov confirmó que las 383 existen) y `SignNow que
+  quedan: 0`. Si quedara SignNow, el sitio no arranca (TypeLoadException). Nota: 3 bundles de `Obsidian\` de la lista
+  (`communicationRecipientActivity`, `pageDebugTimingRow`, `searchField`) también vienen en el kit: C6 los vuelve a
+  poner con la versión de la 19, como en la prueba local. Es esperado.
 - [ ] **C6. Copiar el kit encima** (sin `/MIR` ni `/PURGE`: no se borra nada de prod):
   ```powershell
   robocopy "C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\RockWeb" "C:\inetpub\wwwroot" /E /R:1 /W:1 /NP /LOG:"C:\deploy-backup\upgrade-19.8.1\copia_kit.log"
@@ -163,27 +201,37 @@ Si falta cualquiera: **no ir**; se reprograma sin costo (nada se tocó).
   $mal = $m | Where-Object { (Get-FileHash -LiteralPath (Join-Path 'C:\inetpub\wwwroot' $_.Ruta) -Algorithm SHA256).Hash -ne $_.SHA256 }
   "archivos: $($m.Count)  distintos: $(@($mal).Count)"; $mal | Select-Object -First 20 Ruta
   ```
-- [ ] **C7. web.config de la 19:** copiar `C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\herramientas\web.config.19-fusionado` (de A4) como
-      `C:\inetpub\wwwroot\web.config` (el original ya está en el respaldo C4). Lo «solo en prod» ya viene aplicado
-      (A4, 2026-11-24). Comprobar las llaves:
-      `powershell -NoProfile -ExecutionPolicy Bypass -File C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\herramientas\Get-DiagnosticoServidor.ps1 -SoloLlaves -WebConfig "C:\inetpub\wwwroot\web.config"`
-      → los hashes deben ser **los mismos** que A1 §4.
+- [ ] **C7. web.config de la 19** (el original ya está en el respaldo C4; lo «solo en prod» ya viene aplicado en A4):
+  ```powershell
+  Copy-Item 'C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\herramientas\web.config.19-fusionado' 'C:\inetpub\wwwroot\web.config' -Force
+  powershell -NoProfile -ExecutionPolicy Bypass -File C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\herramientas\Get-DiagnosticoServidor.ps1 -SoloLlaves -WebConfig "C:\inetpub\wwwroot\web.config"
+  ```
+  Los 4 hashes deben ser **exactamente** `cec1209c4e45`, `cb63f3c4d33c`, `dd0af68ee74f`, `84704e808a4e` (A1 §4). Si uno
+  difiere: **no arrancar**; volver a poner el `web.config` del respaldo C4 y revisar.
 - [ ] **C8. Reservas dominicales** (el preflight del 2026-11-25, bloque 8, dio `NULL`: **sí hace falta**). Segundos,
       idempotente; probado con el ejecutor en una BD de prueba:
-      `powershell -NoProfile -ExecutionPolicy Bypass -File .\Invoke-SqlDesdeWeb.ps1 -Archivo .\QREVENT_SundayService_SlotSettings.sql`
-      → «Columna … agregada» ×3, «Restricción … agregada» ×2 y la fila `1|1|1|2`.
-- [ ] **C9. Arrancar:** borrar `C:\inetpub\wwwroot\app_offline.htm`, luego
   ```powershell
-  Start-WebAppPool 'DefaultAppPool'; Start-Website 'Default Web Site'
+  cd C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\herramientas
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\Invoke-SqlDesdeWeb.ps1 -Archivo .\QREVENT_SundayService_SlotSettings.sql
   ```
-  Abrir el sitio **desde el propio servidor** (`http://localhost/` o la URL interna): la primera carga compila y corre
-  las migraciones (en local: ~1 min de compilación + ~1 min de migraciones; en prod puede ser más). Vigilar
-  `C:\inetpub\wwwroot\App_Data\Logs\MigrationLog.csv` y `RockExceptions.csv`. Si no levanta: runbook `DEPLOY_PRODUCCION.md` §4
-  (`customErrors` oculta el error: verlo desde el servidor o en *Visor de eventos → Aplicación*); si en 30 min no se
-  resuelve → **Fase E (reversa)**.
-- [ ] **C10. Línea base** (guía de pagos, consulta 6.0): conviene correrla **antes de C9** (con el sitio detenido) y
-      anotar `MaxTx`, `MaxExc`, `MaxOrden`:
+  → «Columna … agregada» ×3, «Restricción … agregada» ×2 y la fila `1|1|1|2`.
+- [ ] **C10 (va aquí, antes de arrancar). Línea base** (guía de pagos, consulta 6.0) con el sitio detenido; anotar
+      `MaxTx`, `MaxExc`, `MaxOrden`:
       `powershell -NoProfile -ExecutionPolicy Bypass -File .\Invoke-SqlDesdeWeb.ps1 -Archivo .\19.8.1_linea_base.sql`
+- [ ] **C9. Arrancar:**
+  ```powershell
+  Remove-Item 'C:\inetpub\wwwroot\app_offline.htm'
+  Import-Module WebAdministration; Start-WebAppPool 'DefaultAppPool'; Start-Website 'Default Web Site'
+  ```
+  Abrir **en el navegador del propio servidor** `http://localhost/`: la primera carga compila y corre las migraciones
+  (en local: ~1 min de compilación + ~1 min de migraciones; en prod puede tardar más). **Esperar; no reiniciar el
+  sitio, el pool ni el servidor mientras corren las migraciones** aunque el navegador parezca colgado o dé tiempo
+  agotado: interrumpir una migración es lo peor que puede pasar. Recargar cada minuto. Vigilar
+  `C:\inetpub\wwwroot\App_Data\Logs\` (`MigrationLog.csv`, `RockExceptions.csv`). Si no levanta: runbook
+  `DEPLOY_PRODUCCION.md` §4 (`customErrors` oculta el error: verlo desde el servidor o en *Visor de eventos →
+  Aplicación*); si en 30 min no se resuelve → **Fase E (reversa)**.
+  > Desde aquí el sitio vuelve a ser público (el comunicado dice 4 h fuera de línea, pero alguien podría entrar). Si
+  > luego hubiera reversa, lo que se haya guardado entre C9 y E2 se pierde: decidir la reversa **temprano**.
 - [ ] **C11. Jobs post-actualización** (*Admin → System Settings → Jobs Administration*, botón «Run Now» de cada uno, en
       este orden; los Id de la copia local eran 220–233 y pueden variar: identificarlos por nombre):
   1. Los que corrigen MIME de imágenes (transacción y persona) y el de limpieza de redes sociales.
@@ -207,7 +255,10 @@ Recorrido de `../PLAN_PRUEBAS_19.8.1.md` columna **P** (prod). Lo mínimo para d
 - [ ] Home pública e interna cargan; inicio de sesión de un usuario normal.
 - [ ] Páginas 433 (File Manager), 451 (Weekly Metrics), 327, 740 cargan.
 - [ ] **Check-in VidAventura:** kiosco Mostrador, una familia de prueba (o la del responsable), etiqueta impresa bien
-      en la impresora real, salida desde el kiosco; Check-in Manager (Roster) abre.
+      en la impresora real, salida desde el kiosco; Check-in Manager (Roster) abre. Si la ventana es remota (sin
+      kiosco físico a mano), probar el flujo hasta antes de imprimir desde el navegador y **agendar la prueba de
+      impresión en sitio antes del siguiente horario con check-in** (p. ej. sábado antes de las 16:00). Al terminar,
+      **recargar todos los kioscos** para que tomen la versión nueva.
 - [ ] Reservas dominicales: páginas 860–864 cargan; el escáner 863 abre.
 - [ ] Eventos: `/eventos/calendario` y el detalle de un evento cargan (no comprar).
 - [ ] **Dar:** donación de **Q1.00** con la tarjeta de Fredy (la teclea él; el campo llena desde la derecha: «100» =
@@ -251,8 +302,18 @@ la restauración de la BD vuelven los originales.
 
 ## Fase F — Después
 
-- [ ] F1. Devolver `RunJobsInIISContext` a su valor original (el que mostró A4) en `C:\inetpub\wwwroot\web.config` (reinicia el
-      sitio). Hasta entonces los jobs programados no corren.
+- [ ] F1. **Esa misma noche**, al dar el upgrade por bueno: devolver `RunJobsInIISContext` a **True** (A4: en prod era
+      True). Hasta entonces **no corren los jobs programados** (correos, recordatorios, procesos nocturnos). Cambia
+      **solo** ese valor (guarda antes una copia) y reinicia el sitio solo; esperar la carga:
+  ```powershell
+  $f = 'C:\inetpub\wwwroot\web.config'; Copy-Item $f 'C:\deploy-backup\upgrade-19.8.1\web.config.antes_F1'
+  $x = New-Object Xml.XmlDocument; $x.PreserveWhitespace = $true; $x.Load($f)
+  $x.SelectSingleNode("/configuration/appSettings/add[@key='RunJobsInIISContext']").SetAttribute('value', 'True'); $x.Save($f)
+  "RunJobsInIISContext = " + $x.SelectSingleNode("/configuration/appSettings/add[@key='RunJobsInIISContext']").GetAttribute('value')
+  powershell -NoProfile -ExecutionPolicy Bypass -File C:\upgrade-19.8.1\kit_19.8.1_2026-11-23\herramientas\Get-DiagnosticoServidor.ps1 -SoloLlaves -WebConfig $f
+  ```
+  Debe decir `RunJobsInIISContext = True` y las 4 llaves iguales que en C7. (No usar *System Configuration → Web.Config
+  Settings* para esto: ese formulario reescribe además zona horaria, límites de subida, timeout y diagnósticos.)
 - [ ] F2. Avisar a los supervisores de check-in del límite nuevo de PIN (10 fallos en 10 min bloquean el PIN 10 min;
       runbook §14.8) y que confirmen su PIN antes del domingo.
 - [ ] F3. Primera semana: revisar a diario `ExceptionLog` (guía de pagos §6.4) y las transacciones nuevas (§6.1).
